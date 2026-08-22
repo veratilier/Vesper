@@ -19,3 +19,11 @@ self.addEventListener('fetch', (event) => {
     return response;
   }).catch(() => caches.match(event.request).then((cached) => cached || caches.match('./'))));
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    const existing = windows[0];
+    return existing ? existing.focus() : self.clients.openWindow('./');
+  }));
+});

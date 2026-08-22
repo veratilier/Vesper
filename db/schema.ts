@@ -16,4 +16,6 @@ export const allowedDocumentKeys = new Set([
   'anniversaries',
   'diary',
   'conversations',
+  'settings',
+  'environment',
 ]);

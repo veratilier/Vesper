@@ -26,6 +26,12 @@ export const schemaStatements = [
     last_seen_at TEXT NOT NULL,
     details TEXT NOT NULL DEFAULT '{}'
   )`,
+  `CREATE TABLE IF NOT EXISTS vesper_push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    subscription TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 export const allowedDocumentKeys = new Set([

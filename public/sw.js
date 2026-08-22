@@ -1,4 +1,4 @@
-const CACHE = "vesper-shell-v6";
+const CACHE = "vesper-shell-v7";
 const SHELL = [
   "./",
   "./manifest.webmanifest?v=6",
@@ -57,5 +57,21 @@ self.addEventListener("notificationclick", (event) => {
         const existing = windows[0];
         return existing ? existing.focus() : self.clients.openWindow("./");
       }),
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = { title: "Vesper", body: "你有一条新消息", url: "/" };
+  try {
+    if (event.data) payload = { ...payload, ...event.data.json() };
+  } catch {}
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "/icon-192-20260823-v6.png",
+      badge: "/favicon-20260823-v6.png",
+      tag: payload.tag || "vesper",
+      data: { url: payload.url || "/" },
+    }),
   );
 });

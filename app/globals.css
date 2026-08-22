@@ -7,7 +7,20 @@
   --sage: #657a77;
   --paper: #f2f4f1;
   --safe-top: max(18px, env(safe-area-inset-top));
-  --safe-bottom: max(16px, env(safe-area-inset-bottom));
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html {
+  height: 100%;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 * {
   box-sizing: border-box;
@@ -72,7 +85,7 @@ button {
   display: grid;
   grid-template-columns: 40px 1fr 40px;
   align-items: center;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 0;
   background: rgba(242, 244, 241, 0.73);
   backdrop-filter: blur(24px);
   position: absolute;
@@ -4484,4 +4497,165 @@ body {
 }
 .wordmark {
   gap: 8px;
+}
+/* PWA runtime polish */
+.stage,
+.app-shell {
+  height: 100svh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.app-shell {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.app-header {
+  border-bottom: 0 !important;
+}
+
+.vesper-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  color: #202426;
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255,255,255,.96), transparent 32%),
+    linear-gradient(145deg, #f8faf9, #dce5e6 58%, #edf1ef);
+  transition: opacity .5s ease, visibility .5s ease;
+}
+
+.vesper-splash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: .22;
+  background: repeating-linear-gradient(116deg, transparent 0 45px, rgba(91,112,120,.08) 46px, transparent 48px 91px);
+}
+
+.vesper-splash img {
+  width: 84px;
+  height: 84px;
+  border-radius: 25px;
+  box-shadow: 0 18px 45px rgba(45, 63, 72, .16);
+  animation: vesper-arrive .9s cubic-bezier(.2,.8,.2,1) both;
+  z-index: 1;
+}
+
+.vesper-splash b {
+  z-index: 1;
+  font: 500 15px/1 Georgia, serif;
+  letter-spacing: .42em;
+  margin-left: .42em;
+}
+
+.vesper-splash > span {
+  z-index: 1;
+  width: 48px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #8fa8b1, transparent);
+  animation: splash-line 1.2s ease both;
+}
+
+.vesper-splash.leaving {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@keyframes vesper-arrive {
+  from { opacity: 0; transform: translateY(12px) scale(.92); filter: blur(5px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes splash-line {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+.settings-page.detail-active > :not(.modal-layer) {
+  display: none;
+}
+
+.settings-page.detail-active {
+  padding: 0 !important;
+}
+
+.settings-page.detail-active .modal-layer {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  display: block;
+  min-height: 100%;
+  background: transparent;
+}
+
+.settings-page.detail-active .modal-scrim {
+  display: none;
+}
+
+.settings-page.detail-active .connection-modal,
+.settings-page.detail-active .appearance-modal,
+.settings-page.detail-active .functional-settings-modal {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  padding: calc(20px + var(--safe-top)) 22px calc(24px + var(--safe-bottom));
+  background: rgba(248, 250, 249, .94);
+}
+
+.settings-back {
+  display: grid !important;
+  place-items: center;
+  width: 38px !important;
+  height: 38px !important;
+  transform: rotate(180deg);
+  border: 1px solid rgba(92,108,114,.18) !important;
+  border-radius: 50% !important;
+}
+
+.settings-hint {
+  color: #738084;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  .chat-composer {
+    bottom: max(7px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+@media (display-mode: standalone) {
+  body,
+  .stage {
+    background: #e7ecea;
+  }
+
+  .scroll-view {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vesper-splash img,
+  .vesper-splash > span { animation: none; }
 }

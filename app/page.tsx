@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
+import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
   const add = () =>
@@ -21,7 +22,7 @@ function Notes() {
       },
     ]);
   return (
-    <div className="page-body">
+    <div className={selected ? "page-body settings-page detail-active" : "page-body settings-page"}>
       <PageIntro
         eyebrow="QUICK NOTES"
         title="便笺"
@@ -531,6 +532,15 @@ const defaultPreferences: VesperPreferences = {
   memoryChat: true,
 };
 
+function readLocalValue<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    return JSON.parse(window.localStorage.getItem(key) || "") as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function Home() {
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -538,17 +548,20 @@ export default function Home() {
     () => false,
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [splashVisible, setSplashVisible] = useState(true);
   const [active, setActive] = useState("今日");
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [conversationId, setConversationId] = useState("main");
-  const [userName, setUserName] = useState("我");
-  const [agentName, setAgentName] = useState("Vesper");
-  const [userAvatar, setUserAvatar] = useState("");
-  const [agentAvatar, setAgentAvatar] = useState("");
-  const [accent, setAccent] = useState("#b8dce8");
-  const [customBackground, setCustomBackground] = useState("");
+  const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
+  const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: "" });
+  const [userName, setUserName] = useState(initialProfile.userName);
+  const [agentName, setAgentName] = useState(initialProfile.agentName);
+  const [userAvatar, setUserAvatar] = useState(initialProfile.userAvatar);
+  const [agentAvatar, setAgentAvatar] = useState(initialProfile.agentAvatar);
+  const [accent, setAccent] = useState(initialAppearance.accent);
+  const [customBackground, setCustomBackground] = useState(initialAppearance.background);
   const [trackIndex, setTrackIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [tracks, setTracks] = usePersistentDocument<Track[]>("music", []);
@@ -559,6 +572,12 @@ export default function Home() {
       permission: "unknown",
     });
   const currentTrack = tracks[trackIndex];
+  useEffect(() => {
+    if ("serviceWorker" in navigator)
+      void navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const timer = window.setTimeout(() => setSplashVisible(false), 1550);
+    return () => window.clearTimeout(timer);
+  }, []);
   useEffect(() => {
     const audio = globalPlayer.current;
     if (!audio) return;
@@ -576,6 +595,14 @@ export default function Home() {
   };
   useEffect(() => {
     let live = true;
+    let hasLocalProfile = false;
+    let hasLocalAppearance = false;
+    try {
+      const localProfile = window.localStorage.getItem("vesper-local-profile");
+      const localAppearance = window.localStorage.getItem("vesper-local-appearance");
+      if (localProfile) hasLocalProfile = true;
+      if (localAppearance) hasLocalAppearance = true;
+    } catch {}
     fetch(apiUrl("/api/state"), { headers: appHeaders() })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((raw) => {
@@ -592,13 +619,13 @@ export default function Home() {
           | undefined;
         const appearance = docs.appearance?.value as
           { accent?: string; background?: string } | undefined;
-        if (profile) {
+        if (profile && !hasLocalProfile) {
           setUserName(profile.userName || "我");
           setAgentName(profile.agentName || "Vesper");
           setUserAvatar(profile.userAvatar || "");
           setAgentAvatar(profile.agentAvatar || "");
         }
-        if (appearance) {
+        if (appearance && !hasLocalAppearance) {
           setAccent(appearance.accent || "#b8dce8");
           setCustomBackground(appearance.background || "");
         }
@@ -613,6 +640,10 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!storageReady) return;
+    window.localStorage.setItem(
+      "vesper-local-profile",
+      JSON.stringify({ userName, agentName, userAvatar, agentAvatar }),
+    );
     const timer = window.setTimeout(
       () =>
         fetch(apiUrl("/api/state"), {
@@ -629,6 +660,10 @@ export default function Home() {
   }, [storageReady, userName, agentName, userAvatar, agentAvatar]);
   useEffect(() => {
     if (!storageReady) return;
+    window.localStorage.setItem(
+      "vesper-local-appearance",
+      JSON.stringify({ accent, background: customBackground }),
+    );
     const timer = window.setTimeout(
       () =>
         fetch(apiUrl("/api/state"), {
@@ -651,6 +686,11 @@ export default function Home() {
     );
   return (
     <main className="stage">
+      <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
+        <img src="/icon-192-20260823-v6.png" alt="" />
+        <b>VESPER</b>
+        <span />
+      </div>
       <audio
         ref={globalPlayer}
         src={currentTrack?.url}
@@ -899,6 +939,27 @@ async function uploadImage(file: File) {
   });
   if (!response.ok) throw new Error("图片上传失败");
   return (await response.json()) as { key: string; url: string };
+}
+async function localImage(file: File, maxSize = 1200, quality = 0.86) {
+  const source = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("无法读取图片"));
+    };
+    image.src = url;
+  });
+  const scale = Math.min(1, maxSize / Math.max(source.naturalWidth, source.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(source.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(source.naturalHeight * scale));
+  canvas.getContext("2d")?.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
 }
 async function uploadMedia(file: File) {
   const data = new FormData();
@@ -1270,8 +1331,12 @@ function ProfileModal({
     setter: (value: string) => void,
   ) => {
     if (!file) return;
-    const { url } = await uploadImage(file);
-    setter(url);
+    const preview = await localImage(file, 640, 0.88);
+    setter(preview);
+    try {
+      const { url } = await uploadImage(file);
+      setter(url);
+    } catch {}
   };
   return (
     <div className="modal-layer profile-layer">
@@ -2132,7 +2197,7 @@ function SettingsPage({
         <SettingRow
           icon="sparkles"
           title="AI 连接"
-          sub="API Key / MCP / CyberBoss"
+          sub="把 Vesper 工具接入 Codex 等 AI 官端"
           onClick={() => setSelected("AI 连接")}
         />
         <SettingRow
@@ -2206,7 +2271,7 @@ function SettingsPage({
           onClose={() => setSelected(null)}
         />
       ) : selected === "AI 连接" ? (
-        <AiConnectionModal onClose={() => setSelected(null)} />
+        <VesperMcpModal onClose={() => setSelected(null)} />
       ) : selected &&
         ["通知偏好", "关心频率", "记忆权限", "导出与备份"].includes(
           selected,
@@ -2223,12 +2288,79 @@ function SettingsPage({
             type={selected}
             environment={environment}
             onEnvironment={onEnvironment}
-            notificationPermission={notificationPermission}
             onNotificationPermission={setNotificationPermission}
             onClose={() => setSelected(null)}
           />
         )
       )}
+    </div>
+  );
+}
+
+const VESPER_MCP_URL = "https://mcp.vesper.r-vera.com/mcp";
+
+function VesperMcpModal({ onClose }: { onClose: () => void }) {
+  const [token, setToken] = useLocalDocument("mcp-access-token", "");
+  const [draft, setDraft] = useState(token);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const setup = async () => {
+    if (draft.trim().length < 16) {
+      setMessage("访问令牌至少需要 16 位，请使用一段只有你知道的随机口令。");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(VESPER_MCP_URL.replace(/\/mcp$/, "/setup"), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ token: draft.trim() }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error || `配置失败（${response.status}）`);
+      setToken(draft.trim());
+      setMessage("MCP 已启用。把下面的地址和令牌填入 AI 官端即可。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "MCP 配置失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copy = async () => {
+    await navigator.clipboard.writeText(
+      JSON.stringify({ url: VESPER_MCP_URL, headers: { Authorization: `Bearer ${draft.trim()}` } }, null, 2),
+    );
+    setMessage("连接参数已复制");
+  };
+  return (
+    <div className="modal-layer settings-subpage-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal ai-connection-modal">
+        <div className="modal-head">
+          <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
+          <div><small>VESPER MCP</small><h2>AI 连接</h2></div>
+        </div>
+        <div className="connection-symbol"><Icon name="link" /></div>
+        <p>Vesper 会作为一台 MCP 工具服务器，向 Codex 等支持远程 MCP 的 AI 提供便笺、提醒、日记、纪念日、记忆与通知工具。</p>
+        <div className="parameter-form">
+          <label className="profile-field">
+            <span>Streamable HTTP 地址</span>
+            <input value={VESPER_MCP_URL} readOnly />
+          </label>
+          <label className="profile-field">
+            <span>访问令牌</span>
+            <input type="password" value={draft} autoCapitalize="none" autoCorrect="off" placeholder="设置至少 16 位的私密口令" onChange={(event) => setDraft(event.target.value)} />
+          </label>
+        </div>
+        <p className="settings-hint">令牌只保存在此设备和 MCP 服务的哈希值中；AI 官端连接时使用 Authorization: Bearer。</p>
+        {message && <p className="connection-message">{message}</p>}
+        <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "更新连接令牌" : "启用 Vesper MCP"}</button>
+        <button className="reset-background" disabled={!draft.trim()} onClick={() => void copy()}>复制 AI 官端连接参数</button>
+      </section>
     </div>
   );
 }
@@ -2484,10 +2616,14 @@ function AppearanceModal({
   ];
   const upload = async (file: File | undefined) => {
     if (!file) return;
-    const { url } = await uploadImage(file);
+    const preview = await localImage(file, 1600, 0.86);
     onBackground(
-      `linear-gradient(rgba(245,247,247,.18),rgba(245,247,247,.18)),url("${url}")`,
+      `linear-gradient(rgba(245,247,247,.18),rgba(245,247,247,.18)),url("${preview}")`,
     );
+    try {
+      const { url } = await uploadImage(file);
+      onBackground(`linear-gradient(rgba(245,247,247,.18),rgba(245,247,247,.18)),url("${url}")`);
+    } catch {}
   };
   return (
     <div className="modal-layer appearance-layer">
@@ -2810,23 +2946,16 @@ function PreferenceToggle({
   );
 }
 
-function vapidKey(value: string) {
-  const padding = "=".repeat((4 - (value.length % 4)) % 4);
-  const raw = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
-}
 function ConnectionModal({
   type,
   environment,
   onEnvironment,
-  notificationPermission,
   onNotificationPermission,
   onClose,
 }: {
   type: string;
   environment: EnvironmentSnapshot;
   onEnvironment: (value: EnvironmentSnapshot) => void;
-  notificationPermission: NotificationPermission;
   onNotificationPermission: (value: NotificationPermission) => void;
   onClose: () => void;
 }) {
@@ -2867,13 +2996,7 @@ function ConnectionModal({
       { label: "MCP 服务地址", key: "url", placeholder: "https://…" },
       { label: "授权令牌", key: "token", type: "password" },
     ],
-    "Web Push": [
-      {
-        label: "VAPID 公钥",
-        key: "vapidPublicKey",
-        placeholder: "由推送服务端提供",
-      },
-    ],
+    "Web Push": [],
   };
   const fields = definitions[type] || [];
   const save = () => {
@@ -2901,19 +3024,27 @@ function ConnectionModal({
         });
         if (!response.ok) throw new Error(`连接失败（${response.status}）`);
       } else if (type === "Web Push") {
-        const result = await Notification.requestPermission();
-        onNotificationPermission(result);
-        if (result !== "granted") throw new Error("通知权限未授权");
-        const registration = await navigator.serviceWorker.ready;
-        if (form.vapidPublicKey)
-          await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: vapidKey(form.vapidPublicKey),
-          });
-        await registration.showNotification("Vesper", {
-          body: "通知工具工作正常",
-          icon: "./icon-192-20260823-v6.png",
+        if (!window.matchMedia("(display-mode: standalone)").matches && /iPhone|iPad|iPod/.test(navigator.userAgent))
+          throw new Error("iPhone 需要先将 Vesper 添加到主屏幕，再从 PWA 内启用推送");
+        await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        const configResponse = await fetch(apiUrl("/api/push"));
+        const config = (await configResponse.json()) as { configured?: boolean; publicKey?: string };
+        if (!configResponse.ok || !config.configured || !config.publicKey)
+          throw new Error("推送服务端尚未完成配置");
+        const result = await subscribe(config.publicKey);
+        if (result.status === "denied") {
+          onNotificationPermission("denied");
+          throw new Error("通知权限未授权");
+        }
+        if (result.status === "unsupported") throw new Error("当前环境不支持 Web Push");
+        onNotificationPermission("granted");
+        const subscription = serializeSubscription(result.subscription);
+        const response = await fetch(apiUrl("/api/push"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "test", subscription }),
         });
+        if (!response.ok) throw new Error("订阅已建立，但服务端测试推送失败");
       } else {
         save();
         setMessage("TTS 参数已保存；CyberBoss 上线后使用这些参数");
@@ -3002,6 +3133,9 @@ function ConnectionModal({
           </div>
         ) : (
           <div className="parameter-form">
+            {type === "Web Push" && (
+              <p className="settings-hint">Vesper 会自动使用 Cloudflare 推送服务。授权后将发送一条真实测试通知，不需要手工填写 VAPID 参数。</p>
+            )}
             {fields.map((field) => (
               <label className="profile-field" key={field.key}>
                 <span>{field.label}</span>

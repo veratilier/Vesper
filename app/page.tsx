@@ -577,8 +577,65 @@ export default function Home() {
   useEffect(() => {
     if ("serviceWorker" in navigator)
       void navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    const timer = window.setTimeout(() => setSplashVisible(false), 1550);
+    const timer = window.setTimeout(() => setSplashVisible(false), 3200);
     return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const code = query.get("code");
+    const state = query.get("state");
+    const raw = window.sessionStorage.getItem("vesper-mcp-oauth-pending");
+    if (!code || !state || !raw) return;
+    try {
+      const pending = JSON.parse(raw) as {
+        serverId: string;
+        state: string;
+        verifier: string;
+        tokenUrl: string;
+        clientId: string;
+        clientSecret?: string;
+        redirectUri: string;
+      };
+      if (pending.state !== state) throw new Error("OAuth state 不匹配");
+      void fetch("/api/mcp/oauth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...pending, code }),
+      })
+        .then(async (response) => {
+          const result = (await response.json()) as { accessToken?: string; error?: string };
+          if (!response.ok || !result.accessToken)
+            throw new Error(result.error || "OAuth 授权失败");
+          const key = "vesper-local-external-mcp-servers";
+          const servers = readLocalValue<ExternalMcpEntry[]>(key, []);
+          window.localStorage.setItem(
+            key,
+            JSON.stringify(
+              servers.map((server) =>
+                server.id === pending.serverId
+                  ? { ...server, token: result.accessToken, oauthStatus: "authorized" }
+                  : server,
+              ),
+            ),
+          );
+          window.sessionStorage.setItem("vesper-mcp-oauth-result", "授权成功");
+        })
+        .catch((reason) =>
+          window.sessionStorage.setItem(
+            "vesper-mcp-oauth-result",
+            reason instanceof Error ? reason.message : "OAuth 授权失败",
+          ),
+        )
+        .finally(() => {
+          window.sessionStorage.removeItem("vesper-mcp-oauth-pending");
+          window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        });
+    } catch (reason) {
+      window.sessionStorage.setItem(
+        "vesper-mcp-oauth-result",
+        reason instanceof Error ? reason.message : "OAuth 授权失败",
+      );
+    }
   }, []);
   useEffect(() => {
     const audio = globalPlayer.current;
@@ -689,9 +746,11 @@ export default function Home() {
   return (
     <main className="stage">
       <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
-        <img src="/icon-192-20260823-v8.png" alt="" />
-        <b>VESPER</b>
-        <span />
+        <div className="splash-creatures">
+          <img className="splash-fox" src="/splash-fox-resting.webp" alt="" />
+          <img className="splash-snake" src="/splash-snake-coil.webp" alt="" />
+        </div>
+        <img className="splash-final" src="/icon-512-20260823-v8.png" alt="" />
       </div>
       <audio
         ref={globalPlayer}
@@ -2444,18 +2503,90 @@ type ExternalMcpEntry = {
   url: string;
   token: string;
   enabled: boolean;
+  authMode?: "none" | "oauth";
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string;
+  oauthStatus?: "authorized" | "pending";
 };
 
 function ExternalMcpModal({ onClose }: { onClose: () => void }) {
   const [servers, setServers] = useLocalDocument<ExternalMcpEntry[]>("external-mcp-servers", []);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const value = window.sessionStorage.getItem("vesper-mcp-oauth-result") || "";
+    window.sessionStorage.removeItem("vesper-mcp-oauth-result");
+    return value;
+  });
+  const [testingId, setTestingId] = useState("");
   const add = () =>
     setServers((current) => [
       ...current,
-      { id: crypto.randomUUID(), name: "", url: "", token: "", enabled: true },
+      { id: crypto.randomUUID(), name: "", url: "", token: "", enabled: true, authMode: "none" },
     ]);
   const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
     setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  const authorize = async (server: ExternalMcpEntry) => {
+    if (!server.authorizationUrl || !server.tokenUrl || !server.clientId) {
+      setMessage("请先填写授权地址、Token 地址和 Client ID");
+      return;
+    }
+    const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replaceAll("=", "");
+    const state = crypto.randomUUID();
+    const redirectUri = `${window.location.origin}/?mcp-oauth=1`;
+    window.sessionStorage.setItem(
+      "vesper-mcp-oauth-pending",
+      JSON.stringify({
+        serverId: server.id,
+        state,
+        verifier,
+        tokenUrl: server.tokenUrl,
+        clientId: server.clientId,
+        clientSecret: server.clientSecret,
+        redirectUri,
+      }),
+    );
+    update(server.id, { oauthStatus: "pending" });
+    const target = new URL(server.authorizationUrl);
+    target.searchParams.set("response_type", "code");
+    target.searchParams.set("client_id", server.clientId);
+    target.searchParams.set("redirect_uri", redirectUri);
+    target.searchParams.set("state", state);
+    target.searchParams.set("code_challenge", challenge);
+    target.searchParams.set("code_challenge_method", "S256");
+    if (server.scopes) target.searchParams.set("scope", server.scopes);
+    if (server.url) target.searchParams.set("resource", server.url);
+    window.location.assign(target.toString());
+  };
+  const test = async (server: ExternalMcpEntry) => {
+    if (!server.url) {
+      setMessage("请先填写 MCP 服务地址");
+      return;
+    }
+    setTestingId(server.id);
+    setMessage("");
+    try {
+      const response = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: server.url, token: server.token }),
+      });
+      const result = (await response.json()) as { serverName?: string; toolCount?: number; error?: string };
+      if (!response.ok) throw new Error(result.error || "MCP 连接失败");
+      setMessage(`连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}`);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "MCP 连接失败");
+    } finally {
+      setTestingId("");
+    }
+  };
   return (
     <div className="modal-layer settings-subpage-layer">
       <button className="modal-scrim" onClick={onClose} />
@@ -2476,7 +2607,26 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
               </div>
               <label className="profile-field"><span>名称</span><input value={server.name} placeholder="例如：外置记忆库" onChange={(event) => update(server.id, { name: event.target.value })} /></label>
               <label className="profile-field"><span>Streamable HTTP / SSE 地址</span><input value={server.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { url: event.target.value })} /></label>
-              <label className="profile-field"><span>授权令牌</span><input type="password" value={server.token} placeholder="Bearer token（可选）" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { token: event.target.value })} /></label>
+              <div className="mcp-auth-choice">
+                <span>OAuth 授权</span>
+                <div>
+                  <button className={(server.authMode || "none") === "none" ? "selected" : ""} onClick={() => update(server.id, { authMode: "none" })}>无</button>
+                  <button className={server.authMode === "oauth" ? "selected" : ""} onClick={() => update(server.id, { authMode: "oauth" })}>有</button>
+                </div>
+              </div>
+              {server.authMode === "oauth" ? (
+                <div className="mcp-oauth-fields">
+                  <label className="profile-field"><span>授权页面 URL</span><input value={server.authorizationUrl || ""} placeholder="https://provider.com/oauth/authorize" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { authorizationUrl: event.target.value })} /></label>
+                  <label className="profile-field"><span>Token URL</span><input value={server.tokenUrl || ""} placeholder="https://provider.com/oauth/token" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { tokenUrl: event.target.value })} /></label>
+                  <label className="profile-field"><span>Client ID</span><input value={server.clientId || ""} autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { clientId: event.target.value })} /></label>
+                  <label className="profile-field"><span>Client Secret（可选）</span><input type="password" value={server.clientSecret || ""} autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { clientSecret: event.target.value })} /></label>
+                  <label className="profile-field"><span>Scopes</span><input value={server.scopes || ""} placeholder="openid profile" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { scopes: event.target.value })} /></label>
+                  <button className="mcp-oauth-action" onClick={() => void authorize(server)}>{server.oauthStatus === "authorized" ? "重新授权" : "前往授权页面"}</button>
+                </div>
+              ) : (
+                <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={server.token} placeholder="无需授权可留空" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { token: event.target.value })} /></label>
+              )}
+              <button className="mcp-test-action" disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中…" : "测试连接"}</button>
               <button className={server.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => update(server.id, { enabled: !server.enabled })}><span>{server.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
             </article>
           ))}
@@ -3046,6 +3196,7 @@ function FunctionalSettingsModal({
         )}
         {type === "关心频率" && (
           <div className="choice-list">
+            <p className="settings-hint">控制 Agent 主动发起关心、问候或留下便笺的频率。它不是普通提醒；只有连接了可主动运行的 Agent，并开启 Web Push 后，才能在你没有打开 Vesper 时主动通知。</p>
             {(
               [
                 ["daily", "每天一次"],

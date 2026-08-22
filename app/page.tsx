@@ -577,7 +577,9 @@ export default function Home() {
   useEffect(() => {
     if ("serviceWorker" in navigator)
       void navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    const timer = window.setTimeout(() => setSplashVisible(false), 3200);
+    // Let the complete creature-to-mark sequence finish before fading the
+    // viewport overlay. The CSS animation lasts three seconds.
+    const timer = window.setTimeout(() => setSplashVisible(false), 3400);
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {

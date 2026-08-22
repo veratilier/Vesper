@@ -1,21 +1,21 @@
 # Vesper
 
-Vesper is a mobile-first personal companion PWA built with Next.js-compatible
-App Router, Vinext, React, Cloudflare Workers, and D1.
+Vesper is a mobile-first personal companion PWA. Its production setup mirrors
+Rune: GitHub Pages serves the static PWA, while a Cloudflare Worker and D1
+provide the data API.
 
 ## Entry points
 
-- `app/page.tsx` — the home page and client UI (the framework equivalent of
-  `index.html`)
-- `app/layout.tsx` — document metadata, viewport, PWA manifest, and root layout
+- `static-index.html` / `static-entry.tsx` — GitHub Pages entry point
+- `app/page.tsx` — the shared React UI
 - `app/api/state/route.ts` — D1-backed application state API
 - `app/api/media/route.ts` — media upload API
 - `public/manifest.webmanifest` — PWA manifest
-- `wrangler.production.jsonc` — direct Cloudflare Worker deployment
+- `.github/workflows/deploy-pages.yml` — automatic Pages deployment
+- `wrangler.production.jsonc` — API Worker deployment
 
-This is not a static HTML project. Vinext generates the browser HTML and Worker
-entry files during `npm run build`, so generated `dist/` files are intentionally
-excluded from Git.
+The UI has two build targets. `npm run build:pages` produces the static site in
+`github-pages-spa/`; `npm run build` produces the API Worker in `dist/`.
 
 ## Local development
 
@@ -30,12 +30,12 @@ Open `http://localhost:3000`.
 
 ```bash
 npm run build
+npm run build:pages
 ```
 
-## Cloudflare deployment
+## Deployment
 
-The production Worker uses `wrangler.production.jsonc` and the D1 migration in
-`migrations/0001_vesper_documents.sql`.
+Pushing `main` deploys the PWA to GitHub Pages. The API is deployed separately:
 
 ```bash
 npm run build
@@ -43,4 +43,6 @@ npx wrangler d1 execute vesper-db --remote --file migrations/0001_vesper_documen
 npx wrangler deploy --config wrangler.production.jsonc
 ```
 
-Production: <https://vesper.r-vera.com>
+PWA: <https://vesper.r-vera.com>
+
+API: <https://api.vesper.r-vera.com>

@@ -662,7 +662,7 @@ export default function Home() {
           {active === "今日" ? (
             <div className="wordmark">
               <span className="home-app-mark">
-                <img src="./icon-192.png" alt="" />
+                <img src="./icon-192-20260823-v5.png" alt="" />
               </span>
               <b>VESPER</b>
             </div>
@@ -770,7 +770,7 @@ export default function Home() {
             <div className="drawer-head">
               <div className="drawer-brand">
                 <span className="drawer-app-mark">
-                  <img src="./icon-192.png" alt="" />
+                  <img src="./icon-192-20260823-v5.png" alt="" />
                 </span>
                 <div>
                   <b>VESPER</b>
@@ -2422,7 +2422,7 @@ function ConnectionModal({
           });
         await registration.showNotification("Vesper", {
           body: "通知工具工作正常",
-          icon: "./icon-192.png",
+          icon: "./icon-192-20260823-v5.png",
         });
       } else {
         save();
@@ -2575,7 +2575,7 @@ function PetPage() {
         text="互动状态会真实保存。"
       />
       <section className="surface pet-tool">
-        <img src="./icon-192.png" alt="Vesper 桌宠" />
+        <img src="./icon-192-20260823-v5.png" alt="Vesper 桌宠" />
         <div>
           <span>心情 {pet.mood}%</span>
           <progress max="100" value={pet.mood} />

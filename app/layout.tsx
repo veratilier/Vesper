@@ -22,9 +22,19 @@ export const metadata: Metadata = {
     title: "Vesper",
   },
   icons: {
-    icon: [{ url: "/favicon.png", sizes: "64x64", type: "image/png" }],
+    icon: [
+      {
+        url: "/favicon-20260823-v5.png",
+        sizes: "64x64",
+        type: "image/png",
+      },
+    ],
     apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      {
+        url: "/apple-touch-icon-20260823-v5.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
     ],
   },
 };

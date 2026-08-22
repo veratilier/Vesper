@@ -22,7 +22,7 @@ function Notes() {
       },
     ]);
   return (
-    <div className={selected ? "page-body settings-page detail-active" : "page-body settings-page"}>
+    <div className="page-body">
       <PageIntro
         eyebrow="QUICK NOTES"
         title="便笺"
@@ -297,6 +297,7 @@ const iconPaths: Record<string, string[]> = {
   lock: ["M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 8 0v4"],
   edit: ["M12 20h9", "m16 4 4 4L8 20H4v-4z"],
   more: ["M5 12h.01M12 12h.01M19 12h.01"],
+  search: ["M11 19a8 8 0 1 1 5.65-2.35L22 22", "m16.65 16.65 4.2 4.2"],
   wifi: ["M5 12a10 10 0 0 1 14 0", "M8 15a6 6 0 0 1 8 0", "M12 19h.01"],
 };
 Object.assign(iconPaths, {
@@ -343,6 +344,7 @@ Object.assign(iconPaths, {
   ],
 });
 function Icon({ name }: { name: string }) {
+  const paths = iconPaths[name] || iconPaths.sparkles;
   return (
     <svg
       className="ui-icon"
@@ -354,12 +356,12 @@ function Icon({ name }: { name: string }) {
       aria-hidden="true"
     >
       <g className="icon-depth">
-        {iconPaths[name].map((d, i) => (
+        {paths.map((d, i) => (
           <path d={d} key={`d${i}`} />
         ))}
       </g>
       <g>
-        {iconPaths[name].map((d, i) => (
+        {paths.map((d, i) => (
           <path d={d} key={i} />
         ))}
       </g>
@@ -731,9 +733,11 @@ export default function Home() {
             <div className="chat-header-actions">
               <button
                 aria-label="新建对话"
-                onClick={() =>
-                  setConversationId(`chat-${Date.now()}-${crypto.randomUUID()}`)
-                }
+                onClick={() => {
+                  const id = `chat-${Date.now()}-${crypto.randomUUID()}`;
+                  rememberConversation(id, "新对话");
+                  setConversationId(id);
+                }}
               >
                 <Icon name="plus" />
               </button>
@@ -1151,6 +1155,23 @@ type ConversationSummary = {
   messageCount: number;
 };
 
+function rememberConversation(id: string, title = "新对话", messageCount?: number) {
+  if (typeof window === "undefined") return;
+  const key = "vesper-local-conversation-index";
+  const current = readLocalValue<ConversationSummary[]>(key, []);
+  const existing = current.find((item) => item.id === id);
+  const next = [
+    {
+      id,
+      title: title || existing?.title || "新对话",
+      updatedAt: new Date().toISOString(),
+      messageCount: messageCount ?? Math.max(1, (existing?.messageCount || 0) + 1),
+    },
+    ...current.filter((item) => item.id !== id),
+  ];
+  window.localStorage.setItem(key, JSON.stringify(next.slice(0, 100)));
+}
+
 function HistoryModal({
   activeId,
   onSelect,
@@ -1160,7 +1181,9 @@ function HistoryModal({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>(() =>
+    readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []),
+  );
   const [query, setQuery] = useState("");
   useEffect(() => {
     const token = deviceToken();
@@ -1171,14 +1194,15 @@ function HistoryModal({
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data) =>
-        setConversations(
-          (data as { conversations: ConversationSummary[] }).conversations,
-        ),
+        setConversations((current) => {
+          const remote = (data as { conversations?: ConversationSummary[] }).conversations || [];
+          return [...remote, ...current.filter((local) => !remote.some((item) => item.id === local.id))];
+        }),
       )
       .catch(() => {});
   }, []);
   const visible = conversations.filter((item) =>
-    item.title.toLowerCase().includes(query.trim().toLowerCase()),
+    String(item.title || "未命名对话").toLowerCase().includes(query.trim().toLowerCase()),
   );
   return (
     <div className="modal-layer history-layer">
@@ -1462,6 +1486,10 @@ function ConnectedChat({
   const [pending, setPending] = useState<{ file: File; preview: string }[]>([]);
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [connections, setConnections] = useLocalDocument<AiConnectionStore>(
+    "ai-connections-v1",
+    { active: "api", api: {}, mcp: {}, cyberboss: {} },
+  );
   const streamEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -1510,6 +1538,7 @@ function ConnectedChat({
       if (response.status === 401)
         throw new Error("请先在设置 → AI 连接中完成授权");
       if (!response.ok) throw new Error("消息发送失败");
+      rememberConversation(conversationId, content.slice(0, 28) || "附件");
       pending.forEach((item) => URL.revokeObjectURL(item.preview));
       setPending([]);
       await refresh();
@@ -1786,6 +1815,24 @@ function ConnectedChat({
               event.target.value = "";
             }}
           />
+          <label className="compose-connection" aria-label="选择 AI 连接方式">
+            <i className={`connection-dot ${connections.active}`} />
+            <select
+              value={connections.active}
+              onChange={(event) => {
+                const active = event.target.value as AiConnectionStore["active"];
+                setConnections({ ...connections, active });
+                const token = connections.cyberboss.deviceToken?.trim();
+                if (active === "cyberboss" && token)
+                  window.localStorage.setItem("vesper-device-token", token);
+              }}
+            >
+              <option value="api">API Key</option>
+              <option value="mcp">MCP</option>
+              <option value="cyberboss">CyberBoss</option>
+            </select>
+            <Icon name="chevron" />
+          </label>
           <span>{busy ? "发送中…" : recording ? "录音中，再点一次结束" : ""}</span>
           <button
             className={listening ? "active" : ""}
@@ -2187,7 +2234,7 @@ function SettingsPage({
         ? "通知被拒绝"
         : "尚未授权";
   return (
-    <div className="page-body">
+    <div className={selected ? "page-body settings-page detail-active" : "page-body settings-page"}>
       <PageIntro
         eyebrow="PREFERENCES"
         title="设置"
@@ -2197,8 +2244,20 @@ function SettingsPage({
         <SettingRow
           icon="sparkles"
           title="AI 连接"
-          sub="把 Vesper 工具接入 Codex 等 AI 官端"
+          sub="API Key / MCP / CyberBoss"
           onClick={() => setSelected("AI 连接")}
+        />
+        <SettingRow
+          icon="link"
+          title="MCP 工具"
+          sub="接入第三方工具与服务"
+          onClick={() => setSelected("MCP 工具")}
+        />
+        <SettingRow
+          icon="library"
+          title="Vesper MCP"
+          sub="把 Vesper 功能提供给 Codex 等 AI 官端"
+          onClick={() => setSelected("Vesper MCP")}
         />
         <SettingRow
           icon="volume"
@@ -2271,6 +2330,10 @@ function SettingsPage({
           onClose={() => setSelected(null)}
         />
       ) : selected === "AI 连接" ? (
+        <AiConnectionModal onClose={() => setSelected(null)} />
+      ) : selected === "MCP 工具" ? (
+        <ExternalMcpModal onClose={() => setSelected(null)} />
+      ) : selected === "Vesper MCP" ? (
         <VesperMcpModal onClose={() => setSelected(null)} />
       ) : selected &&
         ["通知偏好", "关心频率", "记忆权限", "导出与备份"].includes(
@@ -2298,6 +2361,56 @@ function SettingsPage({
 }
 
 const VESPER_MCP_URL = "https://mcp.vesper.r-vera.com/mcp";
+
+type ExternalMcpEntry = {
+  id: string;
+  name: string;
+  url: string;
+  token: string;
+  enabled: boolean;
+};
+
+function ExternalMcpModal({ onClose }: { onClose: () => void }) {
+  const [servers, setServers] = useLocalDocument<ExternalMcpEntry[]>("external-mcp-servers", []);
+  const [message, setMessage] = useState("");
+  const add = () =>
+    setServers((current) => [
+      ...current,
+      { id: crypto.randomUUID(), name: "", url: "", token: "", enabled: true },
+    ]);
+  const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
+    setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  return (
+    <div className="modal-layer settings-subpage-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal external-mcp-modal">
+        <div className="modal-head">
+          <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
+          <div><small>TOOL CONNECTIONS</small><h2>MCP 工具</h2></div>
+          <button onClick={add} aria-label="添加 MCP"><Icon name="plus" /></button>
+        </div>
+        <p>在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
+        <div className="mcp-server-list">
+          {!servers.length && <EmptyState text="还没有接入第三方 MCP。" />}
+          {servers.map((server, index) => (
+            <article className="mcp-server-card" key={server.id}>
+              <div className="mcp-server-head">
+                <b>MCP {String(index + 1).padStart(2, "0")}</b>
+                <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}><Icon name="close" /></button>
+              </div>
+              <label className="profile-field"><span>名称</span><input value={server.name} placeholder="例如：外置记忆库" onChange={(event) => update(server.id, { name: event.target.value })} /></label>
+              <label className="profile-field"><span>Streamable HTTP / SSE 地址</span><input value={server.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { url: event.target.value })} /></label>
+              <label className="profile-field"><span>授权令牌</span><input type="password" value={server.token} placeholder="Bearer token（可选）" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { token: event.target.value })} /></label>
+              <button className={server.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => update(server.id, { enabled: !server.enabled })}><span>{server.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
+            </article>
+          ))}
+        </div>
+        {message && <p className="connection-message">{message}</p>}
+        <button className="save-profile" onClick={() => setMessage("MCP 工具目录已保存在此设备")}>保存工具目录</button>
+      </section>
+    </div>
+  );
+}
 
 function VesperMcpModal({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useLocalDocument("mcp-access-token", "");
@@ -2342,7 +2455,7 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
       <section className="connection-modal ai-connection-modal">
         <div className="modal-head">
           <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
-          <div><small>VESPER MCP</small><h2>AI 连接</h2></div>
+          <div><small>VESPER MCP</small><h2>Vesper MCP</h2></div>
         </div>
         <div className="connection-symbol"><Icon name="link" /></div>
         <p>Vesper 会作为一台 MCP 工具服务器，向 Codex 等支持远程 MCP 的 AI 提供便笺、提醒、日记、纪念日、记忆与通知工具。</p>

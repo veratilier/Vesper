@@ -1,4 +1,4 @@
-const CACHE = "vesper-shell-v8-push";
+const CACHE = "vesper-shell-v9-video-wake";
 const SHELL = [
   "./",
   "./manifest-v8.webmanifest",
@@ -7,6 +7,7 @@ const SHELL = [
   "./icon-maskable-512-20260823-v8.png",
   "./apple-touch-icon-20260823-v8.png",
   "./favicon-20260823-v8.png",
+  "./vesper-splash.mp4",
 ];
 
 self.addEventListener("install", (event) => {

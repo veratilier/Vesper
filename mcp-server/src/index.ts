@@ -75,7 +75,7 @@ function createServer(env: Env) {
     inputSchema: { text: z.string().min(1), id: z.string().optional(), tone: z.string().optional() },
   }, async ({ text: noteText, id, tone }) => {
     const notes = await readDoc<Note[]>(env.DB, "notes", []);
-    const entry = { id: id || crypto.randomUUID(), text: noteText, kind: "agent", tone: tone || "cool", createdAt: now() };
+    const entry: Note = { id: id || crypto.randomUUID(), text: noteText, kind: "agent", tone: tone || "cool", createdAt: now() };
     const index = notes.findIndex((item) => item.id === entry.id);
     if (index >= 0) notes[index] = { ...notes[index], ...entry }; else notes.push(entry);
     await writeDoc(env.DB, "notes", notes);

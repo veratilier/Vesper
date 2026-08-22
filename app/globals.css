@@ -4659,3 +4659,138 @@ body {
   .vesper-splash img,
   .vesper-splash > span { animation: none; }
 }
+
+/* iOS standalone viewport: fill the real screen without frosted caps */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+
+.app-shell {
+  height: 100%;
+  min-height: 100%;
+}
+
+.app-header {
+  height: calc(54px + var(--safe-top));
+  padding-top: var(--safe-top);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.scroll-view {
+  padding-top: calc(68px + var(--safe-top));
+  padding-bottom: max(12px, var(--safe-bottom));
+}
+
+.compose-connection {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 78px;
+  height: 30px;
+  padding: 0 20px 0 9px;
+  border-radius: 15px;
+  background: rgba(225, 228, 226, .78);
+  color: #424746;
+}
+
+.compose-connection select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 10px !important;
+  font-weight: 600;
+}
+
+.compose-connection > svg {
+  position: absolute;
+  right: 7px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(90deg);
+  pointer-events: none;
+}
+
+.connection-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #858b8a;
+}
+
+.connection-dot.api { background: #657e86; }
+.connection-dot.mcp { background: #7c7691; }
+.connection-dot.cyberboss { background: #667d70; }
+
+.mcp-server-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.mcp-server-card {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  border: 1px solid rgba(73, 88, 92, .12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .7);
+}
+
+.mcp-server-head,
+.mcp-enable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mcp-server-head b {
+  font: 500 10px/1.2 ui-monospace, monospace;
+  letter-spacing: .12em;
+  color: #657377;
+}
+
+.mcp-server-head button,
+.mcp-enable {
+  border: 0;
+  background: transparent;
+}
+
+.mcp-server-head svg { width: 14px; height: 14px; }
+.mcp-enable { padding: 4px 0; color: #7d8687; }
+.mcp-enable i { width: 32px; height: 18px; padding: 2px; border-radius: 10px; background: #d9dddc; }
+.mcp-enable i u { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s ease; }
+.mcp-enable.on i { background: #9eafb1; }
+.mcp-enable.on i u { transform: translateX(14px); }
+
+@media (display-mode: standalone) {
+  html,
+  body,
+  .stage,
+  .app-shell {
+    height: 100%;
+    min-height: 100%;
+  }
+
+  .scroll-view {
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+}

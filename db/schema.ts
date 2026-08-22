@@ -29,13 +29,17 @@ export const schemaStatements = [
 ];
 
 export const allowedDocumentKeys = new Set([
-  'profile',
-  'appearance',
-  'notes',
-  'todos',
-  'anniversaries',
-  'diary',
-  'conversations',
-  'settings',
-  'environment',
+  "profile",
+  "appearance",
+  "notes",
+  "todos",
+  "anniversaries",
+  "diary",
+  "conversations",
+  "settings",
+  "environment",
+  "music",
+  "magicBox",
+  "pet",
+  "connections",
 ]);

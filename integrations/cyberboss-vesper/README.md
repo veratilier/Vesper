@@ -16,6 +16,7 @@ CYBERBOSS_VESPER_BASE_URL=https://api.vesper.r-vera.com
 CYBERBOSS_VESPER_TOKEN=use_the_worker_bridge_secret
 CYBERBOSS_VESPER_USER_ID=vesper-user
 CYBERBOSS_ALLOWED_USER_IDS=vesper-user
+CYBERBOSS_CHECKIN_USER_ID=vesper-user
 CYBERBOSS_WORKSPACE_ROOT=/absolute/path/to/your/project
 ```
 

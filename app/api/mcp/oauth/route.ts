@@ -11,6 +11,7 @@ export async function POST(request: Request) {
       clientId?: string;
       clientSecret?: string;
       redirectUri?: string;
+      resource?: string;
     };
     const tokenUrl = new URL(body.tokenUrl || "");
     if (tokenUrl.protocol !== "https:")
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       code_verifier: body.verifier,
     });
     if (body.clientSecret) form.set("client_secret", body.clientSecret);
+    if (body.resource) form.set("resource", body.resource);
     const response = await fetch(tokenUrl, {
       method: "POST",
       headers: {

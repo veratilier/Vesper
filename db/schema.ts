@@ -48,4 +48,5 @@ export const allowedDocumentKeys = new Set([
   "magicBox",
   "pet",
   "connections",
+  "externalMemory",
 ]);

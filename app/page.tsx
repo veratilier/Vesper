@@ -574,10 +574,11 @@ export default function Home() {
       permission: "unknown",
     });
   const currentTrack = tracks[trackIndex];
+  useAutonomousWake(agentName);
   useEffect(() => {
     if ("serviceWorker" in navigator)
       void navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    const timer = window.setTimeout(() => setSplashVisible(false), 3200);
+    const timer = window.setTimeout(() => setSplashVisible(false), 6200);
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
@@ -595,6 +596,7 @@ export default function Home() {
         clientId: string;
         clientSecret?: string;
         redirectUri: string;
+        resource?: string;
       };
       if (pending.state !== state) throw new Error("OAuth state 不匹配");
       void fetch("/api/mcp/oauth", {
@@ -746,11 +748,16 @@ export default function Home() {
   return (
     <main className="stage">
       <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
-        <div className="splash-creatures">
-          <img className="splash-fox" src="/splash-fox-resting.webp" alt="" />
-          <img className="splash-snake" src="/splash-snake-coil.webp" alt="" />
-        </div>
-        <img className="splash-final" src="/icon-512-20260823-v8.png" alt="" />
+        <video
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          poster="/icon-512-20260823-v8.png"
+          onEnded={() => setSplashVisible(false)}
+        >
+          <source src="/vesper-splash.mp4" type="video/mp4" />
+        </video>
       </div>
       <audio
         ref={globalPlayer}
@@ -965,6 +972,7 @@ export default function Home() {
           <VoiceCallModal
             agentName={agentName}
             agentAvatar={agentAvatar}
+            conversationId={conversationId}
             onClose={() => setVoiceCallOpen(false)}
           />
         )}
@@ -1036,17 +1044,22 @@ async function uploadMedia(file: File) {
   return (await response.json()) as ChatAttachment;
 }
 function usePersistentDocument<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(initial);
+  const storageKey = `vesper-document-${key}`;
+  const [value, setValue] = useState<T>(() => readLocalValue<T>(storageKey, initial));
   const [ready, setReady] = useState(false);
+  const lastSerialized = useRef(
+    typeof window === "undefined" ? "" : window.localStorage.getItem(storageKey) || "",
+  );
   useEffect(() => {
     let live = true;
+    const hasLocal = window.localStorage.getItem(storageKey) !== null;
     fetch(apiUrl(`/api/state?key=${encodeURIComponent(key)}`), {
       headers: appHeaders(),
     })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((raw) => {
         const data = raw as { value: unknown };
-        if (live && data.value !== null) setValue(data.value as T);
+        if (live && !hasLocal && data.value !== null) setValue(data.value as T);
       })
       .catch(() => {})
       .finally(() => {
@@ -1055,9 +1068,27 @@ function usePersistentDocument<T>(key: string, initial: T) {
     return () => {
       live = false;
     };
+  }, [key, storageKey]);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const detail = (event as CustomEvent<{ key: string; value: T }>).detail;
+      if (detail?.key === key) {
+        lastSerialized.current = JSON.stringify(detail.value);
+        setValue(detail.value);
+      }
+    };
+    window.addEventListener("vesper-document-change", receive);
+    return () => window.removeEventListener("vesper-document-change", receive);
   }, [key]);
   useEffect(() => {
     if (!ready) return;
+    const serialized = JSON.stringify(value);
+    if (lastSerialized.current === serialized) return;
+    lastSerialized.current = serialized;
+    window.localStorage.setItem(storageKey, serialized);
+    window.dispatchEvent(
+      new CustomEvent("vesper-document-change", { detail: { key, value } }),
+    );
     const timer = window.setTimeout(() => {
       fetch(apiUrl("/api/state"), {
         method: "PUT",
@@ -1066,7 +1097,7 @@ function usePersistentDocument<T>(key: string, initial: T) {
       }).catch(() => {});
     }, 260);
     return () => window.clearTimeout(timer);
-  }, [key, ready, value]);
+  }, [key, ready, storageKey, value]);
   return [value, setValue] as const;
 }
 function useLocalDocument<T>(key: string, initial: T) {
@@ -1083,6 +1114,106 @@ function useLocalDocument<T>(key: string, initial: T) {
     window.localStorage.setItem(storageKey, JSON.stringify(value));
   }, [storageKey, value]);
   return [value, setValue] as const;
+}
+
+function wakeThreshold() {
+  const sample = new Uint32Array(1);
+  crypto.getRandomValues(sample);
+  const unit = Math.max(1 / 2 ** 32, sample[0] / 2 ** 32);
+  return -Math.log(unit);
+}
+
+function useAutonomousWake(agentName: string) {
+  const [preferences] = usePersistentDocument<VesperPreferences>("settings", defaultPreferences);
+  const [, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
+  useEffect(() => {
+    if (preferences.careFrequency === "off") return;
+    let running = false;
+    const key = "vesper-wake-runtime-v1";
+    const check = async () => {
+      if (running || document.visibilityState !== "visible") return;
+      const now = Date.now();
+      const hour = new Date(now).getHours();
+      if (hour >= 23 || hour < 8) return;
+      const state = readLocalValue(key, {
+        checkedAt: now,
+        cumulative: 0,
+        threshold: wakeThreshold(),
+        lastWakeAt: 0,
+        generation: 0,
+      });
+      const elapsedHours = Math.min(6, Math.max(0, now - state.checkedAt) / 3_600_000);
+      const rate = preferences.careFrequency === "daily" ? 1 / 14 : 1 / 72;
+      const cumulative = state.cumulative + elapsedHours * rate;
+      const minimumGap = preferences.careFrequency === "daily" ? 8 : 36;
+      const gapHours = (now - state.lastWakeAt) / 3_600_000;
+      if (cumulative < state.threshold || gapHours < minimumGap) {
+        window.localStorage.setItem(key, JSON.stringify({ ...state, checkedAt: now, cumulative }));
+        return;
+      }
+      const generation = state.generation + 1;
+      window.localStorage.setItem(key, JSON.stringify({
+        checkedAt: now,
+        cumulative: 0,
+        threshold: wakeThreshold(),
+        lastWakeAt: now,
+        generation,
+      }));
+      running = true;
+      try {
+        const connections = readLocalValue<AiConnectionStore>("vesper-local-ai-connections-v1", {
+          active: "api", api: {}, mcp: {}, cyberboss: {},
+        });
+        if (connections.active === "cyberboss") return;
+        const configured = connections.active === "api"
+          ? Boolean(connections.api.baseUrl && connections.api.apiKey && connections.api.model)
+          : Boolean(connections.mcp.url);
+        if (!configured) return;
+        const response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            mode: connections.active,
+            connection: connections[connections.active],
+            conversationId: "autonomous-wake",
+            messages: [{
+              role: "user",
+              content: "你是 Vesper。现在是一次自主关心机会。请结合当前时段，用一句自然、克制、不重复的中文留下关心，不要提系统、算法或提醒。",
+            }],
+          }),
+        });
+        const result = (await response.json()) as { content?: string };
+        const latest = readLocalValue<typeof state>(key, state);
+        if (!response.ok || !result.content || latest.generation !== generation) return;
+        const text = result.content.trim().slice(0, 240);
+        setNotes((items) => [{
+          id: crypto.randomUUID(),
+          text,
+          kind: "agent",
+          tone: "mist",
+          createdAt: new Date().toISOString(),
+        }, ...items]);
+        if (Notification.permission === "granted") {
+          const registration = await navigator.serviceWorker?.ready;
+          await registration?.showNotification(agentName || "Vesper", {
+            body: text,
+            tag: `vesper-wake-${generation}`,
+            icon: "/icon-192.png",
+          });
+        }
+      } finally {
+        running = false;
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 60_000);
+    const visible = () => void check();
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [agentName, preferences.careFrequency, setNotes]);
 }
 
 function Today({
@@ -1311,34 +1442,203 @@ function HistoryModal({
 function VoiceCallModal({
   agentName,
   agentAvatar,
+  conversationId,
   onClose,
 }: {
   agentName: string;
   agentAvatar: string;
+  conversationId: string;
   onClose: () => void;
 }) {
-  const [state, setState] = useState<"idle" | "connecting" | "active" | "error">(
-    "idle",
-  );
+  const [state, setState] = useState<
+    "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error"
+  >("idle");
   const [muted, setMuted] = useState(false);
+  const [speaker, setSpeaker] = useState(true);
   const [seconds, setSeconds] = useState(0);
+  const [caption, setCaption] = useState("");
+  const [connections] = useLocalDocument<AiConnectionStore>(
+    "ai-connections-v1",
+    { active: "api", api: {}, mcp: {}, cyberboss: {} },
+  );
   const stream = useRef<MediaStream | null>(null);
+  const generation = useRef(0);
+  const stateRef = useRef(state);
+  const mutedRef = useRef(muted);
+  const recognition = useRef<{ start: () => void; stop: () => void } | null>(null);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+  const restartRecognition = () => {
+    if (mutedRef.current) return;
+    window.setTimeout(() => {
+      try {
+        recognition.current?.start();
+      } catch {}
+    }, 180);
+  };
+  const speak = (text: string, id: number) => {
+    if (generation.current !== id) return;
+    if (!speaker || !("speechSynthesis" in window)) {
+      setState("listening");
+      restartRecognition();
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "zh-CN";
+    utterance.rate = 1.02;
+    utterance.onstart = () => generation.current === id && setState("speaking");
+    utterance.onend = () => {
+      if (generation.current !== id) return;
+      setState("listening");
+      restartRecognition();
+    };
+    utterance.onerror = () => {
+      setState("listening");
+      restartRecognition();
+    };
+    window.speechSynthesis.speak(utterance);
+  };
+  const runTurn = async (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    const id = ++generation.current;
+    window.speechSynthesis?.cancel();
+    setCaption(clean);
+    setState("thinking");
+    try {
+      if (connections.active === "cyberboss") {
+        const response = await fetch(apiUrl("/api/chat"), {
+          method: "POST",
+          headers: deviceHeaders(),
+          body: JSON.stringify({ conversationId, content: clean }),
+        });
+        if (!response.ok) throw new Error("AI 运行端暂时没有响应");
+        if (generation.current === id) {
+          setCaption("消息已交给 AI 运行端，等待回复");
+          setState("listening");
+          restartRecognition();
+        }
+        return;
+      }
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: connections.active,
+          connection: connections[connections.active],
+          conversationId,
+          messages: [{ role: "user", content: clean }],
+        }),
+      });
+      const result = (await response.json()) as { content?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "语音通话请求失败");
+      if (generation.current !== id) return;
+      const answer = result.content || "我在。";
+      setCaption(answer);
+      speak(answer, id);
+    } catch (reason) {
+      if (generation.current !== id) return;
+      setCaption(reason instanceof Error ? reason.message : "语音通话连接失败");
+      setState("error");
+    }
+  };
   const start = async () => {
     setState("connecting");
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setState("active");
+      const Speech = (
+        window as Window & {
+          SpeechRecognition?: new () => {
+            lang: string;
+            continuous: boolean;
+            interimResults: boolean;
+            onresult: (event: {
+              results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+              resultIndex: number;
+            }) => void;
+            onend: () => void;
+            onerror: () => void;
+            start: () => void;
+            stop: () => void;
+          };
+          webkitSpeechRecognition?: new () => {
+            lang: string;
+            continuous: boolean;
+            interimResults: boolean;
+            onresult: (event: {
+              results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+              resultIndex: number;
+            }) => void;
+            onend: () => void;
+            onerror: () => void;
+            start: () => void;
+            stop: () => void;
+          };
+        }
+      ).SpeechRecognition ||
+        (window as Window & { webkitSpeechRecognition?: new () => {
+          lang: string;
+          continuous: boolean;
+          interimResults: boolean;
+          onresult: (event: { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>; resultIndex: number }) => void;
+          onend: () => void;
+          onerror: () => void;
+          start: () => void;
+          stop: () => void;
+        } }).webkitSpeechRecognition;
+      if (!Speech) throw new Error("当前浏览器不支持实时语音识别");
+      const session = new Speech();
+      session.lang = "zh-CN";
+      session.continuous = true;
+      session.interimResults = true;
+      session.onresult = (event) => {
+        let interim = "";
+        let final = "";
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const part = event.results[index];
+          if (part.isFinal) final += part[0].transcript;
+          else interim += part[0].transcript;
+        }
+        if (interim) {
+          if (stateRef.current === "speaking") {
+            generation.current += 1;
+            window.speechSynthesis.cancel();
+          }
+          setCaption(interim);
+        }
+        if (final) void runTurn(final);
+      };
+      session.onend = () => {
+        if (stream.current && !mutedRef.current && stateRef.current !== "thinking") restartRecognition();
+      };
+      session.onerror = () => {
+        if (stream.current) restartRecognition();
+      };
+      recognition.current = session;
+      setState("listening");
+      setCaption("我在听");
+      session.start();
     } catch {
       setState("error");
+      setCaption("无法开始通话，请检查麦克风与语音识别权限");
     }
   };
   const finish = () => {
+    generation.current += 1;
+    recognition.current?.stop();
+    recognition.current = null;
+    window.speechSynthesis?.cancel();
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
     onClose();
   };
   useEffect(() => {
-    if (state !== "active") return;
+    if (!["listening", "thinking", "speaking"].includes(state)) return;
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, [state]);
@@ -1346,24 +1646,30 @@ function VoiceCallModal({
   const toggleMute = () => {
     const next = !muted;
     stream.current?.getAudioTracks().forEach((track) => (track.enabled = !next));
+    if (next) recognition.current?.stop();
+    else restartRecognition();
     setMuted(next);
   };
   return (
     <div className="modal-layer call-layer">
       <button className="modal-scrim" onClick={finish} />
       <section className="voice-call-modal">
-        <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
-        <small>VOICE CALL</small>
+        <div className={`call-avatar-rings ${state}`}>
+          <i /><i /><i />
+          <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
+        </div>
+        <small>· {state === "idle" ? "VOICE CALL" : "LIVE DUPLEX"} ·</small>
         <h2>{agentName}</h2>
         <p>
-          {state === "active"
-            ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+          {["listening", "thinking", "speaking"].includes(state)
+            ? `${state === "listening" ? "我在听" : state === "thinking" ? "正在思考" : "正在回应"} · ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
             : state === "connecting"
               ? "正在请求麦克风…"
               : state === "error"
-                ? "无法使用麦克风，请检查浏览器权限"
+                ? caption
                 : "通过当前 AI 连接开始语音通话"}
         </p>
+        {caption && !["idle", "error"].includes(state) && <blockquote>{caption}</blockquote>}
         {state === "idle" || state === "error" ? (
           <button className="call-start" onClick={() => void start()}>
             <Icon name="phone" />
@@ -1373,9 +1679,15 @@ function VoiceCallModal({
           <div className="call-actions">
             <button onClick={toggleMute} aria-label={muted ? "打开麦克风" : "静音"}>
               <Icon name="mic" />
+              <small>{muted ? "取消静音" : "静音"}</small>
+            </button>
+            <button onClick={() => setSpeaker((value) => !value)} aria-label="扬声器">
+              <Icon name="volume" />
+              <small>{speaker ? "扬声器" : "听筒"}</small>
             </button>
             <button className="call-end" onClick={finish} aria-label="结束通话">
               <Icon name="phone" />
+              <small>挂断</small>
             </button>
           </div>
         )}
@@ -1630,6 +1942,7 @@ function ConnectedChat({
         };
         const current = readLocalValue<BridgeChatMessage[]>(localMessageKey(), []);
         saveLocalMessages([...current, userMessage]);
+        const startedAt = performance.now();
         const response = await fetch("/api/ai", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1652,6 +1965,15 @@ function ConnectedChat({
           role: "agent",
           content: result.content || "AI 没有返回内容",
           status: "delivered",
+          metadata: {
+            durationMs: Math.round(performance.now() - startedAt),
+            thoughtSummary: [
+              "理解本轮消息与附件",
+              `通过 ${connections.active === "api" ? "模型 API" : "MCP 对话工具"}处理请求`,
+              "整理并生成最终回复",
+            ].join("\n"),
+            tools: [connections.active === "api" ? connections.api.model || "模型 API" : connections.mcp.toolName || "MCP"],
+          },
           createdAt: new Date().toISOString(),
         };
         saveLocalMessages([...current, userMessage, agentMessage]);
@@ -1685,9 +2007,11 @@ function ConnectedChat({
     }
   };
   useEffect(() => {
-    setData({ messages: [], bridge: { runtime: "connection", online: false } });
-    setError("");
-    const initial = window.setTimeout(() => void refresh(), 0);
+    const initial = window.setTimeout(() => {
+      setData({ messages: [], bridge: { runtime: "connection", online: false } });
+      setError("");
+      void refresh();
+    }, 0);
     const timer = window.setInterval(() => void refresh(), 2500);
     return () => {
       window.clearTimeout(initial);
@@ -2009,7 +2333,7 @@ function ConnectedChat({
             <div className="thought-sheet-head">
               <div>
                 <small>RUNTIME SUMMARY</small>
-                <h2>过程摘要</h2>
+                <h2>思考过程</h2>
                 <span>
                   <Icon name="clock" />
                   {thought.metadata?.durationMs
@@ -2021,11 +2345,19 @@ function ConnectedChat({
                 <Icon name="close" />
               </button>
             </div>
-            <p className="runtime-summary">
-              {thought.metadata?.thoughtSummary}
-            </p>
+            <ol className="thought-process-list">
+              {(thought.metadata?.thoughtSummary || "整理上下文\n生成回复")
+                .split(/\n+/)
+                .filter(Boolean)
+                .map((step, index) => (
+                  <li key={`${step}-${index}`}>
+                    <i>{index + 1}</i>
+                    <span>{step}</span>
+                  </li>
+                ))}
+            </ol>
             <p>
-              这里显示运行端提供的可核对过程摘要，不包含模型的隐藏推理。
+              显示可核对的过程摘要、工具与耗时；不会暴露模型的隐藏推理原文。
             </p>
           </section>
         </div>
@@ -2510,6 +2842,7 @@ type ExternalMcpEntry = {
   clientSecret?: string;
   scopes?: string;
   oauthStatus?: "authorized" | "pending";
+  resource?: string;
 };
 
 function ExternalMcpModal({ onClose }: { onClose: () => void }) {
@@ -2529,10 +2862,43 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
   const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
     setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   const authorize = async (server: ExternalMcpEntry) => {
-    if (!server.authorizationUrl || !server.tokenUrl || !server.clientId) {
-      setMessage("请先填写授权地址、Token 地址和 Client ID");
+    if (!server.url) {
+      setMessage("请先填写 MCP 服务地址");
       return;
     }
+    setMessage("正在发现授权服务…");
+    const redirectUri = `${window.location.origin}/?mcp-oauth=1`;
+    const discoveryResponse = await fetch("/api/mcp/oauth/discover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
+    });
+    const discovered = (await discoveryResponse.json()) as {
+      authorizationUrl?: string;
+      tokenUrl?: string;
+      clientId?: string;
+      clientSecret?: string;
+      scopes?: string;
+      resource?: string;
+      needsClientId?: boolean;
+      error?: string;
+    };
+    if (!discoveryResponse.ok || !discovered.authorizationUrl || !discovered.tokenUrl) {
+      setMessage(discovered.error || "无法自动发现 OAuth 授权页面");
+      return;
+    }
+    if (discovered.needsClientId || !discovered.clientId) {
+      setMessage("该服务不支持自动注册，请只填写它分配给 Vesper 的 Client ID 后重试");
+      return;
+    }
+    update(server.id, {
+      authorizationUrl: discovered.authorizationUrl,
+      tokenUrl: discovered.tokenUrl,
+      clientId: discovered.clientId,
+      clientSecret: discovered.clientSecret || server.clientSecret,
+      scopes: discovered.scopes,
+      resource: discovered.resource,
+    });
     const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
     const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
@@ -2540,29 +2906,29 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
       .replaceAll("/", "_")
       .replaceAll("=", "");
     const state = crypto.randomUUID();
-    const redirectUri = `${window.location.origin}/?mcp-oauth=1`;
     window.sessionStorage.setItem(
       "vesper-mcp-oauth-pending",
       JSON.stringify({
         serverId: server.id,
         state,
         verifier,
-        tokenUrl: server.tokenUrl,
-        clientId: server.clientId,
-        clientSecret: server.clientSecret,
+        tokenUrl: discovered.tokenUrl,
+        clientId: discovered.clientId,
+        clientSecret: discovered.clientSecret || server.clientSecret,
         redirectUri,
+        resource: discovered.resource,
       }),
     );
     update(server.id, { oauthStatus: "pending" });
-    const target = new URL(server.authorizationUrl);
+    const target = new URL(discovered.authorizationUrl);
     target.searchParams.set("response_type", "code");
-    target.searchParams.set("client_id", server.clientId);
+    target.searchParams.set("client_id", discovered.clientId);
     target.searchParams.set("redirect_uri", redirectUri);
     target.searchParams.set("state", state);
     target.searchParams.set("code_challenge", challenge);
     target.searchParams.set("code_challenge_method", "S256");
-    if (server.scopes) target.searchParams.set("scope", server.scopes);
-    if (server.url) target.searchParams.set("resource", server.url);
+    if (discovered.scopes) target.searchParams.set("scope", discovered.scopes);
+    target.searchParams.set("resource", discovered.resource || server.url);
     window.location.assign(target.toString());
   };
   const test = async (server: ExternalMcpEntry) => {
@@ -2616,12 +2982,9 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
               </div>
               {server.authMode === "oauth" ? (
                 <div className="mcp-oauth-fields">
-                  <label className="profile-field"><span>授权页面 URL</span><input value={server.authorizationUrl || ""} placeholder="https://provider.com/oauth/authorize" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { authorizationUrl: event.target.value })} /></label>
-                  <label className="profile-field"><span>Token URL</span><input value={server.tokenUrl || ""} placeholder="https://provider.com/oauth/token" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { tokenUrl: event.target.value })} /></label>
-                  <label className="profile-field"><span>Client ID</span><input value={server.clientId || ""} autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { clientId: event.target.value })} /></label>
-                  <label className="profile-field"><span>Client Secret（可选）</span><input type="password" value={server.clientSecret || ""} autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { clientSecret: event.target.value })} /></label>
-                  <label className="profile-field"><span>Scopes</span><input value={server.scopes || ""} placeholder="openid profile" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { scopes: event.target.value })} /></label>
-                  <button className="mcp-oauth-action" onClick={() => void authorize(server)}>{server.oauthStatus === "authorized" ? "重新授权" : "前往授权页面"}</button>
+                  <p className="settings-hint">授权页面和 Token 端点会从 MCP 元数据自动发现。只有服务不支持自动注册时，才需要填写 Client ID。</p>
+                  <label className="profile-field"><span>Client ID（通常可留空）</span><input value={server.clientId || ""} autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { clientId: event.target.value })} /></label>
+                  <button className="mcp-oauth-action" onClick={() => void authorize(server)}>{server.oauthStatus === "authorized" ? "重新授权" : "授权并连接"}</button>
                 </div>
               ) : (
                 <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={server.token} placeholder="无需授权可留空" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { token: event.target.value })} /></label>
@@ -3196,7 +3559,6 @@ function FunctionalSettingsModal({
         )}
         {type === "关心频率" && (
           <div className="choice-list">
-            <p className="settings-hint">控制 Agent 主动发起关心、问候或留下便笺的频率。它不是普通提醒；只有连接了可主动运行的 Agent，并开启 Web Push 后，才能在你没有打开 Vesper 时主动通知。</p>
             {(
               [
                 ["daily", "每天一次"],
@@ -3834,13 +4196,22 @@ function NeteaseConnectionModal({
 }
 
 function MemoryLibrary() {
-  const [documents, setDocuments] = useState<
+  const [, setDocuments] = useState<
     Record<string, { value: unknown }>
   >({});
   const [connections, setConnections] = useLocalDocument<
     Record<string, string>
   >("memory-connection", {});
+  const [localNotes] = usePersistentDocument<NoteItem[]>("notes", []);
+  const [localTodos] = usePersistentDocument<TodoItem[]>("todos", []);
+  const [localAnniversaries] = usePersistentDocument<AnniversaryItem[]>("anniversaries", []);
+  const [localDiary] = usePersistentDocument<DiaryDocument>("diary", {});
+  const [externalMemory, setExternalMemory] = usePersistentDocument<
+    Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>
+  >("externalMemory", []);
   const [connect, setConnect] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const refresh = () =>
     fetch(apiUrl("/api/state"), { cache: "no-store", headers: appHeaders() })
@@ -3854,20 +4225,39 @@ function MemoryLibrary() {
   useEffect(() => {
     void refresh();
   }, []);
-  const notes = Array.isArray(documents.notes?.value)
-    ? documents.notes.value.length
-    : 0;
-  const todos = Array.isArray(documents.todos?.value)
-    ? documents.todos.value.length
-    : 0;
-  const anniversaries = Array.isArray(documents.anniversaries?.value)
-    ? documents.anniversaries.value.length
-    : 0;
-  const diary =
-    documents.diary?.value && typeof documents.diary.value === "object"
-      ? Object.keys(documents.diary.value as object).length
-      : 0;
-  const total = notes + todos + anniversaries + diary;
+  const notes = localNotes.length;
+  const todos = localTodos.length;
+  const anniversaries = localAnniversaries.length;
+  const diary = Object.keys(localDiary).length;
+  const external = externalMemory.length;
+  const total = notes + todos + anniversaries + diary + external;
+  const syncExternalMemory = async () => {
+    if (!connections.memoryUrl) {
+      setSyncMessage("请先填写外置记忆库地址");
+      return;
+    }
+    setSyncing(true);
+    setSyncMessage("");
+    try {
+      const response = await fetch("/api/memory/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: connections.memoryUrl, token: connections.memoryToken }),
+      });
+      const result = (await response.json()) as {
+        items?: Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>;
+        count?: number;
+        error?: string;
+      };
+      if (!response.ok || !result.items) throw new Error(result.error || "同步失败");
+      setExternalMemory(result.items);
+      setSyncMessage(`已同步 ${result.count || 0} 条外置记忆到星图`);
+    } catch (reason) {
+      setSyncMessage(reason instanceof Error ? reason.message : "外置记忆同步失败");
+    } finally {
+      setSyncing(false);
+    }
+  };
   const restore = async (file?: File) => {
     if (!file) return;
     try {
@@ -3938,6 +4328,9 @@ function MemoryLibrary() {
                   纪念日 {anniversaries}
                 </span>
               )}
+              {external > 0 && (
+                <span className="memory-node external">外置 {external}</span>
+              )}
             </div>
             <div className="memory-stats">
               <span>
@@ -3948,6 +4341,9 @@ function MemoryLibrary() {
               </span>
               <span>
                 <b>{todos + anniversaries}</b>事项
+              </span>
+              <span>
+                <b>{external}</b>外置
               </span>
             </div>
           </>
@@ -4009,6 +4405,14 @@ function MemoryLibrary() {
             <button className="save-profile" onClick={() => setConnect(false)}>
               保存
             </button>
+            <button
+              className="reset-background"
+              disabled={syncing || !connections.memoryUrl}
+              onClick={() => void syncExternalMemory()}
+            >
+              {syncing ? "同步中…" : "同步到记忆星图"}
+            </button>
+            {syncMessage && <p className="connection-message">{syncMessage}</p>}
           </section>
         </div>
       )}

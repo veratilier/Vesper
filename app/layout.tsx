@@ -15,11 +15,27 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Vesper — 私人生活角落",
   description: "天气、便笺、纪念日、提醒与音乐，在晚风般安静的空间里相遇。",
-  manifest: "/manifest-v7.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Vesper" },
+  manifest: "/manifest-v8.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Vesper",
+  },
   icons: {
-    icon: [{ url: "/favicon-20260823-v6.png", sizes: "64x64", type: "image/png" }],
-    apple: [{ url: "/apple-touch-icon-20260823-v6.png", sizes: "180x180", type: "image/png" }],
+    icon: [
+      {
+        url: "/favicon-20260823-v8.png",
+        sizes: "64x64",
+        type: "image/png",
+      },
+    ],
+    apple: [
+      {
+        url: "/apple-touch-icon-20260823-v8.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
   },
 };
 
@@ -29,9 +45,17 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="zh-CN">
       <head>
-        <link rel="manifest" href="/manifest-v7.webmanifest" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-20260823-v6.png" />
-        <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon-20260823-v6.png" />
+        <link rel="manifest" href="/manifest-v8.webmanifest" />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href="/apple-touch-icon-20260823-v8.png"
+        />
+        <link
+          rel="apple-touch-icon-precomposed"
+          sizes="180x180"
+          href="/apple-touch-icon-20260823-v8.png"
+        />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
     </html>

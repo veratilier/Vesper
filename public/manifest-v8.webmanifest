@@ -6,7 +6,6 @@
   "start_url": "/?vesper-pwa=8",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#f0f2ef",
   "theme_color": "#f0f2ef",
   "orientation": "portrait",

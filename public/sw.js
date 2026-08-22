@@ -1,12 +1,12 @@
-const CACHE = "vesper-shell-v7";
+const CACHE = "vesper-shell-v8-push";
 const SHELL = [
   "./",
-  "./manifest.webmanifest?v=6",
-  "./icon-192-20260823-v6.png",
-  "./icon-512-20260823-v6.png",
-  "./icon-maskable-512-20260823-v6.png",
-  "./apple-touch-icon-20260823-v6.png",
-  "./favicon-20260823-v6.png",
+  "./manifest-v8.webmanifest",
+  "./icon-192-20260823-v8.png",
+  "./icon-512-20260823-v8.png",
+  "./icon-maskable-512-20260823-v8.png",
+  "./apple-touch-icon-20260823-v8.png",
+  "./favicon-20260823-v8.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -68,8 +68,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: "/icon-192-20260823-v6.png",
-      badge: "/favicon-20260823-v6.png",
+      icon: "/icon-192-20260823-v8.png",
+      badge: "/favicon-20260823-v8.png",
       tag: payload.tag || "vesper",
       data: { url: payload.url || "/" },
     }),

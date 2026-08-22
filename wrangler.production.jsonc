@@ -20,6 +20,12 @@
       "database_id": "00f8c1ca-f8a3-47d8-9f08-1fec87ec9f4a"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "vesper-media"
+    }
+  ],
   "assets": {
     "directory": "dist/client"
   },

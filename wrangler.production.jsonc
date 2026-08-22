@@ -9,6 +9,10 @@
   "preview_urls": true,
   "routes": [
     {
+      "pattern": "vesper.r-vera.com",
+      "custom_domain": true
+    },
+    {
       "pattern": "api.vesper.r-vera.com",
       "custom_domain": true
     }

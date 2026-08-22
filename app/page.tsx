@@ -484,6 +484,7 @@ type Track = {
   duration?: string;
   url: string;
   cover?: string;
+  neteaseId?: string;
 };
 type BoxApp = {
   id: string;
@@ -493,6 +494,13 @@ type BoxApp = {
   kind: string;
 };
 type ConnectionSettings = Record<string, Record<string, string>>;
+type ChatAttachment = {
+  key: string;
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+};
 type EnvironmentSnapshot = {
   permission: "unknown" | "granted" | "denied";
   latitude?: number;
@@ -533,6 +541,8 @@ export default function Home() {
   const [active, setActive] = useState("今日");
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [voiceCallOpen, setVoiceCallOpen] = useState(false);
+  const [conversationId, setConversationId] = useState("main");
   const [userName, setUserName] = useState("我");
   const [agentName, setAgentName] = useState("Vesper");
   const [userAvatar, setUserAvatar] = useState("");
@@ -679,10 +689,18 @@ export default function Home() {
           )}
           {active === "聊天" ? (
             <div className="chat-header-actions">
-              <button aria-label="新建对话">
+              <button
+                aria-label="新建对话"
+                onClick={() =>
+                  setConversationId(`chat-${Date.now()}-${crypto.randomUUID()}`)
+                }
+              >
                 <Icon name="plus" />
               </button>
-              <button aria-label="语音通话">
+              <button
+                aria-label="语音通话"
+                onClick={() => setVoiceCallOpen(true)}
+              >
                 <Icon name="phone" />
               </button>
               <button
@@ -716,6 +734,7 @@ export default function Home() {
             />
           ) : active === "聊天" ? (
             <ConnectedChat
+              conversationId={conversationId}
               agentName={agentName}
               userName={userName}
               agentAvatar={agentAvatar}
@@ -829,7 +848,23 @@ export default function Home() {
             onClose={() => setProfileOpen(false)}
           />
         )}{" "}
-        {historyOpen && <HistoryModal onClose={() => setHistoryOpen(false)} />}
+        {historyOpen && (
+          <HistoryModal
+            activeId={conversationId}
+            onSelect={(id) => {
+              setConversationId(id);
+              setHistoryOpen(false);
+            }}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
+        {voiceCallOpen && (
+          <VoiceCallModal
+            agentName={agentName}
+            agentAvatar={agentAvatar}
+            onClose={() => setVoiceCallOpen(false)}
+          />
+        )}
       </section>
     </main>
   );
@@ -864,6 +899,17 @@ async function uploadImage(file: File) {
   });
   if (!response.ok) throw new Error("图片上传失败");
   return (await response.json()) as { key: string; url: string };
+}
+async function uploadMedia(file: File) {
+  const data = new FormData();
+  data.append("file", file);
+  const response = await fetch(apiUrl("/api/media"), {
+    method: "POST",
+    headers: appHeaders(),
+    body: data,
+  });
+  if (!response.ok) throw new Error("附件上传失败");
+  return (await response.json()) as ChatAttachment;
 }
 function usePersistentDocument<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(initial);
@@ -1037,20 +1083,42 @@ function Today({
   );
 }
 
-function HistoryModal({ onClose }: { onClose: () => void }) {
-  const [messages, setMessages] = useState<BridgeChatMessage[]>([]);
+type ConversationSummary = {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+function HistoryModal({
+  activeId,
+  onSelect,
+  onClose,
+}: {
+  activeId: string;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [query, setQuery] = useState("");
   useEffect(() => {
     const token = deviceToken();
     if (!token) return;
-    fetch(apiUrl("/api/chat?conversationId=main"), {
+    fetch(apiUrl("/api/chat?list=1"), {
       headers: { "x-vesper-device-token": token },
       cache: "no-store",
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data) => setMessages((data as BridgeSnapshot).messages))
+      .then((data) =>
+        setConversations(
+          (data as { conversations: ConversationSummary[] }).conversations,
+        ),
+      )
       .catch(() => {});
   }, []);
-  const latest = messages[messages.length - 1];
+  const visible = conversations.filter((item) =>
+    item.title.toLowerCase().includes(query.trim().toLowerCase()),
+  );
   return (
     <div className="modal-layer history-layer">
       <button className="modal-scrim" onClick={onClose} />
@@ -1064,21 +1132,109 @@ function HistoryModal({ onClose }: { onClose: () => void }) {
             <Icon name="close" />
           </button>
         </div>
+        <label className="history-search">
+          <Icon name="search" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索对话"
+          />
+        </label>
         <div className="history-list">
-          {latest ? (
-            <>
-              <small>当前对话</small>
-              <button className="selected" onClick={onClose}>
-                <b>{latest.content.slice(0, 28) || "未命名对话"}</b>
+          {visible.length ? (
+            visible.map((item) => (
+              <button
+                className={item.id === activeId ? "selected" : ""}
+                key={item.id}
+                onClick={() => onSelect(item.id)}
+              >
+                <b>{item.title || "未命名对话"}</b>
                 <span>
-                  {new Date(latest.createdAt).toLocaleString("zh-CN")}
+                  {new Date(item.updatedAt).toLocaleString("zh-CN")} · {item.messageCount}
+                  条
                 </span>
               </button>
-            </>
+            ))
           ) : (
             <EmptyState text="还没有聊天记录。" />
           )}
         </div>
+      </section>
+    </div>
+  );
+}
+
+function VoiceCallModal({
+  agentName,
+  agentAvatar,
+  onClose,
+}: {
+  agentName: string;
+  agentAvatar: string;
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<"idle" | "connecting" | "active" | "error">(
+    "idle",
+  );
+  const [muted, setMuted] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const stream = useRef<MediaStream | null>(null);
+  const start = async () => {
+    setState("connecting");
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setState("active");
+    } catch {
+      setState("error");
+    }
+  };
+  const finish = () => {
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = null;
+    onClose();
+  };
+  useEffect(() => {
+    if (state !== "active") return;
+    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [state]);
+  useEffect(() => () => stream.current?.getTracks().forEach((track) => track.stop()), []);
+  const toggleMute = () => {
+    const next = !muted;
+    stream.current?.getAudioTracks().forEach((track) => (track.enabled = !next));
+    setMuted(next);
+  };
+  return (
+    <div className="modal-layer call-layer">
+      <button className="modal-scrim" onClick={finish} />
+      <section className="voice-call-modal">
+        <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
+        <small>VOICE CALL</small>
+        <h2>{agentName}</h2>
+        <p>
+          {state === "active"
+            ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+            : state === "connecting"
+              ? "正在请求麦克风…"
+              : state === "error"
+                ? "无法使用麦克风，请检查浏览器权限"
+                : "通过当前 AI 连接开始语音通话"}
+        </p>
+        {state === "idle" || state === "error" ? (
+          <button className="call-start" onClick={() => void start()}>
+            <Icon name="phone" />
+            开始通话
+          </button>
+        ) : (
+          <div className="call-actions">
+            <button onClick={toggleMute} aria-label={muted ? "打开麦克风" : "静音"}>
+              <Icon name="mic" />
+            </button>
+            <button className="call-end" onClick={finish} aria-label="结束通话">
+              <Icon name="phone" />
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -1196,7 +1352,12 @@ type BridgeChatMessage = {
   role: "user" | "agent" | "system";
   content: string;
   status: string;
-  metadata?: { thoughtSummary?: string; durationMs?: number; tools?: string[] };
+  metadata?: {
+    thoughtSummary?: string;
+    durationMs?: number;
+    tools?: string[];
+    attachments?: ChatAttachment[];
+  };
   createdAt: string;
 };
 type BridgeSnapshot = {
@@ -1213,11 +1374,13 @@ const deviceHeaders = () => ({
 });
 
 function ConnectedChat({
+  conversationId,
   agentName,
   userName,
   agentAvatar,
   userAvatar,
 }: {
+  conversationId: string;
   agentName: string;
   userName: string;
   agentAvatar: string;
@@ -1231,19 +1394,29 @@ function ConnectedChat({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
+  const [pending, setPending] = useState<{ file: File; preview: string }[]>([]);
+  const [listening, setListening] = useState(false);
+  const [recording, setRecording] = useState(false);
   const streamEnd = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const recordingStream = useRef<MediaStream | null>(null);
+  const recordingChunks = useRef<Blob[]>([]);
   const refresh = async () => {
     const token = deviceToken();
     if (!token) {
-      setError("请先在设置中配对 CyberBoss");
+      setError("请先在设置 → AI 连接中配置连接方式");
       return;
     }
     try {
-      const response = await fetch(apiUrl("/api/chat?conversationId=main"), {
+      const response = await fetch(
+        apiUrl(`/api/chat?conversationId=${encodeURIComponent(conversationId)}`),
+        {
         headers: { "x-vesper-device-token": token },
         cache: "no-store",
-      });
-      if (response.status === 401) throw new Error("配对口令无效");
+        },
+      );
+      if (response.status === 401) throw new Error("当前 AI 连接尚未授权");
       if (!response.ok) throw new Error("暂时无法读取对话");
       setData((await response.json()) as BridgeSnapshot);
       setError("");
@@ -1253,18 +1426,27 @@ function ConnectedChat({
   };
   const send = async () => {
     const content = draft.trim();
-    if (!content || busy) return;
+    if ((!content && !pending.length) || busy) return;
     setBusy(true);
     setDraft("");
     try {
+      const attachments = await Promise.all(
+        pending.map(async ({ file }) => uploadMedia(file)),
+      );
       const response = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: deviceHeaders(),
-        body: JSON.stringify({ conversationId: "main", content }),
+        body: JSON.stringify({
+          conversationId,
+          content: content || (attachments.length ? "附件" : ""),
+          attachments,
+        }),
       });
       if (response.status === 401)
-        throw new Error("请先在设置中配对 CyberBoss");
+        throw new Error("请先在设置 → AI 连接中完成授权");
       if (!response.ok) throw new Error("消息发送失败");
+      pending.forEach((item) => URL.revokeObjectURL(item.preview));
+      setPending([]);
       await refresh();
     } catch (reason) {
       setDraft(content);
@@ -1274,13 +1456,15 @@ function ConnectedChat({
     }
   };
   useEffect(() => {
+    setData({ messages: [], bridge: { runtime: "connection", online: false } });
+    setError("");
     const initial = window.setTimeout(() => void refresh(), 0);
     const timer = window.setInterval(() => void refresh(), 2500);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-  }, []);
+  }, [conversationId]);
   useLayoutEffect(() => {
     const scroller = streamEnd.current?.closest(
       ".scroll-view",
@@ -1296,12 +1480,128 @@ function ConnectedChat({
       minute: "2-digit",
       hour12: false,
     }).format(new Date(value));
+  const selectFiles = (files: FileList | null) => {
+    if (!files) return;
+    setPending((current) => [
+      ...current,
+      ...Array.from(files).map((file) => ({
+        file,
+        preview: URL.createObjectURL(file),
+      })),
+    ]);
+  };
+  const startStt = () => {
+    const Speech = (
+      window as Window & {
+        SpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          onresult: (event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void;
+          onend: () => void;
+          onerror: () => void;
+          start: () => void;
+        };
+        webkitSpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          onresult: (event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void;
+          onend: () => void;
+          onerror: () => void;
+          start: () => void;
+        };
+      }
+    ).SpeechRecognition ||
+      (
+        window as Window & {
+          webkitSpeechRecognition?: new () => {
+            lang: string;
+            interimResults: boolean;
+            onresult: (event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void;
+            onend: () => void;
+            onerror: () => void;
+            start: () => void;
+          };
+        }
+      ).webkitSpeechRecognition;
+    if (!Speech) {
+      setError("当前浏览器不支持语音转文字");
+      return;
+    }
+    const recognition = new Speech();
+    recognition.lang = "zh-CN";
+    recognition.interimResults = false;
+    recognition.onresult = (event) =>
+      setDraft((value) => `${value}${value ? " " : ""}${event.results[0][0].transcript}`);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => {
+      setListening(false);
+      setError("语音识别失败，请检查麦克风权限");
+    };
+    setListening(true);
+    recognition.start();
+  };
+  const toggleVoiceMessage = async () => {
+    if (recording && recorder.current) {
+      recorder.current.stop();
+      setRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStream.current = stream;
+      recordingChunks.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      recorder.current = mediaRecorder;
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size) recordingChunks.current.push(event.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordingChunks.current, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+        const file = new File([blob], `voice-${Date.now()}.webm`, {
+          type: blob.type,
+        });
+        const preview = URL.createObjectURL(file);
+        setPending((current) => [...current, { file, preview }]);
+        recordingStream.current?.getTracks().forEach((track) => track.stop());
+        recordingStream.current = null;
+        setBusy(true);
+        void uploadMedia(file)
+          .then(async (attachment) => {
+            const response = await fetch(apiUrl("/api/chat"), {
+              method: "POST",
+              headers: deviceHeaders(),
+              body: JSON.stringify({
+                conversationId,
+                content: "语音消息",
+                attachments: [attachment],
+              }),
+            });
+            if (!response.ok) throw new Error("语音消息发送失败");
+            URL.revokeObjectURL(preview);
+            setPending((current) =>
+              current.filter((item) => item.preview !== preview),
+            );
+            await refresh();
+          })
+          .catch((reason) =>
+            setError(reason instanceof Error ? reason.message : "语音消息发送失败"),
+          )
+          .finally(() => setBusy(false));
+      };
+      mediaRecorder.start();
+      setRecording(true);
+    } catch {
+      setError("无法录音，请检查麦克风权限");
+    }
+  };
   return (
     <div className="page-body chat-page">
       <div className="bridge-presence">
         <i className={data.bridge.online ? "online" : ""} />
         <span>
-          {data.bridge.online ? "CyberBoss 已连接" : "CyberBoss 离线"}
+          {data.bridge.online ? "AI 运行端已连接" : "AI 运行端离线"}
         </span>
       </div>
       <div className="chat-stream">
@@ -1311,7 +1611,7 @@ function ConnectedChat({
             <b>{error || "还没有对话"}</b>
             <span>
               {error
-                ? "前往设置 → 连接 → CyberBoss 桥接"
+                ? "前往设置 → AI 连接"
                 : "从这里开始与 Vesper 对话"}
             </span>
           </div>
@@ -1338,10 +1638,11 @@ function ConnectedChat({
                     </button>
                   )}
                   <p>{item.content}</p>
+                  <MessageAttachments items={item.metadata?.attachments || []} />
                   <small>
                     {item.metadata?.tools?.length
                       ? `已使用 ${item.metadata.tools.join("、")}`
-                      : `${agentName} · CyberBoss`}
+                      : `${agentName} · AI`}
                   </small>
                 </div>
               </div>
@@ -1352,9 +1653,10 @@ function ConnectedChat({
               <div className="message mine sent-message">
                 <div>
                   <p>{item.content}</p>
+                  <MessageAttachments items={item.metadata?.attachments || []} />
                   <small>
                     {item.status === "queued"
-                      ? "等待 CyberBoss 接收"
+                      ? "等待 AI 运行端接收"
                       : "已送达"}
                   </small>
                 </div>
@@ -1366,6 +1668,33 @@ function ConnectedChat({
         <div ref={streamEnd} />
       </div>
       <div className="chat-compose">
+        {pending.length > 0 && (
+          <div className="compose-previews">
+            {pending.map((item, index) => (
+              <div className="compose-preview" key={`${item.file.name}-${index}`}>
+                {item.file.type.startsWith("image/") ? (
+                  <img src={item.preview} alt={item.file.name} />
+                ) : item.file.type.startsWith("video/") ? (
+                  <video src={item.preview} muted />
+                ) : item.file.type.startsWith("audio/") ? (
+                  <audio src={item.preview} controls />
+                ) : (
+                  <span><Icon name="archive" />{item.file.name}</span>
+                )}
+                <button
+                  aria-label="移除附件"
+                  onClick={() =>
+                    setPending((current) =>
+                      current.filter((_, itemIndex) => itemIndex !== index),
+                    )
+                  }
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           placeholder={`回复 ${agentName}`}
           value={draft}
@@ -1378,14 +1707,29 @@ function ConnectedChat({
           }}
         />
         <div className="compose-actions">
-          <button aria-label="添加附件">
+          <button aria-label="添加附件" onClick={() => fileInput.current?.click()}>
             <Icon name="plus" />
           </button>
-          <span>{busy ? "发送中…" : ""}</span>
-          <button aria-label="语音输入">
+          <input
+            ref={fileInput}
+            hidden
+            multiple
+            type="file"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.zip"
+            onChange={(event) => {
+              selectFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <span>{busy ? "发送中…" : recording ? "录音中，再点一次结束" : ""}</span>
+          <button
+            className={listening ? "active" : ""}
+            aria-label="语音转文字"
+            onClick={startStt}
+          >
             <Icon name="mic" />
           </button>
-          {draft.trim() ? (
+          {draft.trim() || pending.length ? (
             <button
               className="send-message-button"
               aria-label="发送消息"
@@ -1394,7 +1738,11 @@ function ConnectedChat({
               <Icon name="send" />
             </button>
           ) : (
-            <button className="voice" aria-label="开始语音">
+            <button
+              className={recording ? "voice recording" : "voice"}
+              aria-label={recording ? "结束并发送语音" : "发送语音"}
+              onClick={() => void toggleVoiceMessage()}
+            >
               <i />
               <i />
               <i />
@@ -1419,7 +1767,7 @@ function ConnectedChat({
                   <Icon name="clock" />
                   {thought.metadata?.durationMs
                     ? `${Math.max(1, Math.round(thought.metadata.durationMs / 1000))} 秒`
-                    : "CyberBoss"}
+                    : "AI 运行端"}
                 </span>
               </div>
               <button aria-label="关闭" onClick={() => setThought(null)}>
@@ -1430,10 +1778,40 @@ function ConnectedChat({
               {thought.metadata?.thoughtSummary}
             </p>
             <p>
-              这里显示 CyberBoss 提供的可核对运行摘要，不包含模型的隐藏推理。
+              这里显示运行端提供的可核对过程摘要，不包含模型的隐藏推理。
             </p>
           </section>
         </div>
+      )}
+    </div>
+  );
+}
+
+function MessageAttachments({ items }: { items: ChatAttachment[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="message-attachments">
+      {items.map((item) =>
+        item.type.startsWith("image/") ? (
+          <a href={item.url} target="_blank" rel="noreferrer" key={item.key}>
+            <img src={item.url} alt={item.name} />
+          </a>
+        ) : item.type.startsWith("video/") ? (
+          <video src={item.url} controls playsInline key={item.key} />
+        ) : item.type.startsWith("audio/") ? (
+          <audio src={item.url} controls key={item.key} />
+        ) : (
+          <a
+            className="file-attachment"
+            href={item.url}
+            target="_blank"
+            rel="noreferrer"
+            key={item.key}
+          >
+            <Icon name="archive" />
+            <span>{item.name}</span>
+          </a>
+        ),
       )}
     </div>
   );
@@ -1723,9 +2101,6 @@ function SettingsPage({
         ? Notification.permission
         : "default",
     );
-  const [bridgePaired, setBridgePaired] = useState(() =>
-    Boolean(deviceToken()),
-  );
   const careLabel =
     preferences.careFrequency === "off"
       ? "关闭"
@@ -1755,18 +2130,9 @@ function SettingsPage({
       />
       <SettingsGroup title="连接">
         <SettingRow
-          icon="chat"
-          title="CyberBoss 桥接"
-          sub={
-            bridgePaired ? "设备已配对 · 等待运行端" : "未配对 · 连接 CyberBoss"
-          }
-          status={bridgePaired}
-          onClick={() => setSelected("CyberBoss 桥接")}
-        />
-        <SettingRow
           icon="sparkles"
           title="AI 连接"
-          sub="由 CyberBoss 运行时提供"
+          sub="API Key / MCP / CyberBoss"
           onClick={() => setSelected("AI 连接")}
         />
         <SettingRow
@@ -1774,12 +2140,6 @@ function SettingsPage({
           title="Agent 声音（TTS）"
           sub="尚未连接声音服务"
           onClick={() => setSelected("Agent 声音")}
-        />
-        <SettingRow
-          icon="link"
-          title="MCP 服务"
-          sub="由 CyberBoss 项目工具提供"
-          onClick={() => setSelected("MCP 服务")}
         />
         <SettingRow
           icon="wifi"
@@ -1837,7 +2197,7 @@ function SettingsPage({
           onClick={() => setSelected("导出与备份")}
         />
       </SettingsGroup>
-      <p className="settings-foot">VESPER 0.3 · CYBERBOSS BRIDGE</p>
+      <p className="settings-foot">VESPER 0.4 · MULTI-CONNECTION</p>
       {selected === "Appearance" ? (
         <AppearanceModal
           accent={accent}
@@ -1845,11 +2205,8 @@ function SettingsPage({
           onBackground={onBackground}
           onClose={() => setSelected(null)}
         />
-      ) : selected === "CyberBoss 桥接" ? (
-        <CyberbossConnectionModal
-          onPaired={setBridgePaired}
-          onClose={() => setSelected(null)}
-        />
+      ) : selected === "AI 连接" ? (
+        <AiConnectionModal onClose={() => setSelected(null)} />
       ) : selected &&
         ["通知偏好", "关心频率", "记忆权限", "导出与备份"].includes(
           selected,
@@ -1872,6 +2229,139 @@ function SettingsPage({
           />
         )
       )}
+    </div>
+  );
+}
+
+type AiConnectionStore = {
+  active: "api" | "mcp" | "cyberboss";
+  api: Record<string, string>;
+  mcp: Record<string, string>;
+  cyberboss: Record<string, string>;
+};
+
+function AiConnectionModal({ onClose }: { onClose: () => void }) {
+  const [stored, setStored] = useLocalDocument<AiConnectionStore>(
+    "ai-connections-v1",
+    { active: "api", api: {}, mcp: {}, cyberboss: {} },
+  );
+  const [active, setActive] = useState<AiConnectionStore["active"]>(stored.active);
+  const [form, setForm] = useState<Record<string, string>>(() => stored[stored.active]);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const choices = [
+    { id: "api" as const, label: "API Key", icon: "sparkles" },
+    { id: "mcp" as const, label: "MCP", icon: "link" },
+    { id: "cyberboss" as const, label: "CyberBoss", icon: "chat" },
+  ];
+  const fields: Record<AiConnectionStore["active"], Array<{ key: string; label: string; placeholder?: string; type?: string }>> = {
+    api: [
+      { key: "provider", label: "服务商", placeholder: "OpenAI / Anthropic / 自定义" },
+      { key: "baseUrl", label: "API Base URL", placeholder: "https://api.openai.com/v1" },
+      { key: "model", label: "模型 ID", placeholder: "gpt-5 / 自定义模型" },
+      { key: "apiKey", label: "API Key", type: "password", placeholder: "sk-…" },
+    ],
+    mcp: [
+      { key: "url", label: "MCP 服务地址", placeholder: "https://…/mcp" },
+      { key: "transport", label: "传输方式", placeholder: "Streamable HTTP / SSE" },
+      { key: "token", label: "授权令牌", type: "password", placeholder: "Bearer token（可选）" },
+      { key: "serverName", label: "服务名称", placeholder: "我的 MCP" },
+    ],
+    cyberboss: [
+      { key: "endpoint", label: "运行端地址", placeholder: "https://api.vesper.r-vera.com" },
+      { key: "deviceToken", label: "设备配对口令", type: "password", placeholder: "vsp_…" },
+      { key: "runtime", label: "运行时名称", placeholder: "CyberBoss / Codex" },
+      { key: "workspace", label: "工作区", placeholder: "/path/to/workspace（可选）" },
+    ],
+  };
+  const switchChoice = (next: AiConnectionStore["active"]) => {
+    setStored({ ...stored, [active]: form, active: next });
+    setActive(next);
+    setForm(stored[next] || {});
+    setMessage("");
+  };
+  const save = async () => {
+    setBusy(true);
+    setMessage("");
+    const next = { ...stored, [active]: form, active };
+    setStored(next);
+    if (active === "cyberboss" && form.deviceToken)
+      window.localStorage.setItem("vesper-device-token", form.deviceToken.trim());
+    try {
+      if (active === "api") {
+        if (!form.baseUrl || !form.apiKey || !form.model)
+          throw new Error("请填写 Base URL、模型和 API Key");
+        const response = await fetch(`${form.baseUrl.replace(/\/$/, "")}/models`, {
+          headers: { authorization: `Bearer ${form.apiKey}` },
+        });
+        if (!response.ok) throw new Error(`API 返回 ${response.status}`);
+      } else if (active === "mcp") {
+        if (!form.url) throw new Error("请填写 MCP 服务地址");
+        const response = await fetch(form.url, {
+          method: "GET",
+          headers: form.token ? { authorization: `Bearer ${form.token}` } : undefined,
+        });
+        if (!response.ok) throw new Error(`MCP 返回 ${response.status}`);
+      } else {
+        if (!form.deviceToken) throw new Error("请填写设备配对口令");
+        const endpoint = (form.endpoint || VESPER_API_ORIGIN).replace(/\/$/, "");
+        const response = await fetch(`${endpoint}/api/chat?conversationId=main`, {
+          headers: { "x-vesper-device-token": form.deviceToken.trim() },
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("配对口令或运行端地址无效");
+      }
+      setMessage("参数已保存，连接测试成功");
+    } catch (reason) {
+      setMessage(
+        reason instanceof Error
+          ? `参数已保存；${reason.message}`
+          : "参数已保存，测试失败",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal ai-connection-modal">
+        <div className="modal-head">
+          <div><small>AI CONNECTION</small><h2>选择连接方式</h2></div>
+          <button onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <div className="ai-connection-tabs">
+          {choices.map((choice) => (
+            <button
+              className={active === choice.id ? "active" : ""}
+              key={choice.id}
+              onClick={() => switchChoice(choice.id)}
+            >
+              <Icon name={choice.icon} />
+              <span>{choice.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="parameter-form">
+          {fields[active].map((field) => (
+            <label className="profile-field" key={field.key}>
+              <span>{field.label}</span>
+              <input
+                type={field.type || "text"}
+                value={form[field.key] || ""}
+                placeholder={field.placeholder || ""}
+                autoCapitalize="none"
+                autoCorrect="off"
+                onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}
+              />
+            </label>
+          ))}
+        </div>
+        {message && <p className="connection-message">{message}</p>}
+        <button className="save-profile" disabled={busy} onClick={() => void save()}>
+          {busy ? "测试中…" : "保存并测试"}
+        </button>
+      </section>
     </div>
   );
 }
@@ -2691,6 +3181,11 @@ function MusicPage({
   onTracks: (value: Track[]) => void;
 }) {
   const track = tracks[selected];
+  const [netease, setNetease] = useLocalDocument<Record<string, string>>(
+    "netease-connection",
+    {},
+  );
+  const [neteaseOpen, setNeteaseOpen] = useState(false);
   const add = () => {
     const title = window.prompt("歌曲名称");
     if (!title?.trim()) return;
@@ -2712,9 +3207,14 @@ function MusicPage({
     <div className="page-body music-page">
       <div className="music-top">
         <span>NOW PLAYING</span>
-        <button onClick={add}>
-          <Icon name="plus" />
-        </button>
+        <div>
+          <button aria-label="网易云连接" onClick={() => setNeteaseOpen(true)}>
+            <Icon name="link" />
+          </button>
+          <button aria-label="添加音乐" onClick={add}>
+            <Icon name="plus" />
+          </button>
+        </div>
       </div>
       {track ? (
         <>
@@ -2788,6 +3288,72 @@ function MusicPage({
           </button>
         </>
       )}
+      <section className="netease-entry surface" onClick={() => setNeteaseOpen(true)}>
+        <div>
+          <small>NETEASE CLOUD MUSIC</small>
+          <b>网易云音乐连接</b>
+          <span>{netease.baseUrl ? "接口已配置" : "预留接口 · 后续同步歌单与播放"}</span>
+        </div>
+        <Icon name="chevron" />
+      </section>
+      {neteaseOpen && (
+        <NeteaseConnectionModal
+          value={netease}
+          onChange={setNetease}
+          onClose={() => setNeteaseOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function NeteaseConnectionModal({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: Record<string, string>;
+  onChange: (value: Record<string, string>) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState(value);
+  const [message, setMessage] = useState("");
+  const save = () => {
+    onChange(form);
+    setMessage("网易云参数已保存到此设备");
+  };
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal">
+        <div className="modal-head">
+          <div><small>NETEASE CLOUD MUSIC</small><h2>网易云音乐</h2></div>
+          <button onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <p>这里预留网易云适配层。接入接口后可同步账号歌单、封面、进度和主页播放器。</p>
+        <div className="parameter-form">
+          {[
+            ["baseUrl", "接口地址", "https://你的网易云 API"],
+            ["cookie", "登录 Cookie / Token", "MUSIC_U=…"],
+            ["uid", "网易云 UID", "用户 ID"],
+            ["playlistId", "默认歌单 ID", "歌单 ID"],
+          ].map(([key, label, placeholder]) => (
+            <label className="profile-field" key={key}>
+              <span>{label}</span>
+              <input
+                type={key === "cookie" ? "password" : "text"}
+                value={form[key] || ""}
+                placeholder={placeholder}
+                autoCapitalize="none"
+                autoCorrect="off"
+                onChange={(event) => setForm({ ...form, [key]: event.target.value })}
+              />
+            </label>
+          ))}
+        </div>
+        {message && <p className="connection-message">{message}</p>}
+        <button className="save-profile" onClick={save}>保存网易云参数</button>
+      </section>
     </div>
   );
 }

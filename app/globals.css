@@ -4223,6 +4223,248 @@ body {
   text-align: right;
 }
 
+/* functional AI connections, calls and rich chat */
+.ai-connection-modal {
+  max-height: min(82dvh, 720px);
+  overflow-y: auto;
+}
+.ai-connection-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: 6px 0 18px;
+}
+.ai-connection-tabs button {
+  min-width: 0;
+  min-height: 62px;
+  border: 1px solid #dedfdd;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #777;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 8px;
+}
+.ai-connection-tabs button.active {
+  border-color: #aebec3;
+  background: #e9f0f1;
+  color: #252b2d;
+  box-shadow: inset 2px 0 #a6bbc2;
+}
+.ai-connection-tabs svg {
+  width: 18px;
+  height: 18px;
+}
+.compose-previews {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 0 1px 7px;
+  scrollbar-width: none;
+}
+.compose-preview {
+  position: relative;
+  flex: 0 0 58px;
+  height: 50px;
+  border: 1px solid #dedfdd;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eff0ed;
+}
+.compose-preview img,
+.compose-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.compose-preview audio {
+  width: 150px;
+  height: 34px;
+  margin: 8px;
+}
+.compose-preview:has(audio) {
+  flex-basis: 170px;
+}
+.compose-preview > span {
+  width: 100%;
+  height: 100%;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 6px;
+  overflow: hidden;
+}
+.compose-preview > span svg {
+  width: 15px;
+}
+.compose-preview > button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 17px !important;
+  height: 17px !important;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(20, 20, 20, 0.72) !important;
+}
+.compose-preview > button svg {
+  width: 9px;
+  height: 9px;
+}
+.chat-compose:has(.compose-previews) {
+  height: auto;
+  min-height: 148px;
+}
+.message-attachments {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.message-attachments img,
+.message-attachments video {
+  display: block;
+  width: min(220px, 100%);
+  max-height: 250px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #e8e9e6;
+}
+.message-attachments audio {
+  width: min(220px, 100%);
+  height: 36px;
+}
+.file-attachment {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 11px;
+  color: inherit;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 8px;
+}
+.file-attachment svg {
+  width: 16px;
+  flex: 0 0 auto;
+}
+.compose-actions button.active,
+.voice.recording {
+  background: #dbe8eb !important;
+  box-shadow: 0 0 0 5px rgba(184, 220, 232, 0.22);
+}
+.call-layer {
+  align-items: stretch;
+  padding: 16px;
+}
+.voice-call-modal {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 360px);
+  margin: auto;
+  padding: 44px 26px 30px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 28px;
+  background: rgba(239, 242, 241, 0.94);
+  backdrop-filter: blur(30px);
+  text-align: center;
+  box-shadow: 0 28px 80px rgba(24, 34, 37, 0.22);
+}
+.voice-call-modal .avatar-mark {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 18px;
+  font-size: 25px;
+}
+.voice-call-modal > small {
+  font-size: 7px;
+  letter-spacing: 0.2em;
+  color: #829094;
+}
+.voice-call-modal h2 {
+  margin: 7px 0 5px;
+  font: 22px Georgia, "Songti SC", serif;
+}
+.voice-call-modal p {
+  min-height: 21px;
+  margin: 0 0 26px;
+  color: #858b8a;
+  font-size: 9px;
+}
+.call-start {
+  min-width: 136px;
+  min-height: 46px;
+  border: 0;
+  border-radius: 24px;
+  background: #202526;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+.call-start svg,
+.call-actions svg {
+  width: 17px;
+}
+.call-actions {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+}
+.call-actions button {
+  width: 50px;
+  height: 50px;
+  border: 1px solid #d5d8d7;
+  border-radius: 50%;
+  background: #fff;
+}
+.call-actions .call-end {
+  color: white;
+  background: #303536;
+  transform: rotate(135deg);
+}
+.music-top > div {
+  display: flex;
+  gap: 7px;
+}
+.netease-entry {
+  width: 100%;
+  margin-top: 18px;
+  padding: 17px 16px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+}
+.netease-entry > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.netease-entry small {
+  font-size: 6px;
+  letter-spacing: 0.15em;
+  color: #9a9f9d;
+}
+.netease-entry b {
+  font: 12px Georgia, "Songti SC", serif;
+}
+.netease-entry span {
+  font-size: 7px;
+  color: #8e9492;
+}
+.netease-entry > svg {
+  width: 16px;
+}
+
 /* supplied Vesper app mark */
 .wordmark .home-app-mark {
   width: 31px;

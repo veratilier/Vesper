@@ -16,13 +16,13 @@ export async function POST(request: Request) {
     );
   const data = await request.formData();
   const file = data.get("file");
-  if (!(file instanceof File) || !file.type.startsWith("image/")) {
+  if (!(file instanceof File)) {
     return Response.json(
-      { error: "Image required" },
+      { error: "File required" },
       { status: 400, headers: corsHeaders(request) },
     );
   }
-  if (file.size > 8 * 1024 * 1024) {
+  if (file.size > 32 * 1024 * 1024) {
     return Response.json(
       { error: "Image is too large" },
       { status: 413, headers: corsHeaders(request) },
@@ -39,7 +39,13 @@ export async function POST(request: Request) {
     httpMetadata: { contentType: file.type },
   });
   return Response.json(
-    { key, url: `${new URL(request.url).origin}/api/media/${key}` },
+    {
+      key,
+      url: `${new URL(request.url).origin}/api/media/${key}`,
+      name: file.name,
+      type: file.type || "application/octet-stream",
+      size: file.size,
+    },
     { headers: corsHeaders(request) },
   );
 }

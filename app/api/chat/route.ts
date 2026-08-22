@@ -34,6 +34,28 @@ export async function GET(request: Request) {
   if (!(await authorizeApp(request))) return json(request, { error: 'Device not paired' }, 401);
   await ensureSchema();
   const url = new URL(request.url);
+  if (url.searchParams.get('list') === '1') {
+    const list = await getDb().prepare(`SELECT conversation_id AS id,
+      COUNT(*) AS message_count, MAX(created_at) AS updated_at,
+      (SELECT content FROM vesper_chat_messages latest
+       WHERE latest.conversation_id = vesper_chat_messages.conversation_id
+       ORDER BY latest.created_at ASC LIMIT 1) AS title
+      FROM vesper_chat_messages GROUP BY conversation_id
+      ORDER BY updated_at DESC LIMIT 100`).all<{
+        id: string;
+        message_count: number;
+        updated_at: string;
+        title: string;
+      }>();
+    return json(request, {
+      conversations: list.results.map((item) => ({
+        id: item.id,
+        title: item.title?.slice(0, 42) || '未命名对话',
+        updatedAt: item.updated_at,
+        messageCount: item.message_count,
+      })),
+    });
+  }
   const conversationId = url.searchParams.get('conversationId')?.trim() || 'main';
   const result = await getDb().prepare(`SELECT id, conversation_id, role, content, status, metadata, created_at
     FROM vesper_chat_messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 200`)
@@ -54,21 +76,42 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!(await authorizeApp(request))) return json(request, { error: 'Device not paired' }, 401);
   await ensureSchema();
-  const body = await request.json() as { conversationId?: string; content?: string };
+  const body = await request.json() as {
+    conversationId?: string;
+    content?: string;
+    attachments?: Array<{
+      key: string;
+      url: string;
+      name: string;
+      type: string;
+      size: number;
+    }>;
+  };
   const content = body.content?.trim() || '';
   if (!content || content.length > 20_000) return json(request, { error: 'Invalid message' }, 400);
+  const attachments = Array.isArray(body.attachments)
+    ? body.attachments.slice(0, 12).filter((item) =>
+        Boolean(item?.key && item?.url && item?.name && item?.type),
+      )
+    : [];
   const message = {
     id: crypto.randomUUID(),
     conversationId: body.conversationId?.trim() || 'main',
     role: 'user' as const,
     content,
     status: 'queued',
-    metadata: {},
+    metadata: { attachments },
     createdAt: new Date().toISOString(),
   };
   await getDb().prepare(`INSERT INTO vesper_chat_messages
     (id, conversation_id, role, content, status, metadata, created_at)
-    VALUES (?, ?, 'user', ?, 'queued', '{}', ?)`)
-    .bind(message.id, message.conversationId, message.content, message.createdAt).run();
+    VALUES (?, ?, 'user', ?, 'queued', ?, ?)`)
+    .bind(
+      message.id,
+      message.conversationId,
+      message.content,
+      JSON.stringify(message.metadata),
+      message.createdAt,
+    ).run();
   return json(request, { message }, 201);
 }

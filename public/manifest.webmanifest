@@ -1,7 +1,7 @@
 {
   "name": "Vesper",
   "short_name": "Vesper",
-  "id": "/?vesper-pwa=5",
+  "id": "/?vesper-pwa=6",
   "description": "属于你的安静生活角落",
   "start_url": "/",
   "scope": "/",
@@ -12,19 +12,19 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon-192-20260823-v5.png",
+      "src": "/icon-192-20260823-v6.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512-20260823-v5.png",
+      "src": "/icon-512-20260823-v6.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-maskable-512-20260823-v5.png",
+      "src": "/icon-maskable-512-20260823-v6.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -1,10 +1,12 @@
-const CACHE = "vesper-shell-v3";
+const CACHE = "vesper-shell-v4";
 const SHELL = [
   "./",
-  "./manifest.webmanifest?v=20260823",
-  "./icon-192-20260823.png",
-  "./icon-512-20260823.png",
-  "./apple-touch-icon-20260823.png",
+  "./manifest.webmanifest?v=4",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png",
+  "./apple-touch-icon.png",
+  "./favicon.png",
 ];
 
 self.addEventListener("install", (event) => {

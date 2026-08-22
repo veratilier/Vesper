@@ -1495,7 +1495,39 @@ function ConnectedChat({
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
   const recordingChunks = useRef<Blob[]>([]);
+  const localMessageKey = () =>
+    `vesper-local-chat-${connections.active}-${conversationId}`;
+  const saveLocalMessages = (messages: BridgeChatMessage[]) => {
+    window.localStorage.setItem(localMessageKey(), JSON.stringify(messages));
+    setData({
+      messages,
+      bridge: { runtime: connections.active, online: true },
+    });
+  };
   const refresh = async () => {
+    if (connections.active !== "cyberboss") {
+      const configured =
+        connections.active === "api"
+          ? Boolean(
+              connections.api.baseUrl &&
+                connections.api.apiKey &&
+                connections.api.model,
+            )
+          : Boolean(connections.mcp.url);
+      const messages = readLocalValue<BridgeChatMessage[]>(localMessageKey(), []);
+      setData({
+        messages,
+        bridge: { runtime: connections.active, online: configured },
+      });
+      setError(
+        configured
+          ? ""
+          : `请先在设置 → AI 连接中配置${
+              connections.active === "api" ? " API Key" : " MCP"
+            }`,
+      );
+      return;
+    }
     const token = deviceToken();
     if (!token) {
       setError("请先在设置 → AI 连接中配置连接方式");
@@ -1526,6 +1558,50 @@ function ConnectedChat({
       const attachments = await Promise.all(
         pending.map(async ({ file }) => uploadMedia(file)),
       );
+      if (connections.active !== "cyberboss") {
+        const createdAt = new Date().toISOString();
+        const userMessage: BridgeChatMessage = {
+          id: crypto.randomUUID(),
+          conversationId,
+          role: "user",
+          content: content || "附件",
+          status: "delivered",
+          metadata: { attachments },
+          createdAt,
+        };
+        const current = readLocalValue<BridgeChatMessage[]>(localMessageKey(), []);
+        saveLocalMessages([...current, userMessage]);
+        const response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            mode: connections.active,
+            connection: connections[connections.active],
+            conversationId,
+            messages: [...current, userMessage].map((item) => ({
+              role: item.role === "agent" ? "assistant" : item.role,
+              content: item.content,
+            })),
+            attachments,
+          }),
+        });
+        const result = (await response.json()) as { content?: string; error?: string };
+        if (!response.ok) throw new Error(result.error || "AI 连接请求失败");
+        const agentMessage: BridgeChatMessage = {
+          id: crypto.randomUUID(),
+          conversationId,
+          role: "agent",
+          content: result.content || "AI 没有返回内容",
+          status: "delivered",
+          createdAt: new Date().toISOString(),
+        };
+        saveLocalMessages([...current, userMessage, agentMessage]);
+        rememberConversation(conversationId, content.slice(0, 28) || "附件");
+        pending.forEach((item) => URL.revokeObjectURL(item.preview));
+        setPending([]);
+        setError("");
+        return;
+      }
       const response = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: deviceHeaders(),
@@ -1558,7 +1634,7 @@ function ConnectedChat({
       window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-  }, [conversationId]);
+  }, [conversationId, connections.active]);
   useLayoutEffect(() => {
     const scroller = streamEnd.current?.closest(
       ".scroll-view",
@@ -2511,6 +2587,7 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
       { key: "transport", label: "传输方式", placeholder: "Streamable HTTP / SSE" },
       { key: "token", label: "授权令牌", type: "password", placeholder: "Bearer token（可选）" },
       { key: "serverName", label: "服务名称", placeholder: "我的 MCP" },
+      { key: "toolName", label: "对话工具名称", placeholder: "chat" },
     ],
     cyberboss: [
       { key: "endpoint", label: "运行端地址", placeholder: "https://api.vesper.r-vera.com" },

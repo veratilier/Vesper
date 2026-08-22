@@ -7,7 +7,7 @@ const allowedOrigins = new Set([
 export function corsHeaders(request: Request): Headers {
   const headers = new Headers({
     'access-control-allow-methods': 'GET, PUT, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, x-vesper-device-token',
     'access-control-max-age': '86400',
     'vary': 'Origin',
   });

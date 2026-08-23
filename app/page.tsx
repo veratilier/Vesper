@@ -102,6 +102,7 @@ function Notes() {
   );
 }
 const VESPER_API_ORIGIN = "https://api.vesper.r-vera.com";
+const DEFAULT_APP_BACKGROUND = 'url("/vesper-default-bg.webp")';
 function apiUrl(path: string) {
   if (typeof window === "undefined") return path;
   return ["localhost", "127.0.0.1"].includes(window.location.hostname)
@@ -557,13 +558,13 @@ export default function Home() {
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [conversationId, setConversationId] = useState("main");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
-  const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: "" });
+  const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: DEFAULT_APP_BACKGROUND });
   const [userName, setUserName] = useState(initialProfile.userName);
   const [agentName, setAgentName] = useState(initialProfile.agentName);
   const [userAvatar, setUserAvatar] = useState(initialProfile.userAvatar);
   const [agentAvatar, setAgentAvatar] = useState(initialProfile.agentAvatar);
   const [accent, setAccent] = useState(initialAppearance.accent);
-  const [customBackground, setCustomBackground] = useState(initialAppearance.background);
+  const [customBackground, setCustomBackground] = useState(initialAppearance.background || DEFAULT_APP_BACKGROUND);
   const [trackIndex, setTrackIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [tracks, setTracks] = usePersistentDocument<Track[]>("music", []);
@@ -648,7 +649,7 @@ export default function Home() {
   }, [playing, currentTrack]);
   const shellStyle = {
     "--theme-accent": accent,
-    ...(customBackground ? { backgroundImage: customBackground } : {}),
+    backgroundImage: customBackground || DEFAULT_APP_BACKGROUND,
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
@@ -688,7 +689,7 @@ export default function Home() {
         }
         if (appearance && !hasLocalAppearance) {
           setAccent(appearance.accent || "#b8dce8");
-          setCustomBackground(appearance.background || "");
+          setCustomBackground(appearance.background || DEFAULT_APP_BACKGROUND);
         }
       })
       .catch(() => {})
@@ -1116,6 +1117,36 @@ function wakeThreshold() {
   return -Math.log(unit);
 }
 
+type AutonomousPushKind = "message" | "call" | "note";
+
+async function sendAutonomousPush(
+  kind: AutonomousPushKind,
+  title: string,
+  body: string,
+  url = "/",
+) {
+  if (!("serviceWorker" in navigator) || Notification.permission !== "granted") return false;
+  const registration = await navigator.serviceWorker.ready;
+  const current = await registration.pushManager.getSubscription();
+  if (!current) return false;
+  const response = await fetch(apiUrl("/api/push"), {
+    method: "POST",
+    headers: appHeaders(true),
+    body: JSON.stringify({
+      action: "notify",
+      subscription: serializeSubscription(current),
+      notification: {
+        title,
+        body,
+        url,
+        tag: `vesper-agent-${kind}-${Date.now()}`,
+        kind,
+      },
+    }),
+  });
+  return response.ok;
+}
+
 function useAutonomousWake(agentName: string) {
   const [preferences] = usePersistentDocument<VesperPreferences>("settings", defaultPreferences);
   const [, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
@@ -1186,10 +1217,16 @@ function useAutonomousWake(agentName: string) {
           tone: "mist",
           createdAt: new Date().toISOString(),
         }, ...items]);
-        if (Notification.permission === "granted") {
+        const delivered = await sendAutonomousPush(
+          "note",
+          agentName || "Vesper",
+          `给你留了一张便笺：${text}`,
+          "/?view=notes",
+        );
+        if (!delivered && Notification.permission === "granted") {
           const registration = await navigator.serviceWorker?.ready;
           await registration?.showNotification(agentName || "Vesper", {
-            body: text,
+            body: `给你留了一张便笺：${text}`,
             tag: `vesper-wake-${generation}`,
             icon: "/icon-192.png",
           });
@@ -4227,7 +4264,7 @@ function NeteaseConnectionModal({
         <p>这里预留网易云适配层。接入接口后可同步账号歌单、封面、进度和主页播放器。</p>
         <div className="parameter-form">
           {[
-            ["baseUrl", "接口地址", "https://你的网易云 API"],
+            ["baseUrl", "接口地址", "https://music-api.r-vera.com"],
             ["cookie", "登录 Cookie / Token", "MUSIC_U=…"],
             ["uid", "网易云 UID", "用户 ID"],
             ["playlistId", "默认歌单 ID", "歌单 ID"],

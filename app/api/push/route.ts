@@ -37,8 +37,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   await ensureSchema();
   const body = (await request.json()) as {
-    action?: "subscribe" | "test";
+    action?: "subscribe" | "test" | "notify";
     subscription?: unknown;
+    notification?: {
+      title?: string;
+      body?: string;
+      url?: string;
+      tag?: string;
+      kind?: "message" | "call" | "note";
+    };
   };
   if (!validSubscription(body.subscription))
     return json(request, { error: "Invalid push subscription" }, 400);
@@ -51,19 +58,28 @@ export async function POST(request: Request) {
     .bind(body.subscription.endpoint, JSON.stringify(body.subscription), now, now)
     .run();
 
-  if (body.action !== "test") return json(request, { ok: true });
+  if (body.action !== "test" && body.action !== "notify") return json(request, { ok: true });
   const settings = pushEnv();
   if (!settings.VAPID_PUBLIC_KEY || !settings.VAPID_PRIVATE_KEY)
     return json(request, { error: "Push server is not configured" }, 503);
 
+  const payload = body.action === "notify"
+    ? {
+        title: (body.notification?.title || "Vesper").slice(0, 80),
+        body: (body.notification?.body || "Vesper 有新的行动").slice(0, 260),
+        url: body.notification?.url?.startsWith("/") ? body.notification.url : "/",
+        tag: (body.notification?.tag || "vesper-agent-action").slice(0, 120),
+        kind: body.notification?.kind || "message",
+      }
+    : {
+        title: "Vesper",
+        body: "Web Push 已连接。即使关闭页面，Vesper 也可以送达提醒。",
+        url: "/",
+        tag: "vesper-test",
+      };
   const delivered = await sendPushNotification(
     body.subscription,
-    {
-      title: "Vesper",
-      body: "Web Push 已连接。即使关闭页面，Vesper 也可以送达提醒。",
-      url: "/",
-      tag: "vesper-test",
-    },
+    payload,
     {
       publicKey: settings.VAPID_PUBLIC_KEY,
       privateKey: settings.VAPID_PRIVATE_KEY,

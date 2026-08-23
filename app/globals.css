@@ -662,7 +662,13 @@ body {
   inset: 0 auto 0 0;
   width: min(84%, 340px);
   padding: calc(18px + var(--safe-top)) 22px calc(18px + var(--safe-bottom));
-  background: rgba(241, 244, 241, 0.96);
+  background-color: #eef3f7;
+  background-image:
+    linear-gradient(rgba(249, 251, 252, 0.16), rgba(238, 244, 248, 0.2)),
+    url("/vesper-drawer-bg.webp");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   box-shadow: 18px 0 45px rgba(29, 44, 43, 0.15);
   transform: translateX(-102%);
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);

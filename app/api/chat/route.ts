@@ -128,3 +128,13 @@ export async function PATCH(request: Request) {
   if (!result.meta.changes) return json(request, { error: 'Message not found' }, 404);
   return json(request, { ok: true });
 }
+
+export async function DELETE(request: Request) {
+  if (!(await authorizeApp(request))) return json(request, { error: 'Device not paired' }, 401);
+  await ensureSchema();
+  const conversationId = new URL(request.url).searchParams.get('conversationId')?.trim();
+  if (!conversationId) return json(request, { error: 'Conversation id required' }, 400);
+  const result = await getDb().prepare('DELETE FROM vesper_chat_messages WHERE conversation_id = ?')
+    .bind(conversationId).run();
+  return json(request, { ok: true, deleted: result.meta.changes });
+}

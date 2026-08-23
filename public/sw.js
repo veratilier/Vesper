@@ -1,4 +1,4 @@
-const CACHE = "vesper-shell-v12-interface-refresh";
+const CACHE = "vesper-shell-v13-live-tools";
 const SHELL = [
   "./",
   "./manifest-v8.webmanifest",

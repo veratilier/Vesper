@@ -56,7 +56,7 @@ function findItems(value: unknown): unknown[] {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { url?: string; token?: string };
+    const body = (await request.json()) as { url?: string; token?: string; toolName?: string };
     const url = safeRemoteUrl(body.url);
     const headers: Record<string, string> = { accept: "application/json, text/event-stream" };
     if (body.token) headers.authorization = `Bearer ${body.token}`;
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
           jsonrpc: "2.0",
           id: crypto.randomUUID(),
           method: "tools/call",
-          params: { name: "memory.list", arguments: { limit: 500 } },
+          params: { name: body.toolName || "memory.list", arguments: { limit: 500 } },
         }),
         redirect: "error",
       });

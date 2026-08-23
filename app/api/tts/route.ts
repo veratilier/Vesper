@@ -41,8 +41,8 @@ export async function POST(request: Request) {
         ? { "content-type": "application/json", accept: "audio/mpeg", "xi-api-key": connection.apiKey }
         : { "content-type": "application/json", accept: "audio/mpeg, audio/*", authorization: `Bearer ${connection.apiKey}` },
       body: JSON.stringify(isElevenLabs
-        ? { text, model_id: connection.model || "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 } }
-        : { model: connection.model || "gpt-4o-mini-tts", voice: connection.voiceId || "alloy", input: text, response_format: "mp3" }),
+        ? { text, model_id: connection.model || "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 }, speed: Number(connection.speed || 1) }
+        : { model: connection.model || "gpt-4o-mini-tts", voice: connection.voiceId || "alloy", input: text, response_format: "mp3", speed: Number(connection.speed || 1) }),
       redirect: "error",
     });
     if (!response.ok) {

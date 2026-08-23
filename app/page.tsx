@@ -352,6 +352,7 @@ Object.assign(iconPaths, {
     "M7 6c4-3 10-2 11 1l2 6c.3 2-1 3-3 3h-4l1 4c.3 2-2 3-3 1l-4-7",
   ],
   refresh: ["M20 11a8 8 0 1 0-2 5", "M20 4v7h-7"],
+  trash: ["M4 7h16", "M9 3h6l1 4H8z", "M7 7l1 14h8l1-14", "M10 11v6", "M14 11v6"],
   mic: [
     "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z",
     "M5 10v2a7 7 0 0 0 14 0v-2",
@@ -598,7 +599,7 @@ export default function Home() {
   useAutonomousWake(agentName);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=12", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=13", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
     const timer = window.setTimeout(() => {
       setSplashVisible(false);
@@ -1018,6 +1019,9 @@ export default function Home() {
               setConversationId(id);
               setHistoryOpen(false);
             }}
+            onDelete={(id) => {
+              if (id === conversationId) setConversationId("main");
+            }}
             onClose={() => setHistoryOpen(false)}
           />
         )}
@@ -1294,7 +1298,7 @@ function useAutonomousWake(agentName: string) {
         if (!configured) return;
         const response = await fetch("/api/ai", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: deviceHeaders(),
           body: JSON.stringify({
             mode: connections.active,
             connection: connections[connections.active],
@@ -1494,10 +1498,12 @@ function rememberConversation(id: string, title = "新对话", messageCount?: nu
 function HistoryModal({
   activeId,
   onSelect,
+  onDelete,
   onClose,
 }: {
   activeId: string;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
   onClose: () => void;
 }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>(() =>
@@ -1523,6 +1529,28 @@ function HistoryModal({
   const visible = conversations.filter((item) =>
     String(item.title || "未命名对话").toLowerCase().includes(query.trim().toLowerCase()),
   );
+  const remove = async (item: ConversationSummary) => {
+    if (!window.confirm(`删除“${item.title || "未命名对话"}”？此操作无法撤销。`)) return;
+    const token = deviceToken();
+    if (token) {
+      const response = await fetch(
+        apiUrl(`/api/chat?conversationId=${encodeURIComponent(item.id)}`),
+        { method: "DELETE", headers: { "x-vesper-device-token": token } },
+      );
+      if (!response.ok && response.status !== 404) {
+        window.alert("云端聊天记录删除失败，请稍后重试");
+        return;
+      }
+    }
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith("vesper-local-chat-") && key.endsWith(`-${item.id}`))
+        window.localStorage.removeItem(key);
+    }
+    const next = conversations.filter((conversation) => conversation.id !== item.id);
+    setConversations(next);
+    window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(next));
+    onDelete(item.id);
+  };
   return (
     <div className="modal-layer history-layer">
       <button className="modal-scrim" onClick={onClose} />
@@ -1547,17 +1575,17 @@ function HistoryModal({
         <div className="history-list">
           {visible.length ? (
             visible.map((item) => (
-              <button
-                className={item.id === activeId ? "selected" : ""}
-                key={item.id}
-                onClick={() => onSelect(item.id)}
-              >
-                <b>{item.title || "未命名对话"}</b>
-                <span>
-                  {new Date(item.updatedAt).toLocaleString("zh-CN")} · {item.messageCount}
-                  条
-                </span>
-              </button>
+              <article className={item.id === activeId ? "history-item-row selected" : "history-item-row"} key={item.id}>
+                <button className="history-open" onClick={() => onSelect(item.id)}>
+                  <b>{item.title || "未命名对话"}</b>
+                  <span>
+                    {new Date(item.updatedAt).toLocaleString("zh-CN")} · {item.messageCount} 条
+                  </span>
+                </button>
+                <button className="history-delete" aria-label={`删除 ${item.title || "对话"}`} onClick={() => void remove(item)}>
+                  <Icon name="trash" />
+                </button>
+              </article>
             ))
           ) : (
             <EmptyState text="还没有聊天记录。" />
@@ -1704,7 +1732,7 @@ function VoiceCallModal({
       }
       const response = await fetch("/api/ai", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: deviceHeaders(),
         body: JSON.stringify({
           mode: connections.active,
           connection: connections[connections.active],
@@ -2152,7 +2180,7 @@ function ConnectedChat({
         const startedAt = performance.now();
         const response = await fetch("/api/ai", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: deviceHeaders(),
           body: JSON.stringify({
             mode: connections.active,
             connection: connections[connections.active],
@@ -2162,10 +2190,25 @@ function ConnectedChat({
               content: item.content,
             })),
             attachments,
+            documents: Object.fromEntries(
+              ["notes", "todos", "anniversaries", "diary", "music", "musicControl"].map((key) => [
+                key,
+                readLocalValue(`vesper-document-${key}`, key === "diary" || key === "musicControl" ? {} : []),
+              ]),
+            ),
           }),
         });
-        const result = (await response.json()) as { content?: string; error?: string };
+        const result = (await response.json()) as {
+          content?: string;
+          reasoningSummary?: string;
+          changedDocuments?: Record<string, unknown>;
+          error?: string;
+        };
         if (!response.ok) throw new Error(result.error || "AI 连接请求失败");
+        for (const [key, value] of Object.entries(result.changedDocuments || {})) {
+          window.localStorage.setItem(`vesper-document-${key}`, JSON.stringify(value));
+          window.dispatchEvent(new CustomEvent("vesper-document-change", { detail: { key, value } }));
+        }
         const agentMessage: BridgeChatMessage = {
           id: crypto.randomUUID(),
           conversationId,
@@ -2175,12 +2218,7 @@ function ConnectedChat({
           metadata: {
             // eslint-disable-next-line react-hooks/purity
             durationMs: Math.round(performance.now() - startedAt),
-            thoughtSummary: [
-              "理解本轮消息与附件",
-              `通过 ${connections.active === "api" ? "模型 API" : "MCP 对话工具"}处理请求`,
-              "整理并生成最终回复",
-            ].join("\n"),
-            tools: [connections.active === "api" ? connections.api.model || "模型 API" : connections.mcp.toolName || "MCP"],
+            thoughtSummary: result.reasoningSummary || undefined,
           },
           createdAt: new Date().toISOString(),
         };
@@ -2411,7 +2449,7 @@ function ConnectedChat({
                 <div>
                   <p>{item.content}</p>
                   <MessageAttachments items={item.metadata?.attachments || []} />
-                  <button className="message-edit" onClick={() => void editMessage(item)}><Icon name="edit" />编辑</button>
+                  <button className="message-edit" aria-label="编辑这条消息" title="编辑" onClick={() => void editMessage(item)}><Icon name="edit" /></button>
                 </div>
                 <AvatarMark src={userAvatar} label={userName} kind="user" />
               </div>
@@ -2537,34 +2575,12 @@ function ConnectedChat({
           />
           <section className="thought-sheet">
             <div className="thought-sheet-head">
-              <div>
-                <small>RUNTIME SUMMARY</small>
-                <h2>思考过程</h2>
-                <span>
-                  <Icon name="clock" />
-                  {thought.metadata?.durationMs
-                    ? `${Math.max(1, Math.round(thought.metadata.durationMs / 1000))} 秒`
-                    : "AI 运行端"}
-                </span>
-              </div>
               <button aria-label="关闭" onClick={() => setThought(null)}>
                 <Icon name="close" />
               </button>
+              <h2>Thought process</h2>
             </div>
-            <ol className="thought-process-list">
-              {(thought.metadata?.thoughtSummary || "整理上下文\n生成回复")
-                .split(/\n+/)
-                .filter(Boolean)
-                .map((step, index) => (
-                  <li key={`${step}-${index}`}>
-                    <i>{index + 1}</i>
-                    <span>{step}</span>
-                  </li>
-                ))}
-            </ol>
-            <p>
-              显示可核对的过程摘要、工具与耗时；不会暴露模型的隐藏推理原文。
-            </p>
+            <div className="thought-raw">{thought.metadata?.thoughtSummary}</div>
           </section>
         </div>
       )}
@@ -3026,6 +3042,8 @@ function SettingsPage({
         <VesperMcpModal onClose={closeDetail} />
       ) : selected === "自主唤醒" ? (
         <WakeVisualizer preferences={preferences} onClose={closeDetail} />
+      ) : selected === "Agent 声音" ? (
+        <VoiceSettingsModal onClose={closeDetail} />
       ) : selected &&
         ["通知偏好", "关心频率", "记忆权限", "导出与备份"].includes(
           selected,
@@ -3053,6 +3071,7 @@ function SettingsPage({
 
 function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferences; onClose: () => void }) {
   const [tick, setTick] = useState(0);
+  const [previewPulse, setPreviewPulse] = useState(0);
   const runtime = readLocalValue("vesper-wake-runtime-v1", {
     checkedAt: 0, cumulative: 0, threshold: 1, lastWakeAt: 0, generation: 0,
   });
@@ -3071,7 +3090,7 @@ function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferenc
       <button className="modal-scrim" onClick={onClose} />
       <section className="connection-modal wake-visualizer" data-tick={tick}>
         <div className="modal-head"><button className="settings-back" onClick={onClose}><Icon name="chevron" /></button><div><small>AUTONOMOUS WAKE</small><h2>自主唤醒</h2></div></div>
-        <div className={preferences.careFrequency === "off" ? "wake-orbit asleep" : "wake-orbit"} style={{ "--wake-progress": progress } as CSSProperties}><i /><i /><span><Icon name="sparkles" /></span></div>
+        <div key={previewPulse} className={`${preferences.careFrequency === "off" ? "wake-orbit asleep" : "wake-orbit"}${previewPulse ? " previewing" : ""}`} style={{ "--wake-progress": progress } as CSSProperties}><i /><i /><span><Icon name="sparkles" /></span></div>
         <div className="wake-status-grid">
           <div><small>当前状态</small><b>{preferences.careFrequency === "off" ? "休眠" : "静候合适时机"}</b></div>
           <div><small>机会累积</small><b>{Math.round(progress * 100)}%</b></div>
@@ -3079,7 +3098,7 @@ function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferenc
           <div><small>预计窗口</small><b>{estimatedHours === null ? "—" : estimatedHours < 1 ? "一小时内" : `约 ${Math.ceil(estimatedHours)} 小时`}</b></div>
         </div>
         <p className="settings-hint">Vesper 只在白天、达到频率阈值且 AI 已连接时行动；留言、消息或来电会同时触发 Web Push。</p>
-        <button className="reset-background" onClick={() => setTick((value) => value + 1)}>预览一次脉冲</button>
+        <button className="reset-background" onClick={() => setPreviewPulse((value) => value + 1)}>预览一次脉冲</button>
       </section>
     </div>
   );
@@ -3112,11 +3131,12 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     return value;
   });
   const [testingId, setTestingId] = useState("");
-  const add = () =>
-    setServers((current) => [
-      ...current,
-      { id: crypto.randomUUID(), name: "", url: "", token: "", enabled: true, authMode: "none" },
-    ]);
+  const [editingId, setEditingId] = useState("");
+  const add = () => {
+    const id = crypto.randomUUID();
+    setServers((current) => [...current, { id, name: "", url: "", token: "", enabled: true, authMode: "none" }]);
+    setEditingId(id);
+  };
   const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
     setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   const authorize = async (server: ExternalMcpEntry) => {
@@ -3223,38 +3243,36 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
         <p>在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
         <div className="mcp-server-list">
           {!servers.length && <EmptyState text="还没有接入第三方 MCP。" />}
-          {servers.map((server, index) => (
+          {servers.map((server) => (
             <article className="mcp-server-card" key={server.id}>
-              <div className="mcp-server-head">
-                <b>MCP {String(index + 1).padStart(2, "0")}</b>
-                <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}><Icon name="close" /></button>
+              <div className="mcp-server-summary">
+                <span className={server.enabled ? "mcp-live-dot" : "mcp-live-dot off"} />
+                <div><b>{server.name || "未命名 MCP"}</b><small>{server.url || "尚未填写地址"} · {server.authMode === "oauth" ? `OAuth ${server.oauthStatus === "authorized" ? "已授权" : "待授权"}` : "Bearer / 无授权"}</small></div>
               </div>
-              <label className="profile-field"><span>名称</span><input value={server.name} placeholder="例如：外置记忆库" onChange={(event) => update(server.id, { name: event.target.value })} /></label>
-              <label className="profile-field"><span>Streamable HTTP / SSE 地址</span><input value={server.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { url: event.target.value })} /></label>
-              <div className="mcp-auth-choice">
-                <span>OAuth 授权</span>
-                <div>
-                  <button className={(server.authMode || "none") === "none" ? "selected" : ""} onClick={() => update(server.id, { authMode: "none" })}>无</button>
-                  <button className={server.authMode === "oauth" ? "selected" : ""} onClick={() => update(server.id, { authMode: "oauth" })}>有</button>
-                </div>
+              <div className="mcp-card-actions">
+                <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中" : "测试"}</button>
+                {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>授权</button>}
+                <button onClick={() => setEditingId(server.id)}>编辑</button>
+                <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}>删除</button>
               </div>
-              {server.authMode === "oauth" ? (
-                <div className="mcp-oauth-fields">
-                  <p className="settings-hint">授权页面和 Token 端点会从 MCP 元数据自动发现。只有服务不支持自动注册时，才需要填写 Client ID。</p>
-                  <label className="profile-field"><span>Client ID（通常可留空）</span><input value={server.clientId || ""} autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { clientId: event.target.value })} /></label>
-                  <button className="mcp-oauth-action" onClick={() => void authorize(server)}>{server.oauthStatus === "authorized" ? "重新授权" : "授权并连接"}</button>
-                </div>
-              ) : (
-                <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={server.token} placeholder="无需授权可留空" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { token: event.target.value })} /></label>
-              )}
-              <button className="mcp-test-action" disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中…" : "测试连接"}</button>
-              <button className={server.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => update(server.id, { enabled: !server.enabled })}><span>{server.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
             </article>
           ))}
         </div>
         {message && <p className="connection-message">{message}</p>}
-        <button className="save-profile" onClick={() => setMessage("MCP 工具目录已保存在此设备")}>保存工具目录</button>
       </section>
+      {editingId && (() => {
+        const server = servers.find((item) => item.id === editingId);
+        if (!server) return null;
+        return <div className="mcp-editor-layer"><button className="modal-scrim" onClick={() => setEditingId("")} /><section className="mcp-editor-modal">
+          <div className="modal-head"><div><small>MCP SERVER</small><h2>{server.name ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h2></div><button onClick={() => setEditingId("")}><Icon name="close" /></button></div>
+          <label className="profile-field"><span>名称</span><input value={server.name} onChange={(event) => update(server.id, { name: event.target.value })} /></label>
+          <label className="profile-field"><span>Streamable HTTP 地址</span><input value={server.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { url: event.target.value })} /></label>
+          <div className="mcp-auth-choice"><span>OAuth 授权</span><div><button className={(server.authMode || "none") === "none" ? "selected" : ""} onClick={() => update(server.id, { authMode: "none" })}>无</button><button className={server.authMode === "oauth" ? "selected" : ""} onClick={() => update(server.id, { authMode: "oauth" })}>有</button></div></div>
+          {server.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并直接跳转授权；通常无需手填授权地址。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={server.clientId || ""} onChange={(event) => update(server.id, { clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={server.token} onChange={(event) => update(server.id, { token: event.target.value })} /></label>}
+          <button className={server.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => update(server.id, { enabled: !server.enabled })}><span>{server.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
+          <div className="mcp-editor-actions"><button onClick={() => setEditingId("")}>取消</button><button className="save-profile" onClick={() => setEditingId("")}>保存</button></div>
+        </section></div>;
+      })()}
     </div>
   );
 }
@@ -3385,9 +3403,7 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
   ];
   const fields: Record<AiConnectionStore["active"], Array<{ key: string; label: string; placeholder?: string; type?: string }>> = {
     api: [
-      { key: "provider", label: "服务商", placeholder: "OpenAI / Anthropic / 自定义" },
-      { key: "baseUrl", label: "API Base URL", placeholder: "https://api.openai.com/v1" },
-      { key: "model", label: "模型 ID", placeholder: "gpt-5 / 自定义模型" },
+      { key: "baseUrl", label: "API 地址", placeholder: "https://api.openai.com/v1" },
       { key: "apiKey", label: "API Key", type: "password", placeholder: "sk-…" },
     ],
     mcp: [
@@ -3450,11 +3466,15 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
         if (!response.ok) throw new Error(`API 返回 ${response.status}`);
       } else if (active === "mcp") {
         if (!form.url) throw new Error("请填写 MCP 服务地址");
-        const response = await fetch(form.url, {
-          method: "GET",
-          headers: form.token ? { authorization: `Bearer ${form.token}` } : undefined,
+        const response = await fetch("/api/mcp", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: form.url, token: form.token }),
         });
-        if (!response.ok) throw new Error(`MCP 返回 ${response.status}`);
+        const result = await response.json() as { toolCount?: number; error?: string };
+        if (!response.ok) throw new Error(result.error || `MCP 返回 ${response.status}`);
+        setMessage(`参数已保存，发现 ${result.toolCount || 0} 个 MCP tools`);
+        return;
       } else {
         if (!form.deviceToken) throw new Error("请填写设备配对口令");
         const endpoint = (form.endpoint || VESPER_API_ORIGIN).replace(/\/$/, "");
@@ -3496,6 +3516,14 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
           ))}
         </div>
         <div className="parameter-form">
+          {active === "api" && (
+            <label className="profile-field"><span>接口类型</span>
+              <select value={form.provider || "OpenAI-compatible"} onChange={(event) => setForm({ ...form, provider: event.target.value })}>
+                <option value="OpenAI-compatible">OpenAI-compatible</option>
+                <option value="Anthropic">Anthropic</option>
+              </select>
+            </label>
+          )}
           {fields[active].map((field) => (
             <label className="profile-field" key={field.key}>
               <span>{field.label}</span>
@@ -3512,16 +3540,15 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
           {active === "api" && (
             <>
               <button className="model-fetch-button" disabled={busy || !form.baseUrl || !form.apiKey} onClick={() => void fetchModels()}>
-                {busy ? "正在读取…" : "获取可用模型"}
+                {busy ? "正在读取…" : "读取这个 Key 的可用模型"}
               </button>
-              {models.length > 0 && (
-                <label className="profile-field"><span>选择模型</span>
+              <label className="profile-field"><span>当前模型</span>
                   <select value={form.model || ""} onChange={(event) => setForm({ ...form, model: event.target.value })}>
-                    <option value="">请选择模型</option>
+                    <option value="">先读取模型</option>
+                    {form.model && !models.includes(form.model) && <option value={form.model}>{form.model}</option>}
                     {models.map((model) => <option value={model} key={model}>{model}</option>)}
                   </select>
                 </label>
-              )}
             </>
           )}
         </div>
@@ -3987,6 +4014,78 @@ function PreferenceToggle({
         <u />
       </i>
     </button>
+  );
+}
+
+function VoiceSettingsModal({ onClose }: { onClose: () => void }) {
+  const [settings, setSettings] = useLocalDocument<ConnectionSettings>("connections", {});
+  const [form, setForm] = useState<Record<string, string>>(() => ({
+    provider: "ElevenLabs",
+    baseUrl: "https://api.elevenlabs.io",
+    model: "eleven_multilingual_v2",
+    speed: "1",
+    autoPlay: "true",
+    ...(settings["Agent 声音"] || {}),
+  }));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [micStatus, setMicStatus] = useState("尚未测试");
+  const [apiStatus, setApiStatus] = useState("尚未测试");
+  const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const requestMic = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicStatus("已授权");
+    } catch { setMicStatus("未授权"); }
+  };
+  const testVoice = async () => {
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "Vesper 声音连接成功。", connection: form }),
+      });
+      if (!response.ok) {
+        const result = await response.json() as { error?: string };
+        throw new Error(result.error || "声音服务测试失败");
+      }
+      setSettings({ ...settings, "Agent 声音": form });
+      setApiStatus("可调用");
+      const url = URL.createObjectURL(await response.blob());
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+      setMessage("参数已保存并完成试听");
+    } catch (reason) {
+      setApiStatus("调用失败");
+      setMessage(reason instanceof Error ? reason.message : "声音服务测试失败");
+    } finally { setBusy(false); }
+  };
+  const eleven = /eleven/i.test(form.provider || "");
+  return (
+    <div className="modal-layer settings-subpage-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal voice-settings-modal">
+        <div className="modal-head"><button className="settings-back" aria-label="返回" onClick={onClose}><Icon name="chevron" /></button><div><small>VOICE</small><h2>语音</h2></div></div>
+        <div className="parameter-form">
+          <label className="profile-field"><span>声音服务</span><select value={form.provider} onChange={(event) => {
+            const provider = event.target.value;
+            setForm((current) => ({ ...current, provider, baseUrl: provider === "ElevenLabs" ? "https://api.elevenlabs.io" : "https://api.openai.com/v1", model: provider === "ElevenLabs" ? "eleven_multilingual_v2" : "gpt-4o-mini-tts" }));
+          }}><option>ElevenLabs</option><option>OpenAI-compatible</option></select></label>
+          <label className="profile-field"><span>API Base URL</span><input value={form.baseUrl || ""} onChange={(event) => update("baseUrl", event.target.value)} /></label>
+          <label className="profile-field"><span>{eleven ? "ElevenLabs API Key" : "API Key"}</span><input type="password" value={form.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} /></label>
+          <label className="profile-field"><span>{eleven ? "ElevenLabs Voice ID" : "声音 ID"}</span><input value={form.voiceId || ""} onChange={(event) => update("voiceId", event.target.value)} /></label>
+          <label className="profile-field"><span>{eleven ? "ElevenLabs 模型" : "TTS 模型"}</span><input value={form.model || ""} onChange={(event) => update("model", event.target.value)} /></label>
+          <label className="voice-speed"><span>语速 {Number(form.speed || 1).toFixed(1)}×</span><input type="range" min="0.7" max="1.3" step="0.1" value={form.speed || "1"} onChange={(event) => update("speed", event.target.value)} /></label>
+          <button className="voice-autoplay" onClick={() => update("autoPlay", form.autoPlay === "false" ? "true" : "false")}><i className={form.autoPlay === "false" ? "switch" : "switch on"}><u /></i><span><b>语音消息自动播放</b><small>收到语音消息时直接响，不用点</small></span></button>
+        </div>
+        <button className="save-profile" disabled={busy} onClick={() => void testVoice()}>{busy ? "试听中…" : "试听"}</button>
+        <section className="voice-test-panel"><div><b>语音测试</b><button onClick={() => void Promise.all([requestMic(), testVoice()])}>全部测试</button></div><p><span>1　麦克风权限</span><em>{micStatus}</em><button onClick={() => void requestMic()}>请求权限</button></p><p><span>2　声音服务可否调用</span><em>{apiStatus}</em></p><p><span>3　当前打开界面</span><em>{window.matchMedia("(display-mode: standalone)").matches ? "iPhone 主屏幕 PWA" : "浏览器"}</em></p></section>
+        {message && <p className="connection-message">{message}</p>}
+      </section>
+    </div>
   );
 }
 
@@ -4640,6 +4739,7 @@ function MemoryLibrary() {
   const [connect, setConnect] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
+  const [memoryPreview, setMemoryPreview] = useState<Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>>([]);
   const input = useRef<HTMLInputElement>(null);
   const refresh = () =>
     fetch(apiUrl("/api/state"), { cache: "no-store", headers: appHeaders() })
@@ -4670,7 +4770,7 @@ function MemoryLibrary() {
       const response = await fetch("/api/memory/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: connections.memoryUrl, token: connections.memoryToken }),
+        body: JSON.stringify({ url: connections.memoryUrl, token: connections.memoryToken, toolName: connections.memoryTool || "memory.list" }),
       });
       const result = (await response.json()) as {
         items?: Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>;
@@ -4678,8 +4778,8 @@ function MemoryLibrary() {
         error?: string;
       };
       if (!response.ok || !result.items) throw new Error(result.error || "同步失败");
-      setExternalMemory(result.items);
-      setSyncMessage(`已同步 ${result.count || 0} 条外置记忆到星图`);
+      setMemoryPreview(result.items);
+      setSyncMessage(`已从外置记忆库读取 ${result.count || 0} 条；确认后可整理进 Vesper`);
     } catch (reason) {
       setSyncMessage(reason instanceof Error ? reason.message : "外置记忆同步失败");
     } finally {
@@ -4830,6 +4930,10 @@ function MemoryLibrary() {
                 }
               />
             </label>
+            <label className="profile-field">
+              <span>读取记忆的 MCP Tool</span>
+              <input value={connections.memoryTool || "memory.list"} onChange={(event) => setConnections({ ...connections, memoryTool: event.target.value })} placeholder="memory.list" />
+            </label>
             <button className="save-profile" onClick={() => setConnect(false)}>
               保存
             </button>
@@ -4838,8 +4942,19 @@ function MemoryLibrary() {
               disabled={syncing || !connections.memoryUrl}
               onClick={() => void syncExternalMemory()}
             >
-              {syncing ? "同步中…" : "同步到记忆星图"}
+              {syncing ? "读取中…" : "同步外置记忆目录"}
             </button>
+            {memoryPreview.length > 0 && (
+              <>
+                <div className="external-memory-preview">
+                  {memoryPreview.slice(0, 8).map((item) => <article key={item.id}><small>{item.kind} · {item.source}</small><b>{item.title}</b></article>)}
+                </div>
+                <button className="save-profile" onClick={() => {
+                  setExternalMemory(memoryPreview);
+                  setSyncMessage(`已整理 ${memoryPreview.length} 条外置记忆到 Vesper 星图`);
+                }}>让 Vesper 整理到记忆库</button>
+              </>
+            )}
             {syncMessage && <p className="connection-message">{syncMessage}</p>}
           </section>
         </div>

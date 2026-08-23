@@ -3,7 +3,7 @@
   "short_name": "Vesper",
   "id": "/",
   "description": "属于你的安静生活角落",
-  "start_url": "/?vesper-pwa=8",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],

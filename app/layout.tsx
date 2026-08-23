@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Vesper — 私人生活角落",
   description: "天气、便笺、纪念日、提醒与音乐，在晚风般安静的空间里相遇。",
-  manifest: "/manifest-v8.webmanifest",
+  manifest: "/manifest.webmanifest?v=9",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

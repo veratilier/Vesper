@@ -1,7 +1,7 @@
-const CACHE = "vesper-shell-v8-push";
+const CACHE = "vesper-shell-v9-push";
 const SHELL = [
   "./",
-  "./manifest-v8.webmanifest",
+  "./manifest.webmanifest?v=9",
   "./icon-192-20260823-v8.png",
   "./icon-512-20260823-v8.png",
   "./icon-maskable-512-20260823-v8.png",

@@ -13,6 +13,7 @@ type Note = { id: string; text: string; kind: "user" | "agent"; tone: string; cr
 type Todo = { id: string; title: string; done: boolean; due: string; tag: string; createdAt: string };
 type Anniversary = { id: string; title: string; date: string; repeats: boolean };
 type DiaryEntry = { user?: string; agent?: string; updatedAt?: string };
+type Track = { id: string; neteaseId?: string; title: string; artist?: string; duration?: string };
 
 const cors = {
   "access-control-allow-origin": "*",
@@ -137,6 +138,25 @@ function createServer(env: Env) {
       if (serialized.toLowerCase().includes(lower)) matches.push({ source: key, value });
     }
     return text(matches);
+  });
+
+  server.registerTool("list_music", {
+    description: "列出 Vesper 本地播放器当前同步的歌曲，可据此选择歌曲 ID。",
+  }, async () => {
+    const tracks = await readDoc<Track[]>(env.DB, "music", []);
+    return text(tracks.map(({ id, neteaseId, title, artist, duration }) => ({ id, neteaseId, title, artist, duration })));
+  });
+  server.registerTool("control_music", {
+    description: "控制用户设备上的 Vesper 播放器。设备在线时会在数秒内执行。",
+    inputSchema: {
+      action: z.enum(["play", "pause", "next", "previous", "play_track"]),
+      trackId: z.string().optional().describe("play_track 时填写 list_music 返回的 id 或 neteaseId"),
+    },
+  }, async ({ action, trackId }) => {
+    if (action === "play_track" && !trackId) throw new Error("play_track requires trackId");
+    const command = { id: crypto.randomUUID(), action, trackId, createdAt: now() };
+    await writeDoc(env.DB, "musicControl", command);
+    return text({ queued: true, command });
   });
 
   server.registerTool("send_notification", {

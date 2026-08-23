@@ -115,3 +115,16 @@ export async function POST(request: Request) {
     ).run();
   return json(request, { message }, 201);
 }
+
+export async function PATCH(request: Request) {
+  if (!(await authorizeApp(request))) return json(request, { error: 'Device not paired' }, 401);
+  await ensureSchema();
+  const body = await request.json() as { id?: string; content?: string };
+  const content = body.content?.trim() || '';
+  if (!body.id || !content || content.length > 20_000)
+    return json(request, { error: 'Invalid message' }, 400);
+  const result = await getDb().prepare(`UPDATE vesper_chat_messages
+    SET content = ? WHERE id = ? AND role = 'user'`).bind(content, body.id).run();
+  if (!result.meta.changes) return json(request, { error: 'Message not found' }, 404);
+  return json(request, { ok: true });
+}

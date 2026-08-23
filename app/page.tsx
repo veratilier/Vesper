@@ -165,23 +165,22 @@ function Anniversaries() {
     "anniversaries",
     [],
   );
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({
+    title: "",
+    date: new Date().toLocaleDateString("en-CA"),
+    repeats: true,
+  });
   const add = () => {
-    const title = window.prompt("纪念日名称");
-    if (!title?.trim()) return;
-    const date = window.prompt(
-      "日期（YYYY-MM-DD）",
-      new Date().toLocaleDateString("en-CA"),
-    );
-    if (!date || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) return;
-    setItems((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        title: title.trim(),
-        date,
-        repeats: window.confirm("是否每年重复？"),
-      },
-    ]);
+    if (!draft.title.trim() || !draft.date) return;
+    setItems((current) => [...current, {
+      id: crypto.randomUUID(),
+      title: draft.title.trim(),
+      date: draft.date,
+      repeats: draft.repeats,
+    }]);
+    setDraft({ title: "", date: new Date().toLocaleDateString("en-CA"), repeats: true });
+    setAdding(false);
   };
   const next = nextAnniversary(items);
   return (
@@ -232,10 +231,25 @@ function Anniversaries() {
           </article>
         ))}
       </div>
-      <button className="primary-action" onClick={add}>
+      <button className="primary-action" onClick={() => setAdding(true)}>
         <Icon name="plus" />
         添加纪念日
       </button>
+      {adding && (
+        <div className="modal-layer">
+          <button className="modal-scrim" aria-label="关闭" onClick={() => setAdding(false)} />
+          <section className="connection-modal anniversary-editor">
+            <div className="modal-head">
+              <div><small>NEW ANNIVERSARY</small><h2>添加纪念日</h2></div>
+              <button aria-label="关闭" onClick={() => setAdding(false)}><Icon name="close" /></button>
+            </div>
+            <label className="profile-field"><span>名称</span><input value={draft.title} autoFocus placeholder="值得记住的日子" onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+            <label className="profile-field"><span>日期</span><input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
+            <button className={draft.repeats ? "repeat-choice selected" : "repeat-choice"} onClick={() => setDraft({ ...draft, repeats: !draft.repeats })}><span>每年重复</span><b>{draft.repeats ? "✓" : ""}</b></button>
+            <button className="save-profile" disabled={!draft.title.trim() || !draft.date} onClick={add}>保存纪念日</button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -490,6 +504,7 @@ type Track = {
   cover?: string;
   neteaseId?: string;
 };
+type MusicControl = { id: string; action: "play" | "pause" | "next" | "previous" | "play_track"; trackId?: string; processedAt?: string };
 type BoxApp = {
   id: string;
   name: string;
@@ -551,7 +566,9 @@ export default function Home() {
     () => false,
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashVisible, setSplashVisible] = useState(() =>
+    typeof window === "undefined" ? true : window.sessionStorage.getItem("vesper-splash-seen-v2") !== "1",
+  );
   const [active, setActive] = useState("今日");
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -567,7 +584,10 @@ export default function Home() {
   const [customBackground, setCustomBackground] = useState(initialAppearance.background || DEFAULT_APP_BACKGROUND);
   const [trackIndex, setTrackIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
   const [tracks, setTracks] = usePersistentDocument<Track[]>("music", []);
+  const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
   const globalPlayer = useRef<HTMLAudioElement>(null);
   const [storageReady, setStorageReady] = useState(false);
   const [environment, setEnvironment] =
@@ -577,11 +597,15 @@ export default function Home() {
   const currentTrack = tracks[trackIndex];
   useAutonomousWake(agentName);
   useEffect(() => {
-    if ("serviceWorker" in navigator)
-      void navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    const timer = window.setTimeout(() => setSplashVisible(false), 1550);
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js?v=12", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+    }
+    const timer = window.setTimeout(() => {
+      setSplashVisible(false);
+      window.sessionStorage.setItem("vesper-splash-seen-v2", "1");
+    }, splashVisible ? 760 : 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [splashVisible]);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const code = query.get("code");
@@ -647,6 +671,33 @@ export default function Home() {
       void audio.play().catch(() => setPlaying(false));
     else audio.pause();
   }, [playing, currentTrack]);
+  useEffect(() => {
+    if (!musicControl || musicControl.processedAt) return;
+    const timer = window.setTimeout(() => {
+      if (musicControl.action === "play") setPlaying(true);
+      if (musicControl.action === "pause") setPlaying(false);
+      if (musicControl.action === "next" && tracks.length) setTrackIndex((index) => (index + 1) % tracks.length);
+      if (musicControl.action === "previous" && tracks.length) setTrackIndex((index) => (index - 1 + tracks.length) % tracks.length);
+      if (musicControl.action === "play_track" && musicControl.trackId) {
+        const index = tracks.findIndex((track) => track.id === musicControl.trackId || track.neteaseId === musicControl.trackId);
+        if (index >= 0) { setTrackIndex(index); setPlaying(true); }
+      }
+      setMusicControl({ ...musicControl, processedAt: new Date().toISOString() });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [musicControl, setMusicControl, tracks]);
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const response = await fetch(apiUrl("/api/state?key=musicControl"), { cache: "no-store", headers: appHeaders() });
+        if (!response.ok) return;
+        const result = await response.json() as { value?: MusicControl | null };
+        if (result.value?.id && result.value.id !== musicControl?.id) setMusicControl(result.value);
+      } catch {}
+    };
+    const timer = window.setInterval(() => void poll(), 3000);
+    return () => window.clearInterval(timer);
+  }, [musicControl?.id, setMusicControl]);
   const shellStyle = {
     "--theme-accent": accent,
     backgroundImage: customBackground || DEFAULT_APP_BACKGROUND,
@@ -756,6 +807,8 @@ export default function Home() {
       <audio
         ref={globalPlayer}
         src={currentTrack?.url}
+        onTimeUpdate={(event) => setPlaybackTime(event.currentTarget.currentTime)}
+        onLoadedMetadata={(event) => setPlaybackDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onEnded={() =>
           tracks.length && setTrackIndex((trackIndex + 1) % tracks.length)
         }
@@ -864,6 +917,12 @@ export default function Home() {
               onSelect={setTrackIndex}
               selected={trackIndex}
               onTracks={setTracks}
+              currentTime={playbackTime}
+              duration={playbackDuration}
+              onSeek={(time) => {
+                if (globalPlayer.current) globalPlayer.current.currentTime = time;
+                setPlaybackTime(time);
+              }}
             />
           ) : active === "记忆库" ? (
             <MemoryLibrary />
@@ -1551,7 +1610,7 @@ function VoiceCallModal({
     speakerRef.current = speaker;
   }, [speaker]);
   const restartRecognition = () => {
-    if (mutedRef.current) return;
+    if (mutedRef.current || stateRef.current !== "listening") return;
     window.setTimeout(() => {
       try {
         recognition.current?.start();
@@ -1567,6 +1626,7 @@ function VoiceCallModal({
   const speak = async (text: string, id: number) => {
     if (generation.current !== id) return;
     if (!speakerRef.current) {
+      stateRef.current = "listening";
       setState("listening");
       restartRecognition();
       return;
@@ -1589,22 +1649,30 @@ function VoiceCallModal({
       playbackUrl.current = url;
       const audio = new Audio(url);
       playback.current = audio;
-      audio.onplay = () => generation.current === id && setState("speaking");
+      audio.onplay = () => {
+        if (generation.current === id) {
+          stateRef.current = "speaking";
+          setState("speaking");
+        }
+      };
       audio.onended = () => {
         stopPlayback();
         if (generation.current !== id) return;
+        stateRef.current = "listening";
         setState("listening");
         restartRecognition();
       };
       audio.onerror = () => {
         stopPlayback();
         setCaption("TTS 音频播放失败");
+        stateRef.current = "listening";
         setState("listening");
         restartRecognition();
       };
       await audio.play();
     } catch (reason) {
       setCaption(reason instanceof Error ? reason.message : "TTS 播放失败");
+      stateRef.current = "listening";
       setState("listening");
       restartRecognition();
     }
@@ -1615,7 +1683,9 @@ function VoiceCallModal({
     const id = ++generation.current;
     stopPlayback();
     setCaption(clean);
+    stateRef.current = "thinking";
     setState("thinking");
+    try { recognition.current?.stop(); } catch {}
     try {
       if (connections.active === "cyberboss") {
         const response = await fetch(apiUrl("/api/chat"), {
@@ -1626,6 +1696,7 @@ function VoiceCallModal({
         if (!response.ok) throw new Error("AI 运行端暂时没有响应");
         if (generation.current === id) {
           setCaption("消息已交给 AI 运行端，等待回复");
+          stateRef.current = "listening";
           setState("listening");
           restartRecognition();
         }
@@ -1650,6 +1721,7 @@ function VoiceCallModal({
     } catch (reason) {
       if (generation.current !== id) return;
       setCaption(reason instanceof Error ? reason.message : "语音通话连接失败");
+      stateRef.current = "error";
       setState("error");
     }
   };
@@ -1700,7 +1772,7 @@ function VoiceCallModal({
       if (!Speech) throw new Error("当前浏览器不支持实时语音识别");
       const session = new Speech();
       session.lang = "zh-CN";
-      session.continuous = true;
+      session.continuous = false;
       session.interimResults = true;
       session.onresult = (event) => {
         let interim = "";
@@ -1720,18 +1792,19 @@ function VoiceCallModal({
         if (final) void runTurn(final);
       };
       session.onend = () => {
-        if (stream.current && !mutedRef.current && stateRef.current !== "thinking") restartRecognition();
+        if (stream.current && !mutedRef.current && stateRef.current === "listening") restartRecognition();
       };
       session.onerror = () => {
         if (stream.current) restartRecognition();
       };
       recognition.current = session;
+      stateRef.current = "listening";
       setState("listening");
       setCaption("我在听");
       session.start();
-    } catch {
+    } catch (reason) {
       setState("error");
-      setCaption("无法开始通话，请检查麦克风与语音识别权限");
+      setCaption(reason instanceof Error ? reason.message : "无法开始通话，请检查麦克风与语音识别权限");
     }
   };
   const finish = () => {
@@ -1989,6 +2062,25 @@ function ConnectedChat({
       bridge: { runtime: connections.active, online: true },
     });
   };
+  const editMessage = async (item: BridgeChatMessage) => {
+    const content = window.prompt("编辑消息", item.content)?.trim();
+    if (!content || content === item.content) return;
+    if (connections.active === "cyberboss") {
+      const response = await fetch(apiUrl("/api/chat"), {
+        method: "PATCH",
+        headers: deviceHeaders(),
+        body: JSON.stringify({ id: item.id, content }),
+      });
+      if (!response.ok) {
+        setError("消息编辑失败");
+        return;
+      }
+      await refresh();
+      return;
+    }
+    const current = readLocalValue<BridgeChatMessage[]>(localMessageKey(), []);
+    saveLocalMessages(current.map((message) => message.id === item.id ? { ...message, content } : message));
+  };
   const refresh = async () => {
     if (connections.active !== "cyberboss") {
       const configured =
@@ -2056,6 +2148,7 @@ function ConnectedChat({
         };
         const current = readLocalValue<BridgeChatMessage[]>(localMessageKey(), []);
         saveLocalMessages([...current, userMessage]);
+        // eslint-disable-next-line react-hooks/purity
         const startedAt = performance.now();
         const response = await fetch("/api/ai", {
           method: "POST",
@@ -2080,6 +2173,7 @@ function ConnectedChat({
           content: result.content || "AI 没有返回内容",
           status: "delivered",
           metadata: {
+            // eslint-disable-next-line react-hooks/purity
             durationMs: Math.round(performance.now() - startedAt),
             thoughtSummary: [
               "理解本轮消息与附件",
@@ -2306,11 +2400,7 @@ function ConnectedChat({
                   )}
                   <p>{item.content}</p>
                   <MessageAttachments items={item.metadata?.attachments || []} />
-                  <small>
-                    {item.metadata?.tools?.length
-                      ? `已使用 ${item.metadata.tools.join("、")}`
-                      : `${agentName} · AI`}
-                  </small>
+                  <small>{agentName} · AI</small>
                 </div>
               </div>
             </div>
@@ -2321,16 +2411,18 @@ function ConnectedChat({
                 <div>
                   <p>{item.content}</p>
                   <MessageAttachments items={item.metadata?.attachments || []} />
-                  <small>
-                    {item.status === "queued"
-                      ? "等待 AI 运行端接收"
-                      : "已送达"}
-                  </small>
+                  <button className="message-edit" onClick={() => void editMessage(item)}><Icon name="edit" />编辑</button>
                 </div>
                 <AvatarMark src={userAvatar} label={userName} kind="user" />
               </div>
             </div>
           ),
+        )}
+        {busy && (
+          <div className="agent-typing" aria-label={`${agentName} 正在输入`}>
+            <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
+            <div><i /><i /><i /><span>{agentName} 正在输入</span></div>
+          </div>
         )}
         <div ref={streamEnd} />
       </div>
@@ -2892,6 +2984,13 @@ function SettingsPage({
           sub={careLabel}
           onClick={() => setSelected("关心频率")}
         />
+        <SettingRow
+          icon="sparkles"
+          title="自主唤醒"
+          sub={preferences.careFrequency === "off" ? "当前已关闭" : "查看运行状态与下一次机会"}
+          status={preferences.careFrequency !== "off"}
+          onClick={() => setSelected("自主唤醒")}
+        />
       </SettingsGroup>
       <SettingsGroup title="隐私与数据">
         <SettingRow
@@ -2925,6 +3024,8 @@ function SettingsPage({
         <ExternalMcpModal onClose={closeDetail} />
       ) : selected === "Vesper MCP" ? (
         <VesperMcpModal onClose={closeDetail} />
+      ) : selected === "自主唤醒" ? (
+        <WakeVisualizer preferences={preferences} onClose={closeDetail} />
       ) : selected &&
         ["通知偏好", "关心频率", "记忆权限", "导出与备份"].includes(
           selected,
@@ -2946,6 +3047,40 @@ function SettingsPage({
           />
         )
       )}
+    </div>
+  );
+}
+
+function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferences; onClose: () => void }) {
+  const [tick, setTick] = useState(0);
+  const runtime = readLocalValue("vesper-wake-runtime-v1", {
+    checkedAt: 0, cumulative: 0, threshold: 1, lastWakeAt: 0, generation: 0,
+  });
+  useEffect(() => {
+    const update = () => setTick(new Date().getTime());
+    const initial = window.setTimeout(update, 0);
+    const timer = window.setInterval(update, 1000);
+    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+  }, []);
+  const elapsed = tick && runtime.checkedAt ? Math.max(0, tick - runtime.checkedAt) / 3_600_000 : 0;
+  const rate = preferences.careFrequency === "daily" ? 1 / 14 : 1 / 72;
+  const progress = preferences.careFrequency === "off" ? 0 : Math.min(1, (runtime.cumulative + elapsed * rate) / Math.max(.01, runtime.threshold));
+  const estimatedHours = preferences.careFrequency === "off" ? null : Math.max(0, (runtime.threshold - runtime.cumulative) / rate - elapsed);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal wake-visualizer" data-tick={tick}>
+        <div className="modal-head"><button className="settings-back" onClick={onClose}><Icon name="chevron" /></button><div><small>AUTONOMOUS WAKE</small><h2>自主唤醒</h2></div></div>
+        <div className={preferences.careFrequency === "off" ? "wake-orbit asleep" : "wake-orbit"} style={{ "--wake-progress": progress } as CSSProperties}><i /><i /><span><Icon name="sparkles" /></span></div>
+        <div className="wake-status-grid">
+          <div><small>当前状态</small><b>{preferences.careFrequency === "off" ? "休眠" : "静候合适时机"}</b></div>
+          <div><small>机会累积</small><b>{Math.round(progress * 100)}%</b></div>
+          <div><small>上次行动</small><b>{runtime.lastWakeAt ? new Date(runtime.lastWakeAt).toLocaleString("zh-CN") : "尚未发生"}</b></div>
+          <div><small>预计窗口</small><b>{estimatedHours === null ? "—" : estimatedHours < 1 ? "一小时内" : `约 ${Math.ceil(estimatedHours)} 小时`}</b></div>
+        </div>
+        <p className="settings-hint">Vesper 只在白天、达到频率阈值且 AI 已连接时行动；留言、消息或来电会同时触发 Web Push。</p>
+        <button className="reset-background" onClick={() => setTick((value) => value + 1)}>预览一次脉冲</button>
+      </section>
     </div>
   );
 }
@@ -3240,6 +3375,9 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState<Record<string, string>>(() => stored[stored.active]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<string[]>(() => {
+    try { return JSON.parse(stored.api.availableModels || "[]") as string[]; } catch { return []; }
+  });
   const choices = [
     { id: "api" as const, label: "API Key", icon: "sparkles" },
     { id: "mcp" as const, label: "MCP", icon: "link" },
@@ -3272,6 +3410,27 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
     setForm(stored[next] || {});
     setMessage("");
   };
+  const fetchModels = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/ai/models", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ baseUrl: form.baseUrl, apiKey: form.apiKey }),
+      });
+      const result = await response.json() as { models?: string[]; error?: string };
+      if (!response.ok) throw new Error(result.error || "获取模型失败");
+      const available = result.models || [];
+      setModels(available);
+      setForm((current) => ({ ...current, availableModels: JSON.stringify(available), model: current.model || available[0] || "" }));
+      setMessage(available.length ? `已获取 ${available.length} 个可用模型` : "接口没有返回可用模型");
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "获取模型失败");
+    } finally {
+      setBusy(false);
+    }
+  };
   const save = async () => {
     setBusy(true);
     setMessage("");
@@ -3283,8 +3442,10 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
       if (active === "api") {
         if (!form.baseUrl || !form.apiKey || !form.model)
           throw new Error("请填写 Base URL、模型和 API Key");
-        const response = await fetch(`${form.baseUrl.replace(/\/$/, "")}/models`, {
-          headers: { authorization: `Bearer ${form.apiKey}` },
+        const response = await fetch("/api/ai/models", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ baseUrl: form.baseUrl, apiKey: form.apiKey }),
         });
         if (!response.ok) throw new Error(`API 返回 ${response.status}`);
       } else if (active === "mcp") {
@@ -3348,6 +3509,21 @@ function AiConnectionModal({ onClose }: { onClose: () => void }) {
               />
             </label>
           ))}
+          {active === "api" && (
+            <>
+              <button className="model-fetch-button" disabled={busy || !form.baseUrl || !form.apiKey} onClick={() => void fetchModels()}>
+                {busy ? "正在读取…" : "获取可用模型"}
+              </button>
+              {models.length > 0 && (
+                <label className="profile-field"><span>选择模型</span>
+                  <select value={form.model || ""} onChange={(event) => setForm({ ...form, model: event.target.value })}>
+                    <option value="">请选择模型</option>
+                    {models.map((model) => <option value={model} key={model}>{model}</option>)}
+                  </select>
+                </label>
+              )}
+            </>
+          )}
         </div>
         {message && <p className="connection-message">{message}</p>}
         <button className="save-profile" disabled={busy} onClick={() => void save()}>
@@ -4178,6 +4354,10 @@ function MagicBox() {
     </div>
   );
 }
+function formatPlaybackTime(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "0:00";
+  return `${Math.floor(value / 60)}:${String(Math.floor(value) % 60).padStart(2, "0")}`;
+}
 function MusicPage({
   tracks,
   playing,
@@ -4185,6 +4365,9 @@ function MusicPage({
   onSelect,
   selected,
   onTracks,
+  currentTime,
+  duration,
+  onSeek,
 }: {
   tracks: Track[];
   playing: boolean;
@@ -4192,6 +4375,9 @@ function MusicPage({
   onSelect: (index: number) => void;
   selected: number;
   onTracks: (value: Track[]) => void;
+  currentTime: number;
+  duration: number;
+  onSeek: (time: number) => void;
 }) {
   const track = tracks[selected];
   const [netease, setNetease] = useLocalDocument<Record<string, string>>(
@@ -4244,6 +4430,10 @@ function MusicPage({
             <h1>{track.title}</h1>
             <p>{track.artist || "未知歌手"}</p>
           </section>
+          <div className="music-progress live-progress">
+            <input aria-label="播放进度" type="range" min="0" max={Math.max(duration, 1)} step="0.1" value={Math.min(currentTime, Math.max(duration, 1))} onChange={(event) => onSeek(Number(event.target.value))} />
+            <span>{formatPlaybackTime(currentTime)}</span><span>{formatPlaybackTime(duration)}</span>
+          </div>
           <div className="music-controls">
             <button
               onClick={() =>
@@ -4313,6 +4503,10 @@ function MusicPage({
         <NeteaseConnectionModal
           value={netease}
           onChange={setNetease}
+          onSync={(items) => {
+            onTracks(items);
+            onSelect(0);
+          }}
           onClose={() => setNeteaseOpen(false)}
         />
       )}
@@ -4323,17 +4517,74 @@ function MusicPage({
 function NeteaseConnectionModal({
   value,
   onChange,
+  onSync,
   onClose,
 }: {
   value: Record<string, string>;
   onChange: (value: Record<string, string>) => void;
+  onSync: (tracks: Track[]) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState(value);
   const [message, setMessage] = useState("");
+  const [syncing, setSyncing] = useState(false);
   const save = () => {
     onChange(form);
     setMessage("网易云参数已保存到此设备");
+  };
+  const sync = async () => {
+    setSyncing(true);
+    setMessage("");
+    try {
+      const base = (form.baseUrl || "https://music-api.r-vera.com").replace(/\/$/, "");
+      const request = async (path: string, params: Record<string, string>) => {
+        const response = await fetch(`${base}${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: new URLSearchParams({ ...params, ...(form.cookie ? { cookie: form.cookie } : {}) }),
+        });
+        const result = await response.json() as Record<string, unknown>;
+        if (!response.ok || Number(result.code || 200) >= 400) throw new Error(`网易云接口返回 ${result.code || response.status}`);
+        return result;
+      };
+      let playlistId = form.playlistId?.trim();
+      if (!playlistId) {
+        if (!form.uid?.trim()) throw new Error("请填写网易云 UID 或默认歌单 ID");
+        const playlists = await request("/user/playlist", { uid: form.uid.trim(), limit: "50" });
+        const first = (playlists.playlist as Array<{ id?: number | string }> | undefined)?.[0];
+        playlistId = first?.id ? String(first.id) : "";
+      }
+      if (!playlistId) throw new Error("没有找到可同步的歌单");
+      const detail = await request("/playlist/track/all", { id: playlistId, limit: "500", offset: "0" });
+      const songs = (detail.songs as Array<{ id: number; name: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } }> | undefined) || [];
+      if (!songs.length) throw new Error("歌单中没有可同步歌曲");
+      const urlMap = new Map<string, string>();
+      for (let offset = 0; offset < songs.length; offset += 100) {
+        const ids = songs.slice(offset, offset + 100).map((song) => song.id).join(",");
+        const urls = await request("/song/url/v1", { id: ids, level: "standard" });
+        for (const item of (urls.data as Array<{ id?: number; url?: string }> | undefined) || [])
+          if (item.id && item.url) urlMap.set(String(item.id), item.url);
+      }
+      const next = songs.map((song) => ({
+        id: `netease-${song.id}`,
+        neteaseId: String(song.id),
+        title: song.name,
+        artist: song.ar?.map((artist) => artist.name).filter(Boolean).join(" / ") || "未知歌手",
+        duration: song.dt ? `${Math.floor(song.dt / 60000)}:${String(Math.floor(song.dt / 1000) % 60).padStart(2, "0")}` : undefined,
+        cover: song.al?.picUrl || "",
+        url: urlMap.get(String(song.id)) || "",
+      })).filter((track) => track.url);
+      if (!next.length) throw new Error("当前歌单没有取得可播放链接，可能需要刷新 Cookie");
+      const saved = { ...form, baseUrl: base, playlistId };
+      onChange(saved);
+      setForm(saved);
+      onSync(next);
+      setMessage(`已同步 ${next.length} 首歌曲，播放器与主页已更新`);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "同步失败");
+    } finally {
+      setSyncing(false);
+    }
   };
   return (
     <div className="modal-layer">
@@ -4343,7 +4594,7 @@ function NeteaseConnectionModal({
           <div><small>NETEASE CLOUD MUSIC</small><h2>网易云音乐</h2></div>
           <button onClick={onClose}><Icon name="close" /></button>
         </div>
-        <p>这里预留网易云适配层。接入接口后可同步账号歌单、封面、进度和主页播放器。</p>
+        <p>连接你的网易云适配接口后，可把默认歌单、封面和可播放地址同步到 Vesper 本地播放器。</p>
         <div className="parameter-form">
           {[
             ["baseUrl", "接口地址", "https://music-api.r-vera.com"],
@@ -4366,6 +4617,7 @@ function NeteaseConnectionModal({
         </div>
         {message && <p className="connection-message">{message}</p>}
         <button className="save-profile" onClick={save}>保存网易云参数</button>
+        <button className="reset-background" disabled={syncing} onClick={() => void sync()}>{syncing ? "正在同步歌单…" : "同步到 Vesper 播放器"}</button>
       </section>
     </div>
   );

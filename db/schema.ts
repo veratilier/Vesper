@@ -45,6 +45,7 @@ export const allowedDocumentKeys = new Set([
   "settings",
   "environment",
   "music",
+  "musicControl",
   "magicBox",
   "pet",
   "connections",

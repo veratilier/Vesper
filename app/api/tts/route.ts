@@ -3,7 +3,12 @@ function json(value: unknown, status = 200) {
 }
 
 function safeHttpsUrl(value: unknown) {
-  const url = new URL(String(value || ""));
+  let url: URL;
+  try {
+    url = new URL(String(value || "").trim());
+  } catch {
+    throw new Error("TTS 地址格式不正确，请填写完整的 https:// 地址");
+  }
   if (url.protocol !== "https:") throw new Error("TTS 地址必须使用 HTTPS");
   const host = url.hostname.toLowerCase();
   if (
@@ -24,11 +29,12 @@ export async function POST(request: Request) {
     const provider = (connection.provider || "").toLowerCase();
     const base = safeHttpsUrl(connection.baseUrl.replace(/\/$/, ""));
     const isElevenLabs = provider.includes("eleven") || base.hostname.includes("elevenlabs");
+    const baseString = base.toString().replace(/\/$/, "");
     const endpoint = connection.endpoint
       ? safeHttpsUrl(connection.endpoint)
       : isElevenLabs
-        ? safeHttpsUrl(`${base.toString().replace(/\/$/, "")}/v1/text-to-speech/${encodeURIComponent(connection.voiceId || "")}`)
-        : safeHttpsUrl(`${base.toString().replace(/\/$/, "")}/audio/speech`);
+        ? safeHttpsUrl(`${baseString}/v1/text-to-speech/${encodeURIComponent(connection.voiceId || "")}`)
+        : safeHttpsUrl(/\/audio\/speech$/i.test(base.pathname) ? baseString : `${baseString}/audio/speech`);
     const response = await fetch(endpoint, {
       method: "POST",
       headers: isElevenLabs

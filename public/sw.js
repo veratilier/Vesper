@@ -1,4 +1,4 @@
-const CACHE = "vesper-shell-v11-local-first";
+const CACHE = "vesper-shell-v12-interface-refresh";
 const SHELL = [
   "./",
   "./manifest-v8.webmanifest",
@@ -35,8 +35,9 @@ self.addEventListener("fetch", (event) => {
     new URL(event.request.url).origin !== self.location.origin
   )
     return;
+  const isNavigation = event.request.mode === "navigate" || event.request.destination === "document";
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, isNavigation ? { cache: "no-store" } : undefined)
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE).then((cache) => cache.put(event.request, copy));
@@ -45,7 +46,7 @@ self.addEventListener("fetch", (event) => {
       .catch(() =>
         caches
           .match(event.request)
-          .then((cached) => cached || caches.match("./")),
+          .then((cached) => cached || (isNavigation ? caches.match("./") : undefined)),
       ),
   );
 });

@@ -1,4 +1,4 @@
-const CACHE = "vesper-shell-v10-soft-pages";
+const CACHE = "vesper-shell-v11-local-first";
 const SHELL = [
   "./",
   "./manifest-v8.webmanifest",
@@ -7,6 +7,8 @@ const SHELL = [
   "./icon-maskable-512-20260823-v8.png",
   "./apple-touch-icon-20260823-v8.png",
   "./favicon-20260823-v8.png",
+  "./vesper-default-bg.webp",
+  "./vesper-drawer-bg.webp",
 ];
 
 self.addEventListener("install", (event) => {

@@ -5137,9 +5137,39 @@ body {
   z-index: 1;
   margin-top: 18px;
   margin-left: .42em;
-  font: 500 15px/1 Georgia, serif;
-  letter-spacing: .42em;
+  font: 400 30px/1 var(--font-pinyon-script), cursive;
+  letter-spacing: .035em;
   animation: vesper-word-arrive .7s .32s ease both;
+}
+
+/* Final Vesper identity and drawer artwork. Keep this after legacy theme rules. */
+.wordmark > b,
+.drawer-brand b {
+  font-family: var(--font-pinyon-script), cursive;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: .035em;
+  text-transform: none;
+}
+
+.wordmark > b {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.drawer-brand b {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.drawer {
+  background-color: #eef3f7;
+  background-image:
+    linear-gradient(rgba(249, 251, 252, .12), rgba(238, 244, 248, .16)),
+    url("/vesper-drawer-bg.webp");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .vesper-splash > span {

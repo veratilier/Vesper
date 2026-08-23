@@ -750,7 +750,7 @@ export default function Home() {
     <main className="stage">
       <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
         <img src="/icon-192-20260823-v8.png" alt="" />
-        <b>VESPER</b>
+        <b>Vesper</b>
         <span />
       </div>
       <audio
@@ -776,7 +776,7 @@ export default function Home() {
               <span className="home-app-mark">
                 <img src="/icon-192-20260823-v8.png" alt="" />
               </span>
-              <b>VESPER</b>
+              <b>Vesper</b>
             </div>
           ) : active === "聊天" ? (
             <div
@@ -896,7 +896,7 @@ export default function Home() {
                   <img src="/icon-192-20260823-v8.png" alt="" />
                 </span>
                 <div>
-                  <b>VESPER</b>
+                  <b>Vesper</b>
                   <small>YOUR QUIET CORNER</small>
                 </div>
               </div>
@@ -1039,6 +1039,7 @@ async function uploadMedia(file: File) {
 }
 function usePersistentDocument<T>(key: string, initial: T) {
   const storageKey = `vesper-document-${key}`;
+  const metaKey = `vesper-document-meta-${key}`;
   const [value, setValue] = useState<T>(() => readLocalValue<T>(storageKey, initial));
   const [ready, setReady] = useState(false);
   const lastSerialized = useRef(
@@ -1046,23 +1047,55 @@ function usePersistentDocument<T>(key: string, initial: T) {
   );
   useEffect(() => {
     let live = true;
-    const hasLocal = window.localStorage.getItem(storageKey) !== null;
-    fetch(apiUrl(`/api/state?key=${encodeURIComponent(key)}`), {
-      headers: appHeaders(),
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((raw) => {
-        const data = raw as { value: unknown };
-        if (live && !hasLocal && data.value !== null) setValue(data.value as T);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (live) setReady(true);
-      });
+    const reconcile = async (initialLoad = false) => {
+      const localRaw = window.localStorage.getItem(storageKey);
+      const localMeta = readLocalValue<{ updatedAt?: string }>(metaKey, {});
+      try {
+        const response = await fetch(apiUrl(`/api/state?key=${encodeURIComponent(key)}`), {
+          cache: "no-store",
+          headers: appHeaders(),
+        });
+        if (!response.ok) throw new Error("sync unavailable");
+        const remote = (await response.json()) as { value: T | null; updatedAt?: string };
+        const remoteTime = remote.updatedAt ? Date.parse(remote.updatedAt) : 0;
+        const localTime = localMeta.updatedAt ? Date.parse(localMeta.updatedAt) : 0;
+        if (remote.value !== null && (localRaw === null || (localTime > 0 && remoteTime > localTime))) {
+          const serialized = JSON.stringify(remote.value);
+          lastSerialized.current = serialized;
+          window.localStorage.setItem(storageKey, serialized);
+          window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: remote.updatedAt, source: "remote" }));
+          if (live) setValue(remote.value);
+        } else if (localRaw !== null && (!remote.updatedAt || localTime === 0)) {
+          const upload = await fetch(apiUrl("/api/state"), {
+            method: "PUT",
+            headers: appHeaders(true),
+            body: JSON.stringify({ key, value: JSON.parse(localRaw) }),
+          });
+          if (upload.ok) {
+            const result = (await upload.json()) as { updatedAt?: string };
+            window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt || new Date().toISOString(), source: "local" }));
+          }
+        }
+      } catch {
+        // Local data remains authoritative while offline or when cloud sync is unavailable.
+      } finally {
+        if (live && initialLoad) setReady(true);
+      }
+    };
+    void reconcile(true);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void reconcile(false);
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       live = false;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
-  }, [key, storageKey]);
+  }, [key, metaKey, storageKey]);
   useEffect(() => {
     const receive = (event: Event) => {
       const detail = (event as CustomEvent<{ key: string; value: T }>).detail;
@@ -1080,6 +1113,7 @@ function usePersistentDocument<T>(key: string, initial: T) {
     if (lastSerialized.current === serialized) return;
     lastSerialized.current = serialized;
     window.localStorage.setItem(storageKey, serialized);
+    window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: new Date().toISOString(), source: "local" }));
     window.dispatchEvent(
       new CustomEvent("vesper-document-change", { detail: { key, value } }),
     );
@@ -1088,10 +1122,16 @@ function usePersistentDocument<T>(key: string, initial: T) {
         method: "PUT",
         headers: appHeaders(true),
         body: JSON.stringify({ key, value }),
-      }).catch(() => {});
+      })
+        .then(async (response) => {
+          if (!response.ok) return;
+          const result = (await response.json()) as { updatedAt?: string };
+          window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt || new Date().toISOString(), source: "local" }));
+        })
+        .catch(() => {});
     }, 260);
     return () => window.clearTimeout(timer);
-  }, [key, ready, storageKey, value]);
+  }, [key, metaKey, ready, storageKey, value]);
   return [value, setValue] as const;
 }
 function useLocalDocument<T>(key: string, initial: T) {
@@ -2866,7 +2906,7 @@ function SettingsPage({
           sub={
             preferences.lastExportAt
               ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}`
-              : "尚未导出"
+              : "本地优先保存 · 应用更新不清除数据"
           }
           onClick={() => setSelected("导出与备份")}
         />
@@ -3089,11 +3129,15 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState(token);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [toolCount, setToolCount] = useState<number | null>(null);
+  const generateToken = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
   const setup = async () => {
-    if (draft.trim().length < 16) {
-      setMessage("访问令牌至少需要 16 位，请使用一段只有你知道的随机口令。");
-      return;
-    }
+    const nextToken = draft.trim() || generateToken();
+    if (nextToken.length < 16) return setMessage("访问令牌至少需要 16 位。");
+    if (!draft.trim()) setDraft(nextToken);
     setBusy(true);
     setMessage("");
     try {
@@ -3103,14 +3147,42 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
           "content-type": "application/json",
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ token: draft.trim() }),
+        body: JSON.stringify({ token: nextToken }),
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error || `配置失败（${response.status}）`);
-      setToken(draft.trim());
-      setMessage("MCP 已启用。把下面的地址和令牌填入 AI 官端即可。");
+      setToken(nextToken);
+      const testResponse = await fetch(apiUrl("/api/mcp"), {
+        method: "POST",
+        headers: appHeaders(true),
+        body: JSON.stringify({ url: VESPER_MCP_URL, token: nextToken }),
+      });
+      const tested = (await testResponse.json()) as { toolCount?: number; error?: string };
+      if (!testResponse.ok) throw new Error(tested.error || "MCP tools 测试失败");
+      setToolCount(tested.toolCount ?? 0);
+      setMessage(`MCP 已启用并连接成功，发现 ${tested.toolCount ?? 0} 个 tools。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "MCP 配置失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const testTools = async () => {
+    if (!draft.trim()) return setMessage("请先生成并启用连接令牌");
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(apiUrl("/api/mcp"), {
+        method: "POST",
+        headers: appHeaders(true),
+        body: JSON.stringify({ url: VESPER_MCP_URL, token: draft.trim() }),
+      });
+      const result = (await response.json()) as { toolCount?: number; serverName?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "MCP tools 测试失败");
+      setToolCount(result.toolCount ?? 0);
+      setMessage(`${result.serverName || "Vesper"} 已连接，发现 ${result.toolCount ?? 0} 个 tools。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "MCP tools 测试失败");
     } finally {
       setBusy(false);
     }
@@ -3138,12 +3210,14 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
           </label>
           <label className="profile-field">
             <span>访问令牌</span>
-            <input type="password" value={draft} autoCapitalize="none" autoCorrect="off" placeholder="设置至少 16 位的私密口令" onChange={(event) => setDraft(event.target.value)} />
+            <input type="password" value={draft} autoCapitalize="none" autoCorrect="off" placeholder="留空时自动生成安全令牌" onChange={(event) => setDraft(event.target.value)} />
           </label>
         </div>
         <p className="settings-hint">令牌只保存在此设备和 MCP 服务的哈希值中；AI 官端连接时使用 Authorization: Bearer。</p>
         {message && <p className="connection-message">{message}</p>}
-        <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "更新连接令牌" : "启用 Vesper MCP"}</button>
+        {toolCount !== null && <p className="settings-hint">当前远程目录：{toolCount} 个 MCP tools</p>}
+        <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "更新并测试 MCP" : "生成令牌并启用 MCP"}</button>
+        <button className="reset-background" disabled={busy || !draft.trim()} onClick={() => void testTools()}>测试 MCP tools</button>
         <button className="reset-background" disabled={!draft.trim()} onClick={() => void copy()}>复制 AI 官端连接参数</button>
       </section>
     </div>
@@ -3548,15 +3622,23 @@ function SettingRow({
 }
 
 async function exportVesperData() {
-  const response = await fetch(apiUrl("/api/state"), { headers: appHeaders() });
-  if (!response.ok) throw new Error("读取数据失败");
-  const payload = (await response.json()) as {
-    documents: Record<string, unknown>;
-  };
+  const local = Object.fromEntries(
+    Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+      .filter((key): key is string => Boolean(key?.startsWith("vesper-")))
+      .map((key) => {
+        const raw = window.localStorage.getItem(key) || "";
+        try { return [key, JSON.parse(raw)]; } catch { return [key, raw]; }
+      }),
+  );
+  let cloud: Record<string, unknown> | null = null;
+  try {
+    const response = await fetch(apiUrl("/api/state"), { cache: "no-store", headers: appHeaders() });
+    if (response.ok) cloud = ((await response.json()) as { documents: Record<string, unknown> }).documents;
+  } catch {}
   const blob = new Blob(
     [
       JSON.stringify(
-        { exportedAt: new Date().toISOString(), version: 1, ...payload },
+        { exportedAt: new Date().toISOString(), version: 2, storageMode: "local-first", local, cloud },
         null,
         2,
       ),
@@ -3691,8 +3773,8 @@ function FunctionalSettingsModal({
             <Icon name="archive" />
             <h3>导出 Vesper 数据</h3>
             <p>
-              生成包含资料、日记、便笺、提醒、聊天和设置的 JSON
-              文件。图片仍保存在 R2，备份中记录其链接。
+              Vesper 以当前设备为主存储，发布新版只替换程序和缓存，不会清空已填写的数据。
+              导出文件会同时收录本地数据与可用的云端镜像。
             </p>
             <button className="save-profile" onClick={doExport}>
               下载备份文件

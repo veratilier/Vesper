@@ -1,7 +1,7 @@
-const CACHE = "vesper-shell-v13-live-tools";
+const CACHE = "vesper-shell-v14-pwa-layout";
 const SHELL = [
   "./",
-  "./manifest-v8.webmanifest",
+  "./manifest.webmanifest?v=9",
   "./icon-192-20260823-v8.png",
   "./icon-512-20260823-v8.png",
   "./icon-maskable-512-20260823-v8.png",

@@ -578,7 +578,7 @@ export default function Home() {
   useEffect(() => {
     if ("serviceWorker" in navigator)
       void navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    const timer = window.setTimeout(() => setSplashVisible(false), 6200);
+    const timer = window.setTimeout(() => setSplashVisible(false), 1550);
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
@@ -748,16 +748,9 @@ export default function Home() {
   return (
     <main className="stage">
       <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
-        <video
-          autoPlay
-          muted
-          playsInline
-          preload="auto"
-          poster="/icon-512-20260823-v8.png"
-          onEnded={() => setSplashVisible(false)}
-        >
-          <source src="/vesper-splash.mp4" type="video/mp4" />
-        </video>
+        <img src="/icon-192-20260823-v8.png" alt="" />
+        <b>VESPER</b>
+        <span />
       </div>
       <audio
         ref={globalPlayer}
@@ -1461,10 +1454,15 @@ function VoiceCallModal({
     "ai-connections-v1",
     { active: "api", api: {}, mcp: {}, cyberboss: {} },
   );
+  const [connectionSettings] = useLocalDocument<ConnectionSettings>("connections", {});
+  const ttsSettings = connectionSettings["Agent 声音"] || {};
   const stream = useRef<MediaStream | null>(null);
   const generation = useRef(0);
   const stateRef = useRef(state);
   const mutedRef = useRef(muted);
+  const speakerRef = useRef(speaker);
+  const playback = useRef<HTMLAudioElement | null>(null);
+  const playbackUrl = useRef("");
   const recognition = useRef<{ start: () => void; stop: () => void } | null>(null);
   useEffect(() => {
     stateRef.current = state;
@@ -1472,6 +1470,9 @@ function VoiceCallModal({
   useEffect(() => {
     mutedRef.current = muted;
   }, [muted]);
+  useEffect(() => {
+    speakerRef.current = speaker;
+  }, [speaker]);
   const restartRecognition = () => {
     if (mutedRef.current) return;
     window.setTimeout(() => {
@@ -1480,34 +1481,62 @@ function VoiceCallModal({
       } catch {}
     }, 180);
   };
-  const speak = (text: string, id: number) => {
+  const stopPlayback = () => {
+    playback.current?.pause();
+    playback.current = null;
+    if (playbackUrl.current) URL.revokeObjectURL(playbackUrl.current);
+    playbackUrl.current = "";
+  };
+  const speak = async (text: string, id: number) => {
     if (generation.current !== id) return;
-    if (!speaker || !("speechSynthesis" in window)) {
+    if (!speakerRef.current) {
       setState("listening");
       restartRecognition();
       return;
     }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "zh-CN";
-    utterance.rate = 1.02;
-    utterance.onstart = () => generation.current === id && setState("speaking");
-    utterance.onend = () => {
+    try {
+      if (!ttsSettings.baseUrl || !ttsSettings.apiKey)
+        throw new Error("请先在设置 → Agent 声音中配置 TTS");
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, connection: ttsSettings }),
+      });
+      if (!response.ok) {
+        const result = (await response.json()) as { error?: string };
+        throw new Error(result.error || "TTS 请求失败");
+      }
       if (generation.current !== id) return;
+      stopPlayback();
+      const url = URL.createObjectURL(await response.blob());
+      playbackUrl.current = url;
+      const audio = new Audio(url);
+      playback.current = audio;
+      audio.onplay = () => generation.current === id && setState("speaking");
+      audio.onended = () => {
+        stopPlayback();
+        if (generation.current !== id) return;
+        setState("listening");
+        restartRecognition();
+      };
+      audio.onerror = () => {
+        stopPlayback();
+        setCaption("TTS 音频播放失败");
+        setState("listening");
+        restartRecognition();
+      };
+      await audio.play();
+    } catch (reason) {
+      setCaption(reason instanceof Error ? reason.message : "TTS 播放失败");
       setState("listening");
       restartRecognition();
-    };
-    utterance.onerror = () => {
-      setState("listening");
-      restartRecognition();
-    };
-    window.speechSynthesis.speak(utterance);
+    }
   };
   const runTurn = async (text: string) => {
     const clean = text.trim();
     if (!clean) return;
     const id = ++generation.current;
-    window.speechSynthesis?.cancel();
+    stopPlayback();
     setCaption(clean);
     setState("thinking");
     try {
@@ -1540,7 +1569,7 @@ function VoiceCallModal({
       if (generation.current !== id) return;
       const answer = result.content || "我在。";
       setCaption(answer);
-      speak(answer, id);
+      void speak(answer, id);
     } catch (reason) {
       if (generation.current !== id) return;
       setCaption(reason instanceof Error ? reason.message : "语音通话连接失败");
@@ -1607,7 +1636,7 @@ function VoiceCallModal({
         if (interim) {
           if (stateRef.current === "speaking") {
             generation.current += 1;
-            window.speechSynthesis.cancel();
+            stopPlayback();
           }
           setCaption(interim);
         }
@@ -1630,9 +1659,9 @@ function VoiceCallModal({
   };
   const finish = () => {
     generation.current += 1;
+    stopPlayback();
     recognition.current?.stop();
     recognition.current = null;
-    window.speechSynthesis?.cancel();
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
     onClose();
@@ -1642,7 +1671,10 @@ function VoiceCallModal({
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, [state]);
-  useEffect(() => () => stream.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => () => {
+    stopPlayback();
+    stream.current?.getTracks().forEach((track) => track.stop());
+  }, []);
   const toggleMute = () => {
     const next = !muted;
     stream.current?.getAudioTracks().forEach((track) => (track.enabled = !next));
@@ -1681,7 +1713,12 @@ function VoiceCallModal({
               <Icon name="mic" />
               <small>{muted ? "取消静音" : "静音"}</small>
             </button>
-            <button onClick={() => setSpeaker((value) => !value)} aria-label="扬声器">
+            <button onClick={() => {
+              const next = !speakerRef.current;
+              speakerRef.current = next;
+              setSpeaker(next);
+              if (!next) stopPlayback();
+            }} aria-label="扬声器">
               <Icon name="volume" />
               <small>{speaker ? "扬声器" : "听筒"}</small>
             </button>
@@ -2672,6 +2709,7 @@ function SettingsPage({
   onEnvironment: (value: EnvironmentSnapshot) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [detailClosing, setDetailClosing] = useState(false);
   const [preferences, setPreferences] =
     usePersistentDocument<VesperPreferences>("settings", defaultPreferences);
   const [notificationPermission, setNotificationPermission] =
@@ -2700,8 +2738,16 @@ function SettingsPage({
       : notificationPermission === "denied"
         ? "通知被拒绝"
         : "尚未授权";
+  const closeDetail = () => {
+    if (detailClosing) return;
+    setDetailClosing(true);
+    window.setTimeout(() => {
+      setSelected(null);
+      setDetailClosing(false);
+    }, 260);
+  };
   return (
-    <div className={selected ? "page-body settings-page detail-active" : "page-body settings-page"}>
+    <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
       <PageIntro
         eyebrow="PREFERENCES"
         title="设置"
@@ -2794,14 +2840,14 @@ function SettingsPage({
           accent={accent}
           onAccent={onAccent}
           onBackground={onBackground}
-          onClose={() => setSelected(null)}
+          onClose={closeDetail}
         />
       ) : selected === "AI 连接" ? (
-        <AiConnectionModal onClose={() => setSelected(null)} />
+        <AiConnectionModal onClose={closeDetail} />
       ) : selected === "MCP 工具" ? (
-        <ExternalMcpModal onClose={() => setSelected(null)} />
+        <ExternalMcpModal onClose={closeDetail} />
       ) : selected === "Vesper MCP" ? (
-        <VesperMcpModal onClose={() => setSelected(null)} />
+        <VesperMcpModal onClose={closeDetail} />
       ) : selected &&
         ["通知偏好", "关心频率", "记忆权限", "导出与备份"].includes(
           selected,
@@ -2810,7 +2856,7 @@ function SettingsPage({
           type={selected}
           preferences={preferences}
           onPreferences={setPreferences}
-          onClose={() => setSelected(null)}
+          onClose={closeDetail}
         />
       ) : (
         selected && (
@@ -2819,7 +2865,7 @@ function SettingsPage({
             environment={environment}
             onEnvironment={onEnvironment}
             onNotificationPermission={setNotificationPermission}
-            onClose={() => setSelected(null)}
+            onClose={closeDetail}
           />
         )
       )}
@@ -3690,9 +3736,11 @@ function ConnectionModal({
       { label: "API Key", key: "apiKey", type: "password" },
     ],
     "Agent 声音": [
-      { label: "TTS 服务商", key: "provider" },
-      { label: "API Base URL", key: "baseUrl" },
-      { label: "声音 ID", key: "voiceId" },
+      { label: "TTS 服务商", key: "provider", placeholder: "OpenAI / ElevenLabs / 兼容服务" },
+      { label: "API Base URL", key: "baseUrl", placeholder: "https://api.openai.com/v1" },
+      { label: "完整请求地址（可选）", key: "endpoint", placeholder: "服务不兼容标准接口时填写" },
+      { label: "模型", key: "model", placeholder: "gpt-4o-mini-tts" },
+      { label: "声音 ID", key: "voiceId", placeholder: "alloy / 自定义声音 ID" },
       { label: "API Key", key: "apiKey", type: "password" },
     ],
     "MCP 服务": [
@@ -3726,6 +3774,19 @@ function ConnectionModal({
             : undefined,
         });
         if (!response.ok) throw new Error(`连接失败（${response.status}）`);
+      } else if (type === "Agent 声音") {
+        if (!form.baseUrl || !form.apiKey)
+          throw new Error("请填写 TTS Base URL 和 API Key");
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: "Vesper 声音连接成功。", connection: form }),
+        });
+        if (!response.ok) {
+          const result = (await response.json()) as { error?: string };
+          throw new Error(result.error || "TTS 测试失败");
+        }
+        await new Audio(URL.createObjectURL(await response.blob())).play();
       } else if (type === "Web Push") {
         if (!window.matchMedia("(display-mode: standalone)").matches && /iPhone|iPad|iPod/.test(navigator.userAgent))
           throw new Error("iPhone 需要先将 Vesper 添加到主屏幕，再从 PWA 内启用推送");
@@ -3748,10 +3809,6 @@ function ConnectionModal({
           body: JSON.stringify({ action: "test", subscription }),
         });
         if (!response.ok) throw new Error("订阅已建立，但服务端测试推送失败");
-      } else {
-        save();
-        setMessage("TTS 参数已保存；CyberBoss 上线后使用这些参数");
-        return;
       }
       save();
       setMessage("连接测试成功");

@@ -62,21 +62,25 @@ export async function POST(request: Request) {
     if (initialized.error?.message) throw new Error(initialized.error.message);
     const sessionId = initialize.headers.get("mcp-session-id");
     let toolCount: number | undefined;
-    if (sessionId) {
-      const tools = await fetch(url, {
-        method: "POST",
-        headers: { ...headers, "mcp-session-id": sessionId },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: crypto.randomUUID(),
-          method: "tools/list",
-          params: {},
-        }),
-      });
-      if (tools.ok) {
-        const listed = parsePayload(await tools.text()) as { result?: { tools?: unknown[] } };
-        toolCount = listed.result?.tools?.length;
-      }
+    const sessionHeaders = sessionId ? { ...headers, "mcp-session-id": sessionId } : headers;
+    await fetch(url, {
+      method: "POST",
+      headers: sessionHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }),
+    }).catch(() => undefined);
+    const tools = await fetch(url, {
+      method: "POST",
+      headers: sessionHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: crypto.randomUUID(),
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    if (tools.ok) {
+      const listed = parsePayload(await tools.text()) as { result?: { tools?: unknown[] } };
+      toolCount = listed.result?.tools?.length;
     }
     return json({
       ok: true,

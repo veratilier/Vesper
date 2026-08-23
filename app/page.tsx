@@ -598,8 +598,15 @@ export default function Home() {
   const currentTrack = tracks[trackIndex];
   useAutonomousWake(agentName);
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("vesper-pwa")) {
+      url.searchParams.delete("vesper-pwa");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, []);
+  useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=13", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=14", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
     const timer = window.setTimeout(() => {
       setSplashVisible(false);

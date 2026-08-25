@@ -3556,6 +3556,31 @@ body {
   bottom: calc(10px + var(--safe-bottom));
   height: 122px;
 }
+
+/* Vesper Codex client: light editorial bubbles with the reference's rhythm. */
+.drawer .nav-row span {
+  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+  font-size: 22px !important;
+  font-weight: 400 !important;
+  letter-spacing: .02em !important;
+  line-height: 1 !important;
+}
+.codex-chat .bridge-presence { font-family: var(--font-geist-sans), sans-serif; letter-spacing: .02em; }
+.codex-chat .chat-stream { gap: 20px; padding-top: 18px; }
+.codex-chat .agent-turn > time,
+.codex-chat .sent-turn > time { font: 600 10px/1.2 var(--font-geist-mono), monospace; letter-spacing: .04em; color: #879497; }
+.codex-chat .message { gap: 10px; }
+.codex-chat .message > div { max-width: min(88%, 530px); padding: 14px 17px; border: 1px solid rgba(120, 145, 151, .16); border-radius: 20px; background: rgba(245, 248, 247, .9); box-shadow: 0 10px 25px rgba(94, 121, 127, .09); }
+.codex-chat .message.mine > div { background: rgba(226, 237, 237, .92); border-color: rgba(124, 156, 161, .24); }
+.codex-chat .message p { font: 15px/1.65 var(--font-geist-sans), "PingFang SC", sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codex-chat .message small { font: 9px/1.2 var(--font-geist-mono), monospace; color: #98a5a6; }
+.codex-thinking-label { display: flex; align-items: center; gap: 6px; margin: -2px 0 9px; color: #6f8588; font: 700 10px/1 var(--font-geist-mono), monospace; letter-spacing: .06em; }
+.codex-thinking-label i { width: 6px; height: 6px; border-radius: 50%; background: #99bdc5; box-shadow: 0 0 0 4px rgba(153, 189, 197, .15); }
+.codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-geist-mono), monospace; }
+.codex-connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: #aab4b4; }
+.codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }
+.codex-chat .send-message-button { background: #6d9299 !important; color: #fff; }
+.codex-chat .send-message-button:disabled { opacity: .34; }
 .chat-page .chat-stream {
   padding-bottom: 168px;
 }
@@ -5434,3 +5459,27 @@ body {
     padding-bottom: var(--safe-bottom);
   }
 }
+
+/* Keep the drawer typography and Codex chat treatment authoritative. */
+.drawer .nav-row span {
+  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+  font-size: 22px !important;
+  font-weight: 400 !important;
+  letter-spacing: .02em !important;
+  line-height: 1 !important;
+}
+.codex-chat .bridge-presence { font-family: var(--font-geist-sans), sans-serif; letter-spacing: .02em; }
+.codex-chat .chat-stream { gap: 20px; padding-top: 18px; }
+.codex-chat .agent-turn > time,
+.codex-chat .sent-turn > time { font: 600 10px/1.2 var(--font-geist-mono), monospace; letter-spacing: .04em; color: #879497; }
+.codex-chat .message > div { max-width: min(88%, 530px); padding: 14px 17px; border: 1px solid rgba(120, 145, 151, .16); border-radius: 20px; background: rgba(245, 248, 247, .9); box-shadow: 0 10px 25px rgba(94, 121, 127, .09); }
+.codex-chat .message.mine > div { background: rgba(226, 237, 237, .92); border-color: rgba(124, 156, 161, .24); }
+.codex-chat .message p { font: 15px/1.65 var(--font-geist-sans), "PingFang SC", sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codex-chat .message small { font: 9px/1.2 var(--font-geist-mono), monospace; color: #98a5a6; }
+.codex-thinking-label { display: flex; align-items: center; gap: 6px; margin: -2px 0 9px; color: #6f8588; font: 700 10px/1 var(--font-geist-mono), monospace; letter-spacing: .06em; }
+.codex-thinking-label i { width: 6px; height: 6px; border-radius: 50%; background: #99bdc5; box-shadow: 0 0 0 4px rgba(153, 189, 197, .15); }
+.codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-geist-mono), monospace; }
+.codex-connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: #aab4b4; }
+.codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }
+.codex-chat .send-message-button { background: #6d9299 !important; color: #fff; }
+.codex-chat .send-message-button:disabled { opacity: .34; }

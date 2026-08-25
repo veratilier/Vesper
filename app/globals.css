@@ -3582,6 +3582,84 @@ body {
 .codex-chat .send-message-button { background: #6d9299 !important; color: #fff; }
 .codex-chat .send-message-button:disabled { opacity: .34; }
 
+/* Codex timeline: compact, content-sized messages with status and actions outside the bubble. */
+.codex-chat .chat-stream { gap: 16px; padding-top: 14px; }
+.codex-chat .agent-turn,
+.codex-chat .sent-turn { display: flex; flex-direction: column; width: 100%; gap: 5px; }
+.codex-chat .turn-status {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  margin: 0 42px 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7e8e91;
+  font: 10px/1.25 var(--font-geist-mono), ui-monospace, monospace !important;
+  letter-spacing: .035em;
+  text-align: left;
+}
+.codex-chat button.turn-status { cursor: pointer; }
+.codex-chat .turn-status i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #86aeb3;
+  box-shadow: 0 0 0 3px rgba(134, 174, 179, .14);
+}
+.codex-chat .turn-status span { white-space: nowrap; }
+.codex-chat .message {
+  width: max-content;
+  max-width: 100%;
+  gap: 8px;
+  align-items: flex-end;
+}
+.codex-chat .sent-turn .message { align-self: flex-end; }
+.codex-chat .agent-turn .message { align-self: flex-start; }
+.codex-chat .message > div {
+  width: fit-content;
+  max-width: min(74vw, 460px);
+  padding: 9px 12px;
+  border-radius: 14px;
+  box-shadow: 0 5px 14px rgba(94, 121, 127, .07);
+}
+.codex-chat .message p {
+  margin: 0;
+  font: 13px/1.48 var(--font-geist-sans), "PingFang SC", sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.codex-chat .message small,
+.codex-chat .codex-thinking-label { display: none; }
+.codex-chat .message-actions {
+  display: flex;
+  gap: 4px;
+  min-height: 20px;
+  margin: 0 42px;
+}
+.codex-chat .sent-turn .message-actions { justify-content: flex-end; }
+.codex-chat .agent-turn .message-actions { justify-content: flex-start; }
+.codex-chat .message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #819093;
+  opacity: .76;
+}
+.codex-chat .message-action:hover { background: rgba(125, 157, 161, .12); opacity: 1; }
+.codex-chat .message-action .ui-icon { width: 14px; height: 14px; }
+.codex-chat .message-attachments { margin-top: 2px; }
+.codex-chat .sent-turn .message-attachments { align-self: flex-end; }
+
 /* Personal typography and soft-edged controls. */
 body,
 body button,

@@ -3581,6 +3581,120 @@ body {
 .codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }
 .codex-chat .send-message-button { background: #6d9299 !important; color: #fff; }
 .codex-chat .send-message-button:disabled { opacity: .34; }
+
+/* Personal typography and soft-edged controls. */
+body,
+body button,
+body input,
+body textarea,
+body select,
+body h1,
+body h2,
+body h3,
+body p,
+body span,
+body small,
+body label {
+  font-family: "Times New Roman", "Songti SC", serif;
+}
+body * {
+  font-family: "Times New Roman", "Songti SC", serif !important;
+}
+.wordmark > b,
+.drawer-brand b,
+.vesper-splash > b {
+  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+}
+body button,
+body input,
+body textarea,
+body select,
+body .surface,
+body .setting-row,
+body .note-card,
+body .todo-item,
+body .connection-modal,
+body .history-modal,
+body .profile-modal {
+  border-radius: 14px;
+}
+.icon-button,
+.avatar-button,
+.avatar-mark,
+.home-app-mark,
+.drawer-app-mark,
+.round-check,
+.mcp-live-dot,
+.connection-dot,
+.codex-thinking-label i,
+.codex-connection-pill i {
+  border-radius: 50% !important;
+}
+.stage,
+body,
+html {
+  background-color: #edf2f2;
+}
+.vesper-splash {
+  background: radial-gradient(circle at 50% 44%, #fff 0%, #edf2f2 48%, #d5e0e3 100%) !important;
+}
+.codex-chat .agent-turn,
+.codex-chat .sent-turn {
+  display: flex;
+  flex-direction: column;
+}
+.codex-chat .agent-turn .message-attachments {
+  align-self: flex-start;
+  margin-left: 42px;
+}
+.codex-chat .sent-turn .message-attachments {
+  align-self: flex-end;
+  margin-right: 42px;
+}
+.queue-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  text-align: left;
+}
+.queue-row > button:first-child > span {
+  width: auto;
+  font: 14px/1 "Times New Roman", "Songti SC", serif;
+  color: #858f91;
+}
+.queue-row > button:first-child > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.queue-row > button:first-child b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.queue-row > button:first-child small {
+  flex: 0 0 auto;
+  margin-top: 0;
+  font-size: 9px;
+}
+.queue-row > button:last-child {
+  flex: 0 0 30px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+}
+.codex-chat .agent-turn,
+.codex-chat .sent-turn { display: flex; flex-direction: column; }
+.codex-chat .agent-turn .message-attachments { align-self: flex-start; margin-left: 42px; }
+.codex-chat .sent-turn .message-attachments { align-self: flex-end; margin-right: 42px; }
 .chat-page .chat-stream {
   padding-bottom: 168px;
 }
@@ -5358,6 +5472,48 @@ body {
 .live-progress input::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: #d4d9d8; }
 .live-progress input::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; margin-top: -4px; border-radius: 50%; background: #283133; box-shadow: 0 0 0 3px rgba(255,255,255,.8); }
 .netease-entry span { color: #778487; }
+
+/* Keep synced playlist numbering and song titles on the same line. */
+.queue-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  text-align: left;
+}
+.queue-row > button:first-child > span {
+  width: auto;
+  font: 14px/1 "Times New Roman", "Songti SC", serif;
+  color: #858f91;
+}
+.queue-row > button:first-child > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.queue-row > button:first-child b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.queue-row > button:first-child small {
+  flex: 0 0 auto;
+  margin-top: 0;
+  font-size: 9px;
+}
+.queue-row > button:last-child {
+  flex: 0 0 30px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+}
 
 .wake-visualizer { text-align: center; }
 .wake-orbit { --wake-progress: .2; position: relative; width: 160px; height: 160px; margin: 22px auto 28px; display: grid; place-items: center; }

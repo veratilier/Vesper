@@ -94,8 +94,8 @@ function Notes() {
       <div className="agent-callout">
         <Icon name="link" />
         <div>
-          <b>CyberBoss 留言通道</b>
-          <p>连接后，Agent 可以创建和更新便笺。</p>
+          <b>Vesper note channel</b>
+          <p>Connected agents can create and update notes here.</p>
         </div>
       </div>
     </div>
@@ -620,7 +620,7 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       setSplashVisible(false);
       window.sessionStorage.setItem("vesper-splash-seen-v2", "1");
-    }, splashVisible ? 760 : 0);
+    }, splashVisible ? 1400 : 0);
     return () => window.clearTimeout(timer);
   }, [splashVisible]);
   useEffect(() => {
@@ -857,7 +857,7 @@ export default function Home() {
               <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
             </div>
           ) : (
-            <h1 className="page-name">{active}</h1>
+            <h1 className="page-name">{nav.find((item) => item.label === active)?.english || active}</h1>
           )}
           {active === "聊天" ? (
             <div className="chat-header-actions">
@@ -1386,7 +1386,7 @@ function Today({
     [],
   );
   const now = new Date();
-  const dateText = new Intl.DateTimeFormat("zh-CN", {
+  const dateText = new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
     weekday: "long",
@@ -1394,14 +1394,14 @@ function Today({
   const hour = now.getHours();
   const greeting =
     hour < 6
-      ? "夜深了"
+      ? "Late night"
       : hour < 11
-        ? "早上好"
+        ? "Good morning"
         : hour < 14
-          ? "中午好"
+          ? "Good afternoon"
           : hour < 18
-            ? "下午好"
-            : "晚上好";
+            ? "Good afternoon"
+            : "Good evening";
   const weather =
     environment.permission === "granted" &&
     environment.temperature !== undefined
@@ -1417,12 +1417,10 @@ function Today({
             {weather}
           </span>
         </div>
-        <h1>
-          {greeting}，{userName}。
-        </h1>
+        <h1>{greeting}, {userName}.</h1>
       </section>
       <section className="section-block">
-        <SectionTitle icon="note" title="便笺" count={String(notes.length)} />
+        <SectionTitle icon="note" title="Notes" count={String(notes.length)} />
         <div className="note-stack">
           {notes.slice(0, 2).map((note) => (
             <article className={`note-card ${note.tone}`} key={note.id}>
@@ -1433,13 +1431,13 @@ function Today({
               </div>
             </article>
           ))}
-          {!notes.length && <EmptyState text="还没有便笺" />}
+          {!notes.length && <EmptyState text="No notes yet" />}
         </div>
       </section>
       <section className="section-block">
         <SectionTitle
           icon="check"
-          title="今日提醒"
+          title="Today's reminders"
           count={`${todos.filter((x) => x.done).length} / ${todos.length}`}
         />
         <div className="surface reminders">
@@ -1470,16 +1468,16 @@ function Today({
               </span>
             </button>
           ))}
-          {!todos.length && <EmptyState text="还没有提醒" />}
+          {!todos.length && <EmptyState text="No reminders yet" />}
         </div>
       </section>
       <section className="section-block">
-        <SectionTitle icon="calendar" title="纪念日" />
+        <SectionTitle icon="calendar" title="Dates" />
         {nextAnniversary(anniversaries) ? (
           <AnniversaryCard item={nextAnniversary(anniversaries)!} />
         ) : (
           <div className="surface">
-            <EmptyState text="还没有纪念日" />
+            <EmptyState text="No dates yet" />
           </div>
         )}
       </section>
@@ -2714,13 +2712,13 @@ function CodexChatMessage({
         <div>
           {assistant && <div className="codex-thinking-label"><i /> {item.metadata?.thoughtSummary ? "Thought complete" : "Codex"}</div>}
           <p>{item.content}</p>
-          <MessageAttachments items={item.metadata?.attachments || []} />
           <small>{assistant ? agentName : userName} · {stamp}</small>
           {assistant && item.metadata?.thoughtSummary && <button className="thought-toggle" onClick={() => onThought(item)}><Icon name="clock" /> View reasoning summary <Icon name="chevron" /></button>}
           {!assistant && <button className="message-edit" aria-label="Edit message" title="Edit" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
         </div>
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
+      <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
   );
 }
@@ -3146,7 +3144,7 @@ function Diary() {
                 <b>AGENT</b>
                 <em>
                   <Icon name="link" />
-                  CyberBoss 可写
+                  Agent can write
                 </em>
               </span>
               <p>{selected.agent || "Agent 尚未记录这一天。"}</p>
@@ -3320,6 +3318,12 @@ function SettingsPage({
           title="Codex Server"
           sub="One private app-server on your VPS"
           onClick={() => setSelected("Codex Server")}
+        />
+        <SettingRow
+          icon="link"
+          title="MCP Servers"
+          sub="Add servers with OAuth or no authorization"
+          onClick={() => setSelected("MCP 工具")}
         />
         <SettingRow
           icon="volume"
@@ -5385,7 +5389,7 @@ function MusicCard({
 }) {
   return (
     <section className="section-block music-section">
-      <SectionTitle icon="music" title="此刻的音乐" />
+      <SectionTitle icon="music" title="Now playing" />
       {track ? (
         <article className="surface player-card">
           <div className="album-art">
@@ -5404,7 +5408,7 @@ function MusicCard({
           </button>
         </article>
       ) : (
-        <EmptyState text="还没有音乐。" />
+        <EmptyState text="No music yet." />
       )}
     </section>
   );

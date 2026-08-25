@@ -3750,9 +3750,17 @@ function CodexConnectionModal({ onClose }: { onClose: () => void }) {
     window.localStorage.setItem("vesper-codex-endpoint", cleanEndpoint);
     if (token.trim()) window.localStorage.setItem("vesper-device-token", token.trim());
     try {
-      const url = cleanEndpoint || `${window.location.origin}/api/codex`;
-      const response = await fetch(url, { headers: { "x-vesper-device-token": token.trim() }, cache: "no-store" });
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      if (/^wss?:\/\//i.test(cleanEndpoint)) {
+        await new Promise<void>((resolve, reject) => {
+          const probe = new WebSocket(`${cleanEndpoint}${cleanEndpoint.includes("?") ? "&" : "?"}token=${encodeURIComponent(token.trim())}`);
+          probe.onopen = () => { probe.close(); resolve(); };
+          probe.onerror = () => reject(new Error("WebSocket endpoint is unreachable"));
+        });
+      } else {
+        const url = cleanEndpoint || `${window.location.origin}/api/codex`;
+        const response = await fetch(url, { headers: { "x-vesper-device-token": token.trim() }, cache: "no-store" });
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      }
       setMessage("Codex app-server is reachable. The chat uses this single connection.");
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Could not reach the app-server");

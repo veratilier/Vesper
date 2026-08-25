@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type Dispatch,
+  type SetStateAction,
   type CSSProperties,
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
@@ -135,6 +137,13 @@ function daysUntil(item: AnniversaryItem) {
     Math.ceil((anniversaryTarget(item).getTime() - Date.now()) / 86400000),
   );
 }
+function anniversaryDayLabel(item: AnniversaryItem) {
+  const target = anniversaryTarget(item);
+  if (!item.repeats && target.getTime() < Date.now()) {
+    return `过了 ${Math.max(1, Math.ceil((Date.now() - target.getTime()) / 86400000))} 天`;
+  }
+  return `距离 ${daysUntil(item)} 天`;
+}
 function nextAnniversary(items: AnniversaryItem[]) {
   return [...items].sort(
     (a, b) => anniversaryTarget(a).getTime() - anniversaryTarget(b).getTime(),
@@ -142,11 +151,13 @@ function nextAnniversary(items: AnniversaryItem[]) {
 }
 function AnniversaryCard({ item }: { item: AnniversaryItem }) {
   const target = anniversaryTarget(item);
+  const nowMs = new Date().getTime();
+  const pastDays = Math.max(1, Math.ceil((nowMs - target.getTime()) / 86400000));
   return (
     <article className="surface anniversary">
       <div className="days">
-        <small>距离</small>
-        <b>{daysUntil(item)}</b>
+        <small>{item.repeats || target.getTime() >= nowMs ? "距离" : "过了"}</small>
+        <b>{item.repeats || target.getTime() >= nowMs ? daysUntil(item) : pastDays}</b>
         <small>天</small>
       </div>
       <div className="anniversary-copy">
@@ -183,6 +194,7 @@ function Anniversaries() {
     setAdding(false);
   };
   const next = nextAnniversary(items);
+  const nowMs = new Date().getTime();
   return (
     <div className="page-body">
       <PageIntro
@@ -195,8 +207,8 @@ function Anniversaries() {
           <span>NEXT ANNIVERSARY</span>
           <h2>{next.title}</h2>
           <div>
-            <small>还有</small>
-            <b>{daysUntil(next)}</b>
+            <small>{next.repeats || anniversaryTarget(next).getTime() >= nowMs ? "还有" : "已过"}</small>
+            <b>{next.repeats || anniversaryTarget(next).getTime() >= nowMs ? daysUntil(next) : Math.max(1, Math.ceil((nowMs - anniversaryTarget(next).getTime()) / 86400000))}</b>
             <small>天</small>
           </div>
           <footer>
@@ -215,9 +227,7 @@ function Anniversaries() {
               <b>{item.title}</b>
               <small>{item.repeats ? "每年重复" : "仅一次"}</small>
             </div>
-            <span>
-              <strong>{daysUntil(item)}</strong>天
-            </span>
+              <span>{anniversaryDayLabel(item)}</span>
             <button
               aria-label="删除纪念日"
               onClick={() =>
@@ -343,6 +353,7 @@ Object.assign(iconPaths, {
 Object.assign(iconPaths, {
   clock: ["M12 22a10 10 0 1 0-10-10", "M12 6v6l4 2"],
   copy: ["M9 9h11v11H9z", "M4 15H3V4h11v1"],
+  bookmark: ["M6 3h12v18l-6-4-6 4z"],
   like: [
     "M7 10v11H3V10z",
     "M7 18c4 3 10 2 11-1l2-6c.3-2-1-3-3-3h-4l1-4c.3-2-2-3-3-1L7 10",
@@ -459,6 +470,22 @@ function VesperNavIcon({ name }: { name: string }) {
     </svg>
   );
 }
+const navIconPaths: Record<string, string[]> = {
+  home: ["M3 10.5 10 4l7 6.5", "M5.5 9.5V17h9V9.5", "M8.5 17v-4h3v4"],
+  chat: ["M17 11.5a6.5 6.5 0 0 1-9.7 5.6L3 18.5l1.5-3.7A6.5 6.5 0 1 1 17 11.5z"],
+  diary: ["M5 3.5h7l3 3v10H5z", "M12 3.5v3h3", "M7.5 10h5", "M7.5 13h5"],
+  note: ["M4 3.5h9l3 3v10H4z", "M13 3.5v3h3", "M7 10h6", "M7 13h4"],
+  check: ["M15.5 8.5a5.5 5.5 0 1 1-2-3.9", "M10 8.5l2 2 4.5-5"],
+  calendar: ["M10 17.2 4.5 12a4.4 4.4 0 0 1 6.2-6.2L10 7l-.7-1.2A4.4 4.4 0 0 1 15.5 12z"],
+  pet: ["M5 6.5h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z", "M10 6.5v-2", "M7 11h.01M13 11h.01", "M7 14h6"],
+  box: ["m10 3 7 4v8l-7 4-7-4V7z", "m3 7 7 4 7-4", "M10 11v8"],
+  music: ["M8 14V4l7-1.5v9.5", "M8 14a3 3 0 1 1-3-3h3z", "M15 12a3 3 0 1 1-3-3h3z"],
+  library: ["M10 17a7 7 0 1 1 0-14", "M10 3v14", "M6 6.5h2M6 10h2M6 13.5h2"],
+  settings: ["M3 5h14M3 10h14M3 15h14", "M7 3v4M13 8v4M9 13v4"],
+};
+function NavIcon({ name }: { name: string }) {
+  return <svg className="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">{(navIconPaths[name] || navIconPaths.sparkles || []).map((d, i) => <path d={d} key={i} />)}</svg>;
+}
 
 const nav = [
   { label: "今日", english: "Today", icon: "home" },
@@ -504,6 +531,18 @@ type Track = {
   url: string;
   cover?: string;
   neteaseId?: string;
+};
+type FavoriteItem = {
+  id: string;
+  folderId: string;
+  messageId: string;
+  itemId?: string;
+  threadId?: string;
+  conversationId: string;
+  conversationTitle: string;
+  role: "user" | "agent" | "system";
+  content: string;
+  createdAt: string;
 };
 type MusicControl = { id: string; action: "play" | "pause" | "next" | "previous" | "play_track"; trackId?: string; processedAt?: string };
 type BoxApp = {
@@ -575,6 +614,7 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [conversationId, setConversationId] = useState("main");
+  const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
   const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: DEFAULT_APP_BACKGROUND });
   const [userName, setUserName] = useState(initialProfile.userName);
@@ -588,6 +628,7 @@ export default function Home() {
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [tracks, setTracks] = usePersistentDocument<Track[]>("music", []);
+  const [favorites, setFavorites] = usePersistentDocument<FavoriteItem[]>("favorites", []);
   const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
   const globalPlayer = useRef<HTMLAudioElement>(null);
   const [storageReady, setStorageReady] = useState(false);
@@ -832,7 +873,7 @@ export default function Home() {
       />
       <section className="app-shell" style={shellStyle}>
         <header
-          className={active === "聊天" ? "app-header chat-mode" : "app-header"}
+          className={`${active === "聊天" ? "app-header chat-mode" : "app-header"}${historyOpen ? " history-host-shift" : ""}`}
         >
           <button
             className="icon-button"
@@ -897,7 +938,7 @@ export default function Home() {
             </button>
           )}
         </header>
-        <div className="scroll-view view-enter" key={active}>
+        <div className={`scroll-view view-enter${historyOpen ? " history-host-shift" : ""}`} key={active}>
           {active === "今日" ? (
             <Today
               track={currentTrack}
@@ -907,14 +948,17 @@ export default function Home() {
               userName={userName}
             />
           ) : active === "聊天" ? (
-            <ConnectedChat
+              <ConnectedChat
               key={conversationId}
               conversationId={conversationId}
               agentName={agentName}
               userName={userName}
               agentAvatar={agentAvatar}
-              userAvatar={userAvatar}
-            />
+                userAvatar={userAvatar}
+                favorites={favorites}
+                setFavorites={setFavorites}
+                focusMessageId={focusMessageId}
+              />
           ) : active === "日记" ? (
             <Diary />
           ) : active === "便笺" ? (
@@ -991,7 +1035,7 @@ export default function Home() {
                   className={active === label ? "nav-row active" : "nav-row"}
                   onClick={() => navigateTo(label)}
                 >
-                  <VesperNavIcon name={icon} />
+                  <NavIcon name={icon} />
                   <span>{english}</span>
                   {active === label && <i />}
                 </button>
@@ -1032,13 +1076,21 @@ export default function Home() {
         {historyOpen && (
           <HistoryModal
             activeId={conversationId}
+            favorites={favorites}
             onSelect={(id) => {
               setConversationId(id);
+              setFocusMessageId("");
               setHistoryOpen(false);
             }}
             onDelete={(id) => {
               if (id === conversationId) setConversationId("main");
             }}
+            onSelectFavorite={(item) => {
+              setConversationId(item.conversationId);
+              setFocusMessageId(item.messageId);
+              setHistoryOpen(false);
+            }}
+            onRemoveFavorite={(id) => setFavorites((items) => items.filter((item) => item.id !== id))}
             onClose={() => setHistoryOpen(false)}
           />
         )}
@@ -1512,12 +1564,18 @@ function rememberConversation(id: string, title = "新对话", messageCount?: nu
 
 function HistoryModal({
   activeId,
+  favorites,
   onSelect,
+  onSelectFavorite,
+  onRemoveFavorite,
   onDelete,
   onClose,
 }: {
   activeId: string;
+  favorites: FavoriteItem[];
   onSelect: (id: string) => void;
+  onSelectFavorite: (item: FavoriteItem) => void;
+  onRemoveFavorite: (id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {
@@ -1525,6 +1583,8 @@ function HistoryModal({
     readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []),
   );
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"conversations" | "favorites">("conversations");
+  const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     const token = deviceToken();
     if (!token) return;
@@ -1558,7 +1618,7 @@ function HistoryModal({
       }
     }
     for (const key of Object.keys(window.localStorage)) {
-      if (key.startsWith("vesper-local-chat-") && key.endsWith(`-${item.id}`))
+      if ((key.startsWith("vesper-local-chat-") || key.startsWith("vesper-codex-chat-")) && key.endsWith(`-${item.id}`))
         window.localStorage.removeItem(key);
     }
     const next = conversations.filter((conversation) => conversation.id !== item.id);
@@ -1566,46 +1626,45 @@ function HistoryModal({
     window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(next));
     onDelete(item.id);
   };
+  const rename = (item: ConversationSummary) => {
+    const title = window.prompt("重命名对话", item.title || "对话")?.trim();
+    if (!title || title === item.title) return;
+    const next = conversations.map((entry) => entry.id === item.id ? { ...entry, title, updatedAt: new Date().toISOString() } : entry);
+    setConversations(next);
+    window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(next));
+  };
+  const nowMs = new Date().getTime();
+  const groups = [
+    ["今天", visible.filter((item) => new Date(item.updatedAt).toDateString() === new Date().toDateString())],
+    
+    ["过去 7 天", visible.filter((item) => {
+      const age = nowMs - new Date(item.updatedAt).getTime();
+      return age >= 86_400_000 && age <= 7 * 86_400_000;
+    })],
+    ["更早", visible.filter((item) => nowMs - new Date(item.updatedAt).getTime() > 7 * 86_400_000)],
+  ] as const;
+  const visibleFavorites = favorites.filter((item) => `${item.content} ${item.conversationTitle}`.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <div className="modal-layer history-layer">
       <button className="modal-scrim" onClick={onClose} />
-      <section className="history-modal">
-        <div className="modal-head">
-          <div>
-            <small>CONVERSATIONS</small>
-            <h2>历史聊天记录</h2>
+      <section className="history-modal history-drawer" aria-label="对话导航">
+        <header className="history-drawer-head">
+          <div className="history-drawer-title"><button className={tab === "conversations" ? "active" : ""} onClick={() => setTab("conversations")}>对话</button><button className={tab === "favorites" ? "active" : ""} onClick={() => setTab("favorites")}>收藏</button></div>
+          <div className="history-drawer-actions"><button aria-label="搜索" onClick={() => setSearchOpen((value) => !value)}><Icon name="search" /></button><button aria-label="关闭" onClick={onClose}><Icon name="close" /></button></div>
+        </header>
+        {searchOpen && <label className="history-search compact"><Icon name="search" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "favorites" ? "搜索收藏" : "搜索对话"} /></label>}
+        {tab === "conversations" ? (
+          <div className="history-list drawer-list">
+            {groups.map(([label, items]) => items.length ? <section className="history-group" key={label}><h3>{label}</h3>{items.map((item) => <article onContextMenu={(event) => { event.preventDefault(); rename(item); }} className={item.id === activeId ? "history-item-row selected" : "history-item-row"} key={item.id}><button className="history-open" onClick={() => onSelect(item.id)}><b>{item.title || "未命名对话"}</b><span>{item.messageCount} 条 · {new Date(item.updatedAt).toLocaleDateString("zh-CN")}</span></button><button className="history-delete" aria-label={`删除 ${item.title || "对话"}`} onClick={() => void remove(item)}><Icon name="more" /></button></article>)}</section> : null)}
+            {!visible.length && <EmptyState text="还没有聊天记录。" />}
           </div>
-          <button onClick={onClose}>
-            <Icon name="close" />
-          </button>
-        </div>
-        <label className="history-search">
-          <Icon name="search" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索对话"
-          />
-        </label>
-        <div className="history-list">
-          {visible.length ? (
-            visible.map((item) => (
-              <article className={item.id === activeId ? "history-item-row selected" : "history-item-row"} key={item.id}>
-                <button className="history-open" onClick={() => onSelect(item.id)}>
-                  <b>{item.title || "未命名对话"}</b>
-                  <span>
-                    {new Date(item.updatedAt).toLocaleString("zh-CN")} · {item.messageCount} 条
-                  </span>
-                </button>
-                <button className="history-delete" aria-label={`删除 ${item.title || "对话"}`} onClick={() => void remove(item)}>
-                  <Icon name="trash" />
-                </button>
-              </article>
-            ))
-          ) : (
-            <EmptyState text="还没有聊天记录。" />
-          )}
-        </div>
+        ) : (
+          <div className="history-list drawer-list favorites-list">
+            {visibleFavorites.map((item) => <article className="favorite-row" key={item.id}><button onClick={() => onSelectFavorite(item)}><b>{item.content.split("\n").slice(0, 2).join(" ").slice(0, 100)}</b><span>{item.conversationTitle} · {new Date(item.createdAt).toLocaleDateString("zh-CN")}</span></button><button aria-label="删除收藏" onClick={() => onRemoveFavorite(item.id)}><Icon name="trash" /></button></article>)}
+            {!visibleFavorites.length && <EmptyState text="还没有收藏。" />}
+          </div>
+        )}
+        {tab === "conversations" && <button className="history-new" onClick={() => { const id = `chat-${Date.now()}-${crypto.randomUUID()}`; rememberConversation(id, "新对话"); onSelect(id); }}><Icon name="plus" />新建对话</button>}
       </section>
     </div>
   );
@@ -2048,6 +2107,8 @@ type BridgeChatMessage = {
     tools?: string[];
     attachments?: ChatAttachment[];
     turnId?: string;
+    threadId?: string;
+    itemId?: string;
     turnStatus?: "thinking" | "completed" | "error";
     blockType?: string;
   };
@@ -2697,6 +2758,8 @@ function CodexChatMessage({
   onEdit,
   onThought,
   onCopy,
+  favorite,
+  onFavorite,
 }: {
   item: BridgeChatMessage;
   agentName: string;
@@ -2706,6 +2769,8 @@ function CodexChatMessage({
   onEdit: (item: BridgeChatMessage) => void;
   onThought: (item: BridgeChatMessage) => void;
   onCopy: (item: BridgeChatMessage) => void;
+  favorite: boolean;
+  onFavorite: (item: BridgeChatMessage) => void;
 }) {
   const assistant = item.role === "agent";
   const stamp = new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(item.createdAt));
@@ -2713,7 +2778,7 @@ function CodexChatMessage({
   const statusText = status === "thinking" ? "Thinking…" : status === "error" ? "Failed" : "Completed";
   const statusLabel = `${stamp}  ${statusText}`;
   return (
-    <div className={assistant ? "agent-turn" : "sent-turn"}>
+    <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
       {!assistant && item.metadata?.turnId && (
         item.metadata.thoughtSummary ? (
           <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
@@ -2732,7 +2797,7 @@ function CodexChatMessage({
       </div>
       <div className="message-actions">
         {assistant ? (
-          <button className="message-action" aria-label="Copy response" title="Copy" onClick={() => onCopy(item)}><Icon name="copy" /></button>
+          <><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => onCopy(item)}><Icon name="copy" /></button><button className={favorite ? "message-action favorite active" : "message-action favorite"} aria-label={favorite ? "Remove from favorites" : "Add to favorites"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button></>
         ) : (
           <button className="message-action" aria-label="Edit message" title="Edit" onClick={() => onEdit(item)}><Icon name="edit" /></button>
         )}
@@ -2748,12 +2813,18 @@ function ConnectedChat({
   userName,
   agentAvatar,
   userAvatar,
+  favorites,
+  setFavorites,
+  focusMessageId,
 }: {
   conversationId: string;
   agentName: string;
   userName: string;
   agentAvatar: string;
   userAvatar: string;
+  favorites: FavoriteItem[];
+  setFavorites: Dispatch<SetStateAction<FavoriteItem[]>>;
+  focusMessageId?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<BridgeChatMessage[]>(() => readLocalValue(`vesper-codex-chat-${conversationId}`, []));
@@ -2883,6 +2954,8 @@ function ConnectedChat({
           metadata: {
             thoughtSummary: item.type === "agentMessage" ? (thoughtBuffer.current || undefined) : undefined,
             turnId: activeTurnId.current,
+            threadId: threadId.current,
+            itemId: item.id,
             blockType: item.type || "output",
           },
           createdAt: new Date().toISOString(),
@@ -2973,6 +3046,18 @@ function ConnectedChat({
       setError("Copy failed");
     }
   };
+  const toggleFavorite = (item: BridgeChatMessage) => {
+    if (favorites.some((favorite) => favorite.messageId === item.id)) {
+      setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
+      return;
+    }
+    const title = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []).find((entry) => entry.id === conversationId)?.title || "对话";
+    setFavorites((current) => [...current, {
+      id: crypto.randomUUID(), folderId: "default", messageId: item.id,
+      itemId: item.metadata?.itemId || item.metadata?.blockType, threadId: item.metadata?.threadId || item.metadata?.turnId,
+      conversationId, conversationTitle: title, role: item.role, content: item.content, createdAt: item.createdAt,
+    }]);
+  };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
     const { file, preview } = item;
     let attachment: ChatAttachment = { key: crypto.randomUUID(), url: preview, name: file.name, type: file.type || "application/octet-stream", size: file.size };
@@ -3028,12 +3113,22 @@ function ConnectedChat({
     return () => { socket.current?.close(); socket.current = null; };
   }, [conversationId]);
   useLayoutEffect(() => { const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null; if (scroller) scroller.scrollTop = scroller.scrollHeight; }, [messages.length, streaming]);
+  useLayoutEffect(() => {
+    if (!focusMessageId) return;
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector(`[data-message-id="${CSS.escape(focusMessageId)}"]`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.classList.add("focus-message");
+      window.setTimeout(() => target?.classList.remove("focus-message"), 2200);
+    }, 260);
+    return () => window.clearTimeout(timer);
+  }, [focusMessageId, messages.length]);
   return (
     <div className="page-body chat-page codex-chat">
       <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
       <div className="chat-stream">
         {!messages.length && !streaming && <div className="chat-empty"><Icon name="chat" /><b>{error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
-        {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} />)}
+        {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} />)}
         {streaming && <div className="agent-turn"><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{streaming}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(streaming)}><Icon name="copy" /></button></div></div>}
         <div ref={streamEnd} />
       </div>
@@ -4572,17 +4667,19 @@ function VoiceSettingsModal({ onClose }: { onClose: () => void }) {
         <div className="parameter-form">
           <label className="profile-field"><span>声音服务</span><select value={form.provider} onChange={(event) => {
             const provider = event.target.value;
-            setForm((current) => ({ ...current, provider, baseUrl: provider === "ElevenLabs" ? "https://api.elevenlabs.io" : "https://api.openai.com/v1", model: provider === "ElevenLabs" ? "eleven_multilingual_v2" : "gpt-4o-mini-tts" }));
-          }}><option>ElevenLabs</option><option>OpenAI-compatible</option></select></label>
+            const minimax = provider === "MiniMax";
+            setForm((current) => ({ ...current, provider, baseUrl: provider === "ElevenLabs" ? "https://api.elevenlabs.io" : minimax ? "https://api.minimax.chat" : "https://api.openai.com/v1", model: provider === "ElevenLabs" ? "eleven_multilingual_v2" : minimax ? "speech-2.6-hd" : "gpt-4o-mini-tts" }));
+          }}><option>ElevenLabs</option><option>MiniMax</option><option>OpenAI-compatible</option></select></label>
           <label className="profile-field"><span>API Base URL</span><input value={form.baseUrl || ""} onChange={(event) => update("baseUrl", event.target.value)} /></label>
           <label className="profile-field"><span>{eleven ? "ElevenLabs API Key" : "API Key"}</span><input type="password" value={form.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} /></label>
-          <label className="profile-field"><span>{eleven ? "ElevenLabs Voice ID" : "声音 ID"}</span><input value={form.voiceId || ""} onChange={(event) => update("voiceId", event.target.value)} /></label>
+          <label className="profile-field"><span>{eleven ? "ElevenLabs Voice ID" : "声音 ID"}</span><input value={form.voiceId || ""} placeholder={form.provider === "MiniMax" ? "male-qn-qingse" : "alloy / 自定义声音 ID"} onChange={(event) => update("voiceId", event.target.value)} /></label>
+          {form.provider === "MiniMax" && <label className="profile-field"><span>MiniMax Group ID（可选）</span><input value={form.groupId || ""} onChange={(event) => update("groupId", event.target.value)} /></label>}
           <label className="profile-field"><span>{eleven ? "ElevenLabs 模型" : "TTS 模型"}</span><input value={form.model || ""} onChange={(event) => update("model", event.target.value)} /></label>
           <label className="voice-speed"><span>语速 {Number(form.speed || 1).toFixed(1)}×</span><input type="range" min="0.7" max="1.3" step="0.1" value={form.speed || "1"} onChange={(event) => update("speed", event.target.value)} /></label>
           <button className="voice-autoplay" onClick={() => update("autoPlay", form.autoPlay === "false" ? "true" : "false")}><i className={form.autoPlay === "false" ? "switch" : "switch on"}><u /></i><span><b>语音消息自动播放</b><small>收到语音消息时直接响，不用点</small></span></button>
         </div>
         <button className="save-profile" disabled={busy} onClick={() => void testVoice()}>{busy ? "试听中…" : "试听"}</button>
-        <section className="voice-test-panel"><div><b>语音测试</b><button onClick={() => void Promise.all([requestMic(), testVoice()])}>全部测试</button></div><p><span>1　麦克风权限</span><em>{micStatus}</em><button onClick={() => void requestMic()}>请求权限</button></p><p><span>2　声音服务可否调用</span><em>{apiStatus}</em></p><p><span>3　当前打开界面</span><em>{window.matchMedia("(display-mode: standalone)").matches ? "iPhone 主屏幕 PWA" : "浏览器"}</em></p></section>
+        <section className="voice-test-panel"><div><b>语音测试</b><button onClick={() => void Promise.all([requestMic(), testVoice()])}>全部测试</button></div><p><span>1　麦克风权限</span><em><i className={micStatus === "已授权" ? "voice-status-dot ok" : "voice-status-dot"} />{micStatus}</em><button onClick={() => void requestMic()}>请求权限</button></p><p><span>2　声音服务可否调用</span><em><i className={apiStatus === "可调用" ? "voice-status-dot ok" : "voice-status-dot"} />{apiStatus}</em></p><p><span>3　当前打开界面</span><em><i className="voice-status-dot ok" />{window.matchMedia("(display-mode: standalone)").matches ? "iPhone 主屏幕 PWA" : "浏览器"}</em></p></section>
         {message && <p className="connection-message">{message}</p>}
       </section>
     </div>

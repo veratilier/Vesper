@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest?v=9",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "Vesper",
   },
   icons: {

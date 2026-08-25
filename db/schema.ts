@@ -50,4 +50,5 @@ export const allowedDocumentKeys = new Set([
   "pet",
   "connections",
   "externalMemory",
+  "favorites",
 ]);

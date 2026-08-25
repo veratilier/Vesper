@@ -461,17 +461,17 @@ function VesperNavIcon({ name }: { name: string }) {
 }
 
 const nav = [
-  { label: "今日", icon: "home" },
-  { label: "聊天", icon: "chat" },
-  { label: "日记", icon: "diary" },
-  { label: "便笺", icon: "note" },
-  { label: "提醒", icon: "check" },
-  { label: "纪念日", icon: "calendar" },
-  { label: "桌宠互动", icon: "pet" },
-  { label: "魔盒", icon: "box" },
-  { label: "音乐", icon: "music" },
-  { label: "记忆库", icon: "library" },
-  { label: "设置", icon: "settings" },
+  { label: "今日", english: "Today", icon: "home" },
+  { label: "聊天", english: "Letters", icon: "chat" },
+  { label: "日记", english: "Journal", icon: "diary" },
+  { label: "便笺", english: "Notes", icon: "note" },
+  { label: "提醒", english: "Reminders", icon: "check" },
+  { label: "纪念日", english: "Dates", icon: "calendar" },
+  { label: "桌宠互动", english: "Companion", icon: "pet" },
+  { label: "魔盒", english: "Cabinet", icon: "box" },
+  { label: "音乐", english: "Music", icon: "music" },
+  { label: "记忆库", english: "Memory", icon: "library" },
+  { label: "设置", english: "Settings", icon: "settings" },
 ];
 type NoteItem = {
   id: string;
@@ -603,6 +603,15 @@ export default function Home() {
       url.searchParams.delete("vesper-pwa");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
+  }, []);
+  useEffect(() => {
+    const handleNavigate = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: string }>).detail?.section;
+      const match = nav.find((item) => item.label === section || item.english.toLowerCase() === String(section || "").toLowerCase());
+      if (match) setActive(match.label);
+    };
+    window.addEventListener("vesper-navigate", handleNavigate);
+    return () => window.removeEventListener("vesper-navigate", handleNavigate);
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -899,6 +908,7 @@ export default function Home() {
             />
           ) : active === "聊天" ? (
             <ConnectedChat
+              key={conversationId}
               conversationId={conversationId}
               agentName={agentName}
               userName={userName}
@@ -975,14 +985,14 @@ export default function Home() {
               </button>
             </div>
             <nav>
-              {nav.map(({ label, icon }) => (
+              {nav.map(({ label, english, icon }) => (
                 <button
                   key={label}
                   className={active === label ? "nav-row active" : "nav-row"}
                   onClick={() => navigateTo(label)}
                 >
                   <VesperNavIcon name={icon} />
-                  <span>{label}</span>
+                  <span>{english}</span>
                   {active === label && <i />}
                 </button>
               ))}
@@ -2055,7 +2065,7 @@ const deviceHeaders = () => ({
   "x-vesper-device-token": deviceToken(),
 });
 
-function ConnectedChat({
+function LegacyConnectedChat({
   conversationId,
   agentName,
   userName,
@@ -2595,6 +2605,363 @@ function ConnectedChat({
   );
 }
 
+type CodexSocketMessage = {
+  id?: number;
+  method?: string;
+  params?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  error?: { message?: string };
+};
+type CodexInput =
+  | { type: "text"; text: string }
+  | { type: "image"; url: string }
+  | { type: "audio"; url: string };
+type CodexPendingFile = { file: File; preview: string };
+
+const CODEX_DYNAMIC_TOOLS = [
+  {
+    name: "read_vesper_state",
+    description: "Read Vesper notes, reminders, journal, dates, music, or current section.",
+    inputSchema: { type: "object", properties: { section: { type: "string" } } },
+  },
+  {
+    name: "write_vesper_state",
+    description: "Create a note, reminder, journal entry, or navigate Vesper.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["note", "reminder", "journal", "navigate"] },
+        text: { type: "string" },
+        title: { type: "string" },
+        date: { type: "string" },
+        section: { type: "string" },
+      },
+      required: ["kind"],
+    },
+  },
+];
+
+function codexSocketUrl() {
+  const configured = readLocalValue<string>("vesper-codex-endpoint", "").trim();
+  const base = configured || (typeof window !== "undefined" ? `${window.location.origin}/api/codex` : "");
+  const url = new URL(base || "http://localhost/api/codex");
+  if (url.protocol === "http:") url.protocol = "ws:";
+  if (url.protocol === "https:") url.protocol = "wss:";
+  const token = deviceToken();
+  if (token) url.searchParams.set("token", token);
+  return url.toString();
+}
+
+function readDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("File read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function videoPoster(file: File) {
+  const url = URL.createObjectURL(file);
+  try {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.src = url;
+    await new Promise<void>((resolve, reject) => {
+      video.onloadeddata = () => resolve();
+      video.onerror = () => reject(new Error("Video preview failed"));
+    });
+    video.currentTime = Math.min(1, Number.isFinite(video.duration) ? video.duration / 2 : 1);
+    await new Promise<void>((resolve) => { video.onseeked = () => resolve(); });
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 1280 / Math.max(video.videoWidth || 1, video.videoHeight || 1));
+    canvas.width = Math.max(1, Math.round((video.videoWidth || 640) * scale));
+    canvas.height = Math.max(1, Math.round((video.videoHeight || 360) * scale));
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.82);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function CodexChatMessage({
+  item,
+  agentName,
+  userName,
+  agentAvatar,
+  userAvatar,
+  onEdit,
+  onThought,
+}: {
+  item: BridgeChatMessage;
+  agentName: string;
+  userName: string;
+  agentAvatar: string;
+  userAvatar: string;
+  onEdit: (item: BridgeChatMessage) => void;
+  onThought: (item: BridgeChatMessage) => void;
+}) {
+  const stamp = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(item.createdAt));
+  const assistant = item.role === "agent";
+  return (
+    <div className={assistant ? "agent-turn" : "sent-turn"}>
+      <time>{stamp}</time>
+      <div className={assistant ? "message assistant" : "message mine sent-message"}>
+        {assistant && <AvatarMark src={agentAvatar} label={agentName} kind="agent" />}
+        <div>
+          {assistant && <div className="codex-thinking-label"><i /> {item.metadata?.thoughtSummary ? "Thought complete" : "Codex"}</div>}
+          <p>{item.content}</p>
+          <MessageAttachments items={item.metadata?.attachments || []} />
+          <small>{assistant ? agentName : userName} · {stamp}</small>
+          {assistant && item.metadata?.thoughtSummary && <button className="thought-toggle" onClick={() => onThought(item)}><Icon name="clock" /> View reasoning summary <Icon name="chevron" /></button>}
+          {!assistant && <button className="message-edit" aria-label="Edit message" title="Edit" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
+        </div>
+        {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
+      </div>
+    </div>
+  );
+}
+
+function ConnectedChat({
+  conversationId,
+  agentName,
+  userName,
+  agentAvatar,
+  userAvatar,
+}: {
+  conversationId: string;
+  agentName: string;
+  userName: string;
+  agentAvatar: string;
+  userAvatar: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<BridgeChatMessage[]>(() => readLocalValue(`vesper-codex-chat-${conversationId}`, []));
+  const [pending, setPending] = useState<CodexPendingFile[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [online, setOnline] = useState(false);
+  const [error, setError] = useState("");
+  const [streaming, setStreaming] = useState("");
+  const [thought, setThought] = useState<BridgeChatMessage | null>(null);
+  const [listening, setListening] = useState(false);
+  const socket = useRef<WebSocket | null>(null);
+  const rpcId = useRef(1);
+  const rpc = useRef(new Map<number, { resolve: (value: CodexSocketMessage) => void; reject: (reason: Error) => void }>());
+  const threadId = useRef(readLocalValue<Record<string, string>>("vesper-codex-threads", {})[conversationId] || "");
+  const streamBuffers = useRef(new Map<string, string>());
+  const thoughtBuffer = useRef("");
+  const turnDone = useRef<((value?: unknown) => void) | null>(null);
+  const streamEnd = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const save = (next: BridgeChatMessage[]) => {
+    setMessages(next);
+    window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(next));
+  };
+  const executeTool = (name: string, args: Record<string, unknown>) => {
+    const section = String(args.section || "");
+    if (name === "read_vesper_state") {
+      const key = section === "journal" ? "diary" : section === "reminders" ? "todos" : section === "dates" ? "anniversaries" : section === "music" ? "music" : "notes";
+      return JSON.stringify({ section: section || "notes", value: readLocalValue(`vesper-document-${key}`, key === "diary" ? {} : []) });
+    }
+    if (name === "write_vesper_state") {
+      const kind = String(args.kind || "");
+      if (kind === "navigate") {
+        window.dispatchEvent(new CustomEvent("vesper-navigate", { detail: { section } }));
+        return `Opened ${section || "Today"}.`;
+      }
+      if (kind === "note") {
+        const notes = readLocalValue<NoteItem[]>("vesper-document-notes", []);
+        const entry = { id: crypto.randomUUID(), text: String(args.text || args.title || ""), kind: "agent" as const, tone: "cool", createdAt: new Date().toISOString() };
+        window.localStorage.setItem("vesper-document-notes", JSON.stringify([...notes, entry]));
+        window.dispatchEvent(new CustomEvent("vesper-document-change", { detail: { key: "notes", value: [...notes, entry] } }));
+        return `Saved note ${entry.id}.`;
+      }
+      if (kind === "reminder") {
+        const todos = readLocalValue<TodoItem[]>("vesper-document-todos", []);
+        const entry = { id: crypto.randomUUID(), title: String(args.title || args.text || "Reminder"), done: false, tag: "Codex", due: String(args.date || ""), createdAt: new Date().toISOString() };
+        window.localStorage.setItem("vesper-document-todos", JSON.stringify([...todos, entry]));
+        window.dispatchEvent(new CustomEvent("vesper-document-change", { detail: { key: "todos", value: [...todos, entry] } }));
+        return `Saved reminder ${entry.id}.`;
+      }
+      if (kind === "journal") {
+        const diary = readLocalValue<DiaryDocument>("vesper-document-diary", {});
+        const date = String(args.date || new Date().toLocaleDateString("en-CA"));
+        const value = { ...diary, [date]: { ...(diary[date] || { user: "" }), agent: String(args.text || ""), updatedAt: new Date().toISOString() } };
+        window.localStorage.setItem("vesper-document-diary", JSON.stringify(value));
+        window.dispatchEvent(new CustomEvent("vesper-document-change", { detail: { key: "diary", value } }));
+        return `Updated journal for ${date}.`;
+      }
+    }
+    return "Tool completed without changes.";
+  };
+  const sendRpc = (method: string, params: Record<string, unknown>) => new Promise<CodexSocketMessage>((resolve, reject) => {
+    const current = socket.current;
+    if (!current || current.readyState !== WebSocket.OPEN) return reject(new Error("Codex socket is not open"));
+    const id = rpcId.current++;
+    rpc.current.set(id, { resolve, reject });
+    current.send(JSON.stringify({ id, method, params }));
+  });
+  const handleSocketMessage = (message: CodexSocketMessage) => {
+    if (typeof message.id === "number" && rpc.current.has(message.id) && !message.method) {
+      const pendingRpc = rpc.current.get(message.id)!;
+      rpc.current.delete(message.id);
+      if (message.error) pendingRpc.reject(new Error(message.error.message || "Codex request failed"));
+      else pendingRpc.resolve(message);
+      return;
+    }
+    if (message.method === "item/tool/call" && typeof message.id === "number") {
+      const params = message.params || {};
+      const result = executeTool(String(params.tool || ""), (params.arguments || {}) as Record<string, unknown>);
+      socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text: result }], success: true } }));
+      return;
+    }
+    if (message.method === "attestation/generate" && typeof message.id === "number") {
+      socket.current?.send(JSON.stringify({ id: message.id, result: { token: `v1.vesper-${crypto.randomUUID()}` } }));
+      return;
+    }
+    if (message.method === "currentTime/read" && typeof message.id === "number") {
+      socket.current?.send(JSON.stringify({ id: message.id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } }));
+      return;
+    }
+    if (message.method?.includes("requestApproval") && typeof message.id === "number") {
+      socket.current?.send(JSON.stringify({ id: message.id, result: { decision: "decline" } }));
+      setError("Codex requested a command approval; Vesper keeps shell actions disabled in the browser.");
+      return;
+    }
+    const params = message.params || {};
+    if (message.method === "item/agentMessage/delta") {
+      const id = String(params.itemId || "agent");
+      const next = `${streamBuffers.current.get(id) || ""}${String(params.delta || "")}`;
+      streamBuffers.current.set(id, next);
+      setStreaming(next);
+    }
+    if (message.method === "item/reasoning/summaryTextDelta") {
+      thoughtBuffer.current += String(params.delta || "");
+    }
+    if (message.method === "item/completed") {
+      const item = (params.item || {}) as { type?: string; id?: string; text?: string; summary?: string };
+      if (item.type === "agentMessage") {
+        const content = item.text || streamBuffers.current.get(String(item.id || "")) || streaming;
+        if (content.trim()) {
+          const agentMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "agent", content, status: "delivered", metadata: { thoughtSummary: thoughtBuffer.current || undefined }, createdAt: new Date().toISOString() };
+          save([...readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []), agentMessage]);
+        }
+        setStreaming("");
+        streamBuffers.current.clear();
+        thoughtBuffer.current = "";
+      }
+    }
+    if (message.method === "turn/completed") {
+      setBusy(false);
+      turnDone.current?.(params.turn);
+      turnDone.current = null;
+    }
+  };
+  const connect = async () => {
+    if (socket.current?.readyState === WebSocket.OPEN) return;
+    const ws = new WebSocket(codexSocketUrl());
+    socket.current = ws;
+    ws.onmessage = (event) => {
+      try { handleSocketMessage(JSON.parse(String(event.data)) as CodexSocketMessage); } catch { setError("Invalid message from Codex app-server"); }
+    };
+    ws.onclose = () => { setOnline(false); socket.current = null; };
+    ws.onerror = () => setError("Codex app-server is offline");
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve();
+      ws.onerror = () => reject(new Error("Codex app-server is offline"));
+    });
+    setOnline(true);
+    await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.5.0" }, capabilities: { experimentalApi: true, requestAttestation: true } });
+    ws.send(JSON.stringify({ method: "initialized" }));
+    const stored = readLocalValue<Record<string, string>>("vesper-codex-threads", {});
+    if (threadId.current || stored[conversationId]) {
+      threadId.current = threadId.current || stored[conversationId];
+      await sendRpc("thread/resume", { threadId: threadId.current });
+    } else {
+      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "unlessTrusted", summary: "concise" });
+      const thread = (result.result?.thread || {}) as { id?: string };
+      if (!thread.id) throw new Error("Codex did not return a thread id");
+      threadId.current = thread.id;
+      window.localStorage.setItem("vesper-codex-threads", JSON.stringify({ ...stored, [conversationId]: thread.id }));
+    }
+  };
+  const editMessage = (item: BridgeChatMessage) => {
+    const content = window.prompt("Edit message", item.content)?.trim();
+    if (!content || content === item.content) return;
+    save(messages.map((message) => message.id === item.id ? { ...message, content } : message));
+  };
+  const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
+    const { file, preview } = item;
+    let attachment: ChatAttachment = { key: crypto.randomUUID(), url: preview, name: file.name, type: file.type || "application/octet-stream", size: file.size };
+    try { attachment = await uploadMedia(file); } catch {}
+    if (file.type.startsWith("image/")) return { attachment, input: { type: "image", url: await localImage(file, 1600, 0.84) } };
+    if (file.type.startsWith("audio/")) return { attachment, input: { type: "audio", url: await readDataUrl(file) } };
+    if (file.type.startsWith("video/")) return { attachment, input: { type: "image", url: await videoPoster(file) }, text: `[Video attached: ${file.name}. A representative frame is included.]` };
+    if (file.type.startsWith("text/") || /\.(json|html?|md|csv|tsx?|jsx?)$/i.test(file.name)) return { attachment, text: `[File: ${file.name}]\n${(await file.text()).slice(0, 120000)}` };
+    return { attachment, text: `[File attached: ${file.name} (${file.type || "unknown"}, ${file.size} bytes).]` };
+  };
+  const send = async () => {
+    const content = draft.trim();
+    if ((!content && !pending.length) || busy) return;
+    setBusy(true); setError(""); setDraft("");
+    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "delivered", metadata: { attachments: [] }, createdAt: new Date().toISOString() };
+    try {
+      const prepared = await Promise.all(pending.map(prepareFile));
+      userMessage.metadata = { attachments: prepared.map((item) => item.attachment) };
+      const current = [...messages, userMessage];
+      save(current);
+      const input: CodexInput[] = [{ type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." }];
+      for (const item of prepared) if (item.input) input.push(item.input);
+      await connect();
+      if (!threadId.current) throw new Error("No Codex thread");
+      const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
+      await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
+      await Promise.race([done, new Promise<void>((_, reject) => window.setTimeout(() => reject(new Error("Codex response timed out")), 120000))]);
+      rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
+      setPending([]);
+    } catch (reason) {
+      setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false);
+    }
+  };
+  const selectFiles = (files: FileList | null) => {
+    if (!files) return;
+    setPending((current) => [...current, ...Array.from(files).map((file) => ({ file, preview: URL.createObjectURL(file) }))]);
+  };
+  const startStt = () => {
+    const Speech = (window as Window & { SpeechRecognition?: new () => { lang: string; interimResults: boolean; onresult: (event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void; onend: () => void; onerror: () => void; start: () => void } }).SpeechRecognition || (window as Window & { webkitSpeechRecognition?: new () => { lang: string; interimResults: boolean; onresult: (event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void; onend: () => void; onerror: () => void; start: () => void } }).webkitSpeechRecognition;
+    if (!Speech) return setError("Speech recognition is not supported here");
+    const recognition = new Speech(); recognition.lang = "en-US"; recognition.interimResults = false;
+    recognition.onresult = (event) => setDraft((value) => `${value}${value ? " " : ""}${event.results[0][0].transcript}`);
+    recognition.onend = () => setListening(false); recognition.onerror = () => { setListening(false); setError("Speech recognition failed"); };
+    setListening(true); recognition.start();
+  };
+  useEffect(() => {
+    void connect().catch((reason) => setError(reason instanceof Error ? reason.message : "Codex app-server is offline"));
+    return () => { socket.current?.close(); socket.current = null; };
+  }, [conversationId]);
+  useLayoutEffect(() => { const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null; if (scroller) scroller.scrollTop = scroller.scrollHeight; }, [messages.length, streaming]);
+  return (
+    <div className="page-body chat-page codex-chat">
+      <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
+      <div className="chat-stream">
+        {!messages.length && !streaming && <div className="chat-empty"><Icon name="chat" /><b>{error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
+        {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} />)}
+        {streaming && <div className="agent-turn"><time>Now</time><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><div className="codex-thinking-label"><i /> Thinking…</div><p>{streaming}</p></div></div></div>}
+        {busy && !streaming && <div className="agent-typing"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><i /><i /><i /><span>Thinking…</span></div></div>}
+        <div ref={streamEnd} />
+      </div>
+      <div className="chat-compose">
+        {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
+        <textarea placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
+        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="codex-connection-pill"><i className={online ? "online" : ""} /> Codex</span><span>{busy ? "Sending…" : listening ? "Listening…" : ""}</span><button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
+      </div>
+      {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary}</div></section></div>}
+    </div>
+  );
+}
+
 function MessageAttachments({ items }: { items: ChatAttachment[] }) {
   if (!items.length) return null;
   return (
@@ -2945,24 +3312,12 @@ function SettingsPage({
         title="设置"
         text="让 Vesper 以你感到舒服的方式陪伴。"
       />
-      <SettingsGroup title="连接">
+      <SettingsGroup title="CODEx RUNTIME">
         <SettingRow
           icon="sparkles"
-          title="AI 连接"
-          sub="API Key / MCP / CyberBoss"
-          onClick={() => setSelected("AI 连接")}
-        />
-        <SettingRow
-          icon="link"
-          title="MCP 工具"
-          sub="接入第三方工具与服务"
-          onClick={() => setSelected("MCP 工具")}
-        />
-        <SettingRow
-          icon="library"
-          title="Vesper MCP"
-          sub="把 Vesper 功能提供给 Codex 等 AI 官端"
-          onClick={() => setSelected("Vesper MCP")}
+          title="Codex Server"
+          sub="One private app-server on your VPS"
+          onClick={() => setSelected("Codex Server")}
         />
         <SettingRow
           icon="volume"
@@ -3033,7 +3388,7 @@ function SettingsPage({
           onClick={() => setSelected("导出与备份")}
         />
       </SettingsGroup>
-      <p className="settings-foot">VESPER 0.4 · MULTI-CONNECTION</p>
+      <p className="settings-foot">VESPER 0.5 · CODEX APP-SERVER</p>
       {selected === "Appearance" ? (
         <AppearanceModal
           accent={accent}
@@ -3041,8 +3396,8 @@ function SettingsPage({
           onBackground={onBackground}
           onClose={closeDetail}
         />
-      ) : selected === "AI 连接" ? (
-        <AiConnectionModal onClose={closeDetail} />
+      ) : selected === "Codex Server" ? (
+        <CodexConnectionModal onClose={closeDetail} />
       ) : selected === "MCP 工具" ? (
         <ExternalMcpModal onClose={closeDetail} />
       ) : selected === "Vesper MCP" ? (
@@ -3379,6 +3734,45 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
         <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "更新并测试 MCP" : "生成令牌并启用 MCP"}</button>
         <button className="reset-background" disabled={busy || !draft.trim()} onClick={() => void testTools()}>测试 MCP tools</button>
         <button className="reset-background" disabled={!draft.trim()} onClick={() => void copy()}>复制 AI 官端连接参数</button>
+      </section>
+    </div>
+  );
+}
+
+function CodexConnectionModal({ onClose }: { onClose: () => void }) {
+  const [endpoint, setEndpoint] = useState(() => readLocalValue("vesper-codex-endpoint", ""));
+  const [token, setToken] = useState(() => deviceToken());
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    const cleanEndpoint = endpoint.trim().replace(/\/$/, "");
+    window.localStorage.setItem("vesper-codex-endpoint", cleanEndpoint);
+    if (token.trim()) window.localStorage.setItem("vesper-device-token", token.trim());
+    try {
+      const url = cleanEndpoint || `${window.location.origin}/api/codex`;
+      const response = await fetch(url, { headers: { "x-vesper-device-token": token.trim() }, cache: "no-store" });
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      setMessage("Codex app-server is reachable. The chat uses this single connection.");
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Could not reach the app-server");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="connection-modal ai-connection-modal">
+        <div className="modal-head">
+          <div><small>CODEX APP-SERVER</small><h2>One private connection</h2></div>
+          <button onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <p className="settings-hint">Run <code>codex app-server --listen ws://0.0.0.0:4500</code> on your VPS. Put the public WebSocket URL here, or leave it blank to use the Vesper same-origin proxy.</p>
+        <label className="profile-field"><span>WebSocket endpoint (optional)</span><input value={endpoint} placeholder="wss://codex.example.com" onChange={(event) => setEndpoint(event.target.value)} /></label>
+        <label className="profile-field"><span>Vesper device token</span><input type="password" value={token} placeholder="The VESPER_APP_TOKEN value" onChange={(event) => setToken(event.target.value)} /></label>
+        {message && <p className="connection-message">{message}</p>}
+        <button className="save-profile" disabled={busy} onClick={() => void save()}>{busy ? "Testing…" : "Save and test"}</button>
       </section>
     </div>
   );

@@ -29,11 +29,14 @@ export async function POST(request: Request) {
     const provider = (connection.provider || "").toLowerCase();
     const base = safeHttpsUrl(connection.baseUrl.replace(/\/$/, ""));
     const isElevenLabs = provider.includes("eleven") || base.hostname.includes("elevenlabs");
+    const isMiniMax = provider.includes("minimax") || base.hostname.includes("minimax");
     const baseString = base.toString().replace(/\/$/, "");
     const endpoint = connection.endpoint
       ? safeHttpsUrl(connection.endpoint)
       : isElevenLabs
         ? safeHttpsUrl(`${baseString}/v1/text-to-speech/${encodeURIComponent(connection.voiceId || "")}`)
+        : isMiniMax
+          ? safeHttpsUrl(`${baseString}/v1/t2a_v2${connection.groupId ? `?GroupId=${encodeURIComponent(connection.groupId)}` : ""}`)
         : safeHttpsUrl(/\/audio\/speech$/i.test(base.pathname) ? baseString : `${baseString}/audio/speech`);
     const response = await fetch(endpoint, {
       method: "POST",
@@ -42,6 +45,8 @@ export async function POST(request: Request) {
         : { "content-type": "application/json", accept: "audio/mpeg, audio/*", authorization: `Bearer ${connection.apiKey}` },
       body: JSON.stringify(isElevenLabs
         ? { text, model_id: connection.model || "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 }, speed: Number(connection.speed || 1) }
+        : isMiniMax
+          ? { model: connection.model || "speech-2.6-hd", text, stream: false, voice_setting: { voice_id: connection.voiceId || "male-qn-qingse", speed: Number(connection.speed || 1), vol: 1, pitch: 0 }, audio_setting: { audio_sample_rate: 32000, bitrate: 128000, format: "mp3" } }
         : { model: connection.model || "gpt-4o-mini-tts", voice: connection.voiceId || "alloy", input: text, response_format: "mp3", speed: Number(connection.speed || 1) }),
       redirect: "error",
     });
@@ -49,9 +54,14 @@ export async function POST(request: Request) {
       const detail = (await response.text()).slice(0, 500);
       return json({ error: detail || `TTS 返回 ${response.status}` }, 502);
     }
-    return new Response(response.body, {
-      headers: { "content-type": response.headers.get("content-type") || "audio/mpeg", "cache-control": "no-store" },
-    });
+    if (isMiniMax) {
+      const payload = await response.json() as { data?: { audio?: string }; audio?: string; base_resp?: { status_code?: number; status_msg?: string } };
+      const encoded = payload.data?.audio || payload.audio;
+      if (!encoded) return json({ error: payload.base_resp?.status_msg || "MiniMax 未返回音频" }, 502);
+      const bytes = /^[0-9a-f]+$/i.test(encoded) ? Uint8Array.from(encoded.match(/.{1,2}/g) || [], (pair) => parseInt(pair, 16)) : Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+      return new Response(bytes, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store" } });
+    }
+    return new Response(response.body, { headers: { "content-type": response.headers.get("content-type") || "audio/mpeg", "cache-control": "no-store" } });
   } catch (reason) {
     return json({ error: reason instanceof Error ? reason.message : "TTS 请求失败" }, 400);
   }

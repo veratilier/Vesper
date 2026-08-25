@@ -2047,6 +2047,9 @@ type BridgeChatMessage = {
     durationMs?: number;
     tools?: string[];
     attachments?: ChatAttachment[];
+    turnId?: string;
+    turnStatus?: "thinking" | "completed" | "error";
+    blockType?: string;
   };
   createdAt: string;
 };
@@ -2693,6 +2696,7 @@ function CodexChatMessage({
   userAvatar,
   onEdit,
   onThought,
+  onCopy,
 }: {
   item: BridgeChatMessage;
   agentName: string;
@@ -2701,22 +2705,37 @@ function CodexChatMessage({
   userAvatar: string;
   onEdit: (item: BridgeChatMessage) => void;
   onThought: (item: BridgeChatMessage) => void;
+  onCopy: (item: BridgeChatMessage) => void;
 }) {
-  const stamp = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(item.createdAt));
   const assistant = item.role === "agent";
+  const stamp = new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(item.createdAt));
+  const status = item.metadata?.turnStatus;
+  const statusText = status === "thinking" ? "Thinking…" : status === "error" ? "Failed" : "Completed";
+  const statusLabel = `${stamp}  ${statusText}`;
   return (
     <div className={assistant ? "agent-turn" : "sent-turn"}>
-      <time>{stamp}</time>
+      {!assistant && item.metadata?.turnId && (
+        item.metadata.thoughtSummary ? (
+          <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
+            <i /> <span>{statusLabel}</span>
+          </button>
+        ) : (
+          <div className="turn-status" aria-live="polite"><i /> <span>{statusLabel}</span></div>
+        )
+      )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
         {assistant && <AvatarMark src={agentAvatar} label={agentName} kind="agent" />}
         <div>
-          {assistant && <div className="codex-thinking-label"><i /> {item.metadata?.thoughtSummary ? "Thought complete" : "Codex"}</div>}
           <p>{item.content}</p>
-          <small>{assistant ? agentName : userName} · {stamp}</small>
-          {assistant && item.metadata?.thoughtSummary && <button className="thought-toggle" onClick={() => onThought(item)}><Icon name="clock" /> View reasoning summary <Icon name="chevron" /></button>}
-          {!assistant && <button className="message-edit" aria-label="Edit message" title="Edit" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
         </div>
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
+      </div>
+      <div className="message-actions">
+        {assistant ? (
+          <button className="message-action" aria-label="Copy response" title="Copy" onClick={() => onCopy(item)}><Icon name="copy" /></button>
+        ) : (
+          <button className="message-action" aria-label="Edit message" title="Edit" onClick={() => onEdit(item)}><Icon name="edit" /></button>
+        )}
       </div>
       <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
@@ -2752,12 +2771,18 @@ function ConnectedChat({
   const streamBuffers = useRef(new Map<string, string>());
   const thoughtBuffer = useRef("");
   const turnDone = useRef<((value?: unknown) => void) | null>(null);
+  const activeTurnId = useRef("");
+  const activeTurnUserId = useRef("");
   const streamEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const save = (next: BridgeChatMessage[]) => {
     setMessages(next);
     window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(next));
+  };
+  const updateMessage = (id: string, update: (item: BridgeChatMessage) => BridgeChatMessage) => {
+    const current = readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []);
+    save(current.map((item) => item.id === id ? update(item) : item));
   };
   const executeTool = (name: string, args: Record<string, unknown>) => {
     const section = String(args.section || "");
@@ -2841,22 +2866,55 @@ function ConnectedChat({
       thoughtBuffer.current += String(params.delta || "");
     }
     if (message.method === "item/completed") {
-      const item = (params.item || {}) as { type?: string; id?: string; text?: string; summary?: string };
+      const item = (params.item || {}) as { type?: string; id?: string; text?: string; summary?: string; output?: string; command?: string; content?: unknown };
+      const extractText = () => {
+        if (typeof item.text === "string") return item.text;
+        if (typeof item.output === "string") return item.output;
+        if (typeof item.command === "string") return `$ ${item.command}`;
+        if (typeof item.summary === "string") return item.summary;
+        if (Array.isArray(item.content)) return item.content.map((part) => typeof part === "string" ? part : (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text || "") : "")).filter(Boolean).join("\n");
+        return streamBuffers.current.get(String(item.id || "")) || "";
+      };
+      const content = extractText().trim();
+      if (content && activeTurnId.current && item.type !== "userMessage") {
+        const agentMessage: BridgeChatMessage = {
+          id: crypto.randomUUID(), conversationId, role: "agent", content,
+          status: "delivered",
+          metadata: {
+            thoughtSummary: item.type === "agentMessage" ? (thoughtBuffer.current || undefined) : undefined,
+            turnId: activeTurnId.current,
+            blockType: item.type || "output",
+          },
+          createdAt: new Date().toISOString(),
+        };
+        save([...readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []), agentMessage]);
+      }
       if (item.type === "agentMessage") {
-        const content = item.text || streamBuffers.current.get(String(item.id || "")) || streaming;
-        if (content.trim()) {
-          const agentMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "agent", content, status: "delivered", metadata: { thoughtSummary: thoughtBuffer.current || undefined }, createdAt: new Date().toISOString() };
-          save([...readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []), agentMessage]);
-        }
         setStreaming("");
-        streamBuffers.current.clear();
-        thoughtBuffer.current = "";
+        streamBuffers.current.delete(String(item.id || ""));
       }
     }
     if (message.method === "turn/completed") {
       setBusy(false);
+      if (activeTurnUserId.current) {
+        updateMessage(activeTurnUserId.current, (item) => ({
+          ...item,
+          status: "completed",
+          metadata: {
+            ...item.metadata,
+            turnId: activeTurnId.current || item.metadata?.turnId,
+            turnStatus: "completed",
+            thoughtSummary: thoughtBuffer.current || item.metadata?.thoughtSummary,
+          },
+        }));
+      }
+      setStreaming("");
+      streamBuffers.current.clear();
+      thoughtBuffer.current = "";
       turnDone.current?.(params.turn);
       turnDone.current = null;
+      activeTurnId.current = "";
+      activeTurnUserId.current = "";
     }
   };
   const connect = async () => {
@@ -2878,9 +2936,23 @@ function ConnectedChat({
     const stored = readLocalValue<Record<string, string>>("vesper-codex-threads", {});
     if (threadId.current || stored[conversationId]) {
       threadId.current = threadId.current || stored[conversationId];
-      await sendRpc("thread/resume", { threadId: threadId.current });
+      try {
+        await sendRpc("thread/resume", { threadId: threadId.current });
+      } catch {
+        threadId.current = "";
+        const nextStored = { ...stored };
+        delete nextStored[conversationId];
+        window.localStorage.setItem("vesper-codex-threads", JSON.stringify(nextStored));
+      }
     } else {
-      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "unlessTrusted", summary: "concise" });
+      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
+      const thread = (result.result?.thread || {}) as { id?: string };
+      if (!thread.id) throw new Error("Codex did not return a thread id");
+      threadId.current = thread.id;
+      window.localStorage.setItem("vesper-codex-threads", JSON.stringify({ ...stored, [conversationId]: thread.id }));
+    }
+    if (!threadId.current) {
+      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       threadId.current = thread.id;
@@ -2891,6 +2963,15 @@ function ConnectedChat({
     const content = window.prompt("Edit message", item.content)?.trim();
     if (!content || content === item.content) return;
     save(messages.map((message) => message.id === item.id ? { ...message, content } : message));
+  };
+  const copyMessage = async (item: BridgeChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(item.content);
+      setError("Copied");
+      window.setTimeout(() => setError((current) => current === "Copied" ? "" : current), 1200);
+    } catch {
+      setError("Copy failed");
+    }
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
     const { file, preview } = item;
@@ -2906,10 +2987,11 @@ function ConnectedChat({
     const content = draft.trim();
     if ((!content && !pending.length) || busy) return;
     setBusy(true); setError(""); setDraft("");
-    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "delivered", metadata: { attachments: [] }, createdAt: new Date().toISOString() };
+    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "thinking", metadata: { attachments: [], turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
+    activeTurnUserId.current = userMessage.id;
     try {
       const prepared = await Promise.all(pending.map(prepareFile));
-      userMessage.metadata = { attachments: prepared.map((item) => item.attachment) };
+      userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       const current = [...messages, userMessage];
       save(current);
       const input: CodexInput[] = [{ type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." }];
@@ -2917,11 +2999,15 @@ function ConnectedChat({
       await connect();
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
-      await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
+      const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
+      const turn = (started.result?.turn || {}) as { id?: string };
+      activeTurnId.current = turn.id || `turn-${userMessage.id}`;
+      updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
       await Promise.race([done, new Promise<void>((_, reject) => window.setTimeout(() => reject(new Error("Codex response timed out")), 120000))]);
       rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
       setPending([]);
     } catch (reason) {
+      updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
       setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false);
     }
   };
@@ -2947,9 +3033,8 @@ function ConnectedChat({
       <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
       <div className="chat-stream">
         {!messages.length && !streaming && <div className="chat-empty"><Icon name="chat" /><b>{error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
-        {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} />)}
-        {streaming && <div className="agent-turn"><time>Now</time><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><div className="codex-thinking-label"><i /> Thinking…</div><p>{streaming}</p></div></div></div>}
-        {busy && !streaming && <div className="agent-typing"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><i /><i /><i /><span>Thinking…</span></div></div>}
+        {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} />)}
+        {streaming && <div className="agent-turn"><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{streaming}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(streaming)}><Icon name="copy" /></button></div></div>}
         <div ref={streamEnd} />
       </div>
       <div className="chat-compose">

@@ -37,12 +37,16 @@ export async function GET(request: Request) {
   if (upgrade !== 'websocket') return json(request, { ok: true, service: 'codex-app-server-proxy', configured: true });
 
   const upstream = new URL(target);
-  if (upstream.protocol === 'http:') upstream.protocol = 'ws:';
-  if (upstream.protocol === 'https:') upstream.protocol = 'wss:';
-  const headers = new Headers(request.headers);
-  headers.delete('origin');
+  // Workers upgrades a backend WebSocket by calling fetch() with the
+  // Upgrade header. Keep the subrequest URL HTTP(S); fetch() does not
+  // proxy a `ws:`/`wss:` URL as a WebSocket subrequest.
+  if (upstream.protocol === 'ws:') upstream.protocol = 'http:';
+  if (upstream.protocol === 'wss:') upstream.protocol = 'https:';
+  // Let the Workers runtime generate the backend handshake headers; copying
+  // the browser's Sec-WebSocket-Key/Connection headers causes a 500 on the
+  // subrequest in some edge locations.
+  const headers = new Headers({ Upgrade: 'websocket' });
   const upstreamToken = runtimeEnv().CODEX_APP_SERVER_TOKEN?.trim();
   if (upstreamToken) headers.set('authorization', `Bearer ${upstreamToken}`);
   return fetch(new Request(upstream, { method: 'GET', headers }));
 }
-

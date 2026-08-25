@@ -2643,7 +2643,9 @@ const CODEX_DYNAMIC_TOOLS = [
 
 function codexSocketUrl() {
   const configured = readLocalValue<string>("vesper-codex-endpoint", "").trim();
-  const base = configured || (typeof window !== "undefined" ? `${window.location.origin}/api/codex` : "");
+  // The fixed personal deployment uses the authenticated VPS tunnel directly.
+  // The token is appended as a query parameter and validated by the VPS proxy.
+  const base = configured || "wss://codex.r-vera.com";
   const url = new URL(base || "http://localhost/api/codex");
   if (url.protocol === "http:") url.protocol = "ws:";
   if (url.protocol === "https:") url.protocol = "wss:";
@@ -3740,7 +3742,7 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
 }
 
 function CodexConnectionModal({ onClose }: { onClose: () => void }) {
-  const [endpoint, setEndpoint] = useState(() => readLocalValue("vesper-codex-endpoint", ""));
+  const [endpoint, setEndpoint] = useState(() => readLocalValue("vesper-codex-endpoint", "wss://codex.r-vera.com"));
   const [token, setToken] = useState(() => deviceToken());
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -3776,7 +3778,7 @@ function CodexConnectionModal({ onClose }: { onClose: () => void }) {
           <div><small>CODEX APP-SERVER</small><h2>One private connection</h2></div>
           <button onClick={onClose}><Icon name="close" /></button>
         </div>
-        <p className="settings-hint">Run <code>codex app-server --listen ws://0.0.0.0:4500</code> on your VPS. Put the public WebSocket URL here, or leave it blank to use the Vesper same-origin proxy.</p>
+        <p className="settings-hint">Your private Codex tunnel is preconfigured. Keep this endpoint as <code>wss://codex.r-vera.com</code> and enter your Vesper device token.</p>
         <label className="profile-field"><span>WebSocket endpoint (optional)</span><input value={endpoint} placeholder="wss://codex.example.com" onChange={(event) => setEndpoint(event.target.value)} /></label>
         <label className="profile-field"><span>Vesper device token</span><input type="password" value={token} placeholder="The VESPER_APP_TOKEN value" onChange={(event) => setToken(event.target.value)} /></label>
         {message && <p className="connection-message">{message}</p>}

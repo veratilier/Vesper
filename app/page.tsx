@@ -615,7 +615,7 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=14", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=15", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
     const timer = window.setTimeout(() => {
       setSplashVisible(false);

@@ -806,7 +806,7 @@ export default function Home() {
       </main>
     );
   return (
-    <main className="stage">
+    <main className="stage" style={shellStyle}>
       <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
         <img src="/icon-192-20260823-v8.png" alt="" />
         <b>Vesper</b>

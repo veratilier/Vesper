@@ -568,7 +568,7 @@ export default function Home() {
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [splashVisible, setSplashVisible] = useState(() =>
-    typeof window === "undefined" ? true : window.sessionStorage.getItem("vesper-splash-seen-v2") !== "1",
+    typeof window === "undefined" ? true : window.sessionStorage.getItem("vesper-splash-seen-v3") !== "1",
   );
   const [active, setActive] = useState("今日");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -619,7 +619,7 @@ export default function Home() {
     }
     const timer = window.setTimeout(() => {
       setSplashVisible(false);
-      window.sessionStorage.setItem("vesper-splash-seen-v2", "1");
+      window.sessionStorage.setItem("vesper-splash-seen-v3", "1");
     }, splashVisible ? 1400 : 0);
     return () => window.clearTimeout(timer);
   }, [splashVisible]);

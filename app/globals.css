@@ -3611,6 +3611,236 @@ body {
   .codex-chat .message:has(a) > div { max-width: 78%; }
 }
 
+/* Final composer correction: vertical compactness without narrowing the chat width. */
+.codex-chat .chat-stream {
+  padding-bottom: calc(var(--composer-height, 64px) + env(safe-area-inset-bottom) + 16px) !important;
+}
+.codex-chat .chat-compose {
+  position: fixed !important;
+  z-index: 12;
+  left: 16px !important;
+  right: 16px !important;
+  bottom: 0 !important;
+  width: calc(100% - 32px) !important;
+  height: auto !important;
+  min-height: 64px !important;
+  max-height: calc(4 * 20px + 76px + env(safe-area-inset-bottom)) !important;
+  box-sizing: border-box;
+  padding: 6px 10px env(safe-area-inset-bottom) !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+.codex-chat .chat-compose textarea {
+  display: block;
+  width: 100%;
+  min-height: 28px !important;
+  height: 28px;
+  max-height: 92px !important;
+  margin: 0;
+  padding: 4px 8px !important;
+  box-sizing: border-box;
+  resize: none;
+  overflow-y: hidden;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+}
+.codex-chat .compose-actions {
+  min-height: 24px;
+  height: 24px;
+  gap: 5px;
+  align-items: center;
+}
+.codex-chat .compose-actions > button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+.codex-chat .compose-actions .composer-status {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #718487;
+  font: 500 9px/1.1 var(--font-geist-mono), monospace;
+}
+.codex-chat .composer-status i {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #aab4b4;
+}
+.codex-chat .composer-status i.online {
+  background: #80a98d;
+  box-shadow: 0 0 0 3px rgba(128, 169, 141, .14);
+}
+.codex-chat .message p {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+.codex-chat .message pre { font-size: 11px; line-height: 1.4; }
+
+/* Final composer correction: vertical compactness without narrowing the chat width. */
+.codex-chat .chat-stream {
+  padding-bottom: calc(var(--composer-height, 64px) + env(safe-area-inset-bottom) + 16px) !important;
+}
+.codex-chat .chat-compose {
+  position: fixed !important;
+  z-index: 12;
+  left: 16px !important;
+  right: 16px !important;
+  bottom: 0 !important;
+  width: calc(100% - 32px) !important;
+  height: auto !important;
+  min-height: 64px !important;
+  max-height: calc(4 * 20px + 76px + env(safe-area-inset-bottom)) !important;
+  box-sizing: border-box;
+  padding: 6px 10px env(safe-area-inset-bottom) !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+.codex-chat .chat-compose textarea {
+  display: block;
+  width: 100%;
+  min-height: 28px !important;
+  height: 28px;
+  max-height: 92px !important;
+  margin: 0;
+  padding: 4px 8px !important;
+  box-sizing: border-box;
+  resize: none;
+  overflow-y: hidden;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+}
+.codex-chat .compose-actions {
+  min-height: 24px;
+  height: 24px;
+  gap: 5px;
+  align-items: center;
+}
+.codex-chat .compose-actions > button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+.codex-chat .compose-actions .composer-status {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #718487;
+  font: 500 9px/1.1 var(--font-geist-mono), monospace;
+}
+.codex-chat .composer-status i {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #aab4b4;
+}
+.codex-chat .composer-status i.online {
+  background: #80a98d;
+  box-shadow: 0 0 0 3px rgba(128, 169, 141, .14);
+}
+.codex-chat .message p {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+.codex-chat .message pre { font-size: 11px; line-height: 1.4; }
+
+/* Codex composer: full-width, compact vertically, and safe-area aware. */
+.codex-chat .chat-stream {
+  padding-bottom: calc(var(--composer-height, 64px) + env(safe-area-inset-bottom) + 16px) !important;
+}
+.codex-chat .chat-compose {
+  position: fixed !important;
+  z-index: 12;
+  left: 16px !important;
+  right: 16px !important;
+  bottom: 0 !important;
+  width: calc(100% - 32px) !important;
+  height: auto !important;
+  min-height: 64px !important;
+  max-height: calc(4 * 20px + 76px + env(safe-area-inset-bottom)) !important;
+  box-sizing: border-box;
+  padding: 6px 10px env(safe-area-inset-bottom) !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+.codex-chat .chat-compose textarea {
+  display: block;
+  width: 100%;
+  min-height: 28px !important;
+  height: 28px;
+  max-height: 92px !important;
+  margin: 0;
+  padding: 4px 8px !important;
+  box-sizing: border-box;
+  resize: none;
+  overflow-y: hidden;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+}
+.codex-chat .compose-actions {
+  min-height: 24px;
+  height: 24px;
+  gap: 5px;
+  align-items: center;
+}
+.codex-chat .compose-actions > button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+.codex-chat .compose-actions .composer-status {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #718487;
+  font: 500 9px/1.1 var(--font-geist-mono), monospace;
+}
+.codex-chat .composer-status i {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #aab4b4;
+}
+.codex-chat .composer-status i.online {
+  background: #80a98d;
+  box-shadow: 0 0 0 3px rgba(128, 169, 141, .14);
+}
+.codex-chat .message p {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+.codex-chat .message pre {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 620px) {
+  .codex-chat .chat-compose {
+    left: 16px !important;
+    right: 16px !important;
+    width: calc(100% - 32px) !important;
+  }
+}
+
 /* Codex mobile density: keep short messages close to their content. */
 .codex-chat .chat-stream { gap: 16px; padding: 12px 14px 10px; }
 .codex-chat .agent-turn,

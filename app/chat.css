@@ -228,6 +228,22 @@
 
 .codex-chat .compose-actions { display: flex; align-items: center; gap: 5px; min-height: 28px; height: 28px; }
 .codex-chat .compose-actions > button { width: 28px; height: 28px; flex: 0 0 28px; }
+.codex-chat .compose-actions > button[aria-label="Voice input"],
+.codex-chat .compose-actions > .send-message-button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
+}
+.codex-chat .compose-actions > button[aria-label="Voice input"] .ui-icon,
+.codex-chat .compose-actions > .send-message-button .ui-icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  position: static;
+  transform: none;
+}
 .codex-chat .composer-status { min-width: 0; flex: 1; display: inline-flex; align-items: center; gap: 5px; color: #718487; font: 500 9px/1.1 var(--font-geist-mono), monospace; }
 .codex-chat .composer-status i { width: 5px; height: 5px; flex: none; border-radius: 50%; background: #aab4b4; }
 .codex-chat .composer-status i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }

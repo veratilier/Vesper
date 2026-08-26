@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import sqlite3
+import re
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -56,6 +57,21 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def iso_timestamp(value: object, fallback: str = "") -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return fallback
+    if not (raw.endswith("Z") or re.search(r"[+-]\d{2}:\d{2}$", raw)):
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return fallback
+    if parsed.tzinfo is None:
+        return fallback
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=10)
@@ -80,8 +96,8 @@ def conversation(row: sqlite3.Row, message_count: int | None = None) -> dict:
         "id": row["vesper_conversation_id"],
         "codexThreadId": row["codex_thread_id"],
         "title": row["title"],
-        "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"],
+        "createdAt": iso_timestamp(row["created_at"]),
+        "updatedAt": iso_timestamp(row["updated_at"]),
         "archived": row["archived_at"] is not None,
         "archivedAt": row["archived_at"],
         "source": row["source"],
@@ -103,7 +119,7 @@ def message(row: sqlite3.Row) -> dict:
         "content": row["content"],
         "status": row["status"],
         "metadata": metadata,
-        "createdAt": row["created_at"],
+        "createdAt": iso_timestamp(row["created_at"]),
         "source": row["source"],
         "timeSource": row["time_source"],
     }
@@ -205,8 +221,8 @@ class Handler(BaseHTTPRequestHandler):
         thread_id = str(body.get("codexThreadId") or "").strip() or None
         source = str(body.get("source") or "codex")
         source = source if source in {"legacy-vesper", "codex"} else "codex"
-        created_at = str(body.get("createdAt") or timestamp)
-        updated_at = str(body.get("updatedAt") or timestamp)
+        created_at = iso_timestamp(body.get("createdAt"), timestamp)
+        updated_at = iso_timestamp(body.get("updatedAt"), timestamp)
         with db() as connection:
             connection.execute("""INSERT INTO conversations
               (vesper_conversation_id, codex_thread_id, title, created_at, updated_at, archived_at, source)
@@ -233,7 +249,7 @@ class Handler(BaseHTTPRequestHandler):
         metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         item_id = str(metadata.get("itemId") or "").strip() or None
         turn_id = str(metadata.get("turnId") or "").strip() or None
-        created_at = str(body.get("createdAt") or "")
+        created_at = iso_timestamp(body.get("createdAt"))
         timestamp = now()
         conversation_updated_at = created_at if created_at else timestamp
         status = str(body.get("status") or "delivered")[:32]
@@ -247,6 +263,7 @@ class Handler(BaseHTTPRequestHandler):
               VALUES (?, ?, ?, ?, NULL, ?)
               ON CONFLICT(vesper_conversation_id) DO UPDATE SET
                 title = CASE WHEN conversations.title = '新对话' THEN excluded.title ELSE conversations.title END,
+                created_at = CASE WHEN conversations.created_at = '' AND excluded.created_at <> '' THEN excluded.created_at ELSE conversations.created_at END,
                 updated_at = CASE WHEN excluded.updated_at > conversations.updated_at THEN excluded.updated_at ELSE conversations.updated_at END,
                 archived_at = NULL""",
               (conversation_id, title, created_at, conversation_updated_at, source))
@@ -261,8 +278,18 @@ class Handler(BaseHTTPRequestHandler):
                 item_id = COALESCE(excluded.item_id, messages.item_id),
                 turn_id = COALESCE(excluded.turn_id, messages.turn_id),
                 metadata_json = excluded.metadata_json,
-                created_at = CASE WHEN messages.created_at = '' THEN excluded.created_at ELSE messages.created_at END,
-                source = excluded.source, time_source = excluded.time_source, updated_at = excluded.updated_at""",
+                created_at = CASE WHEN excluded.created_at <> '' AND (
+                  messages.created_at = '' OR
+                  CASE excluded.time_source WHEN 'message' THEN 1 WHEN 'turn' THEN 2 WHEN 'thread' THEN 3 ELSE 4 END <=
+                  CASE messages.time_source WHEN 'message' THEN 1 WHEN 'turn' THEN 2 WHEN 'thread' THEN 3 ELSE 4 END
+                ) THEN excluded.created_at ELSE messages.created_at END,
+                source = excluded.source,
+                time_source = CASE WHEN excluded.created_at <> '' AND (
+                  messages.created_at = '' OR
+                  CASE excluded.time_source WHEN 'message' THEN 1 WHEN 'turn' THEN 2 WHEN 'thread' THEN 3 ELSE 4 END <=
+                  CASE messages.time_source WHEN 'message' THEN 1 WHEN 'turn' THEN 2 WHEN 'thread' THEN 3 ELSE 4 END
+                ) THEN excluded.time_source ELSE messages.time_source END,
+                updated_at = excluded.updated_at""",
               (target_id, conversation_id, role, content, status, item_id, turn_id,
                json.dumps(metadata, ensure_ascii=False), created_at, timestamp, source, time_source))
             row = connection.execute("SELECT * FROM messages WHERE id = ?", (target_id,)).fetchone()

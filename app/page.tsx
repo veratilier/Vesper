@@ -10,6 +10,7 @@ import {
   type CSSProperties,
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
+import { createPortal } from "react-dom";
 import { mergeCodexMessages } from "./codex-message-merge";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
@@ -3003,6 +3004,12 @@ function codexTimestamp(value: unknown, fallback = "") {
   return fallback;
 }
 
+function normalizeIsoTimestamp(value: unknown) {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : "";
+}
+
 function visibleMessageTimestamp(value: string) {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && new Date(timestamp).getUTCFullYear() > 1971 ? timestamp : Number.NaN;
@@ -3015,7 +3022,9 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
     const item = raw as BridgeChatMessage;
     if (item.role === "agent" && item.metadata?.blockType && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
     if (item.role === "agent" && item.metadata?.blockType && !item.content.trim()) return [];
-    return [{ ...item, conversationId: item.conversationId || conversationId }];
+    const createdAt = normalizeIsoTimestamp(item.createdAt);
+    const timeSource = item.timeSource || item.metadata?.timeSource || (createdAt ? "message" : "unknown");
+    return [{ ...item, conversationId: item.conversationId || conversationId, createdAt, timeSource, metadata: { ...item.metadata, timeSource } }];
   });
 }
 
@@ -3071,7 +3080,7 @@ let legacyHistoryMigration: Promise<void> | null = null;
 function migrateLegacyHistory() {
   if (legacyHistoryMigration) return legacyHistoryMigration;
   legacyHistoryMigration = (async () => {
-    if (!deviceToken() || window.localStorage.getItem("vesper-history-migration-v1") === "complete") return;
+    if (!deviceToken() || window.localStorage.getItem("vesper-history-migration-v2") === "complete") return;
     const summaries = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []);
     const conversations = new Map<string, { id: string; title: string; createdAt: string; updatedAt: string; messages: BridgeChatMessage[] }>();
     const ensureConversation = (id: string, title = "未命名对话", updatedAt = "") => {
@@ -3094,7 +3103,7 @@ function migrateLegacyHistory() {
         const detail = await fetch(apiUrl(`/api/chat?conversationId=${encodeURIComponent(summary.id)}`), { headers: deviceHeaders(), cache: "no-store" });
         if (!detail.ok) throw new Error(`旧 D1 会话 ${summary.id} 读取失败`);
         const payload = await detail.json() as { messages?: BridgeChatMessage[] };
-        ensureConversation(summary.id, summary.title, summary.updatedAt).messages.push(...(payload.messages || []).map((message) => ({ ...message, source: "legacy-vesper" as const })));
+        ensureConversation(summary.id, summary.title, summary.updatedAt).messages.push(...(payload.messages || []).map((message) => ({ ...message, createdAt: normalizeIsoTimestamp(message.createdAt), source: "legacy-vesper" as const })));
       }
     } else if (listResponse.status !== 404) {
       throw new Error("旧 D1 历史读取失败");
@@ -3127,7 +3136,7 @@ function migrateLegacyHistory() {
       await persistCodexConversation(entry.id, { title: entry.title, createdAt: entry.createdAt, updatedAt: entry.updatedAt, source });
       for (const message of messages) await persistCodexMessage(message, entry.title);
     }
-    window.localStorage.setItem("vesper-history-migration-v1", "complete");
+    window.localStorage.setItem("vesper-history-migration-v2", "complete");
   })().catch((reason) => {
     legacyHistoryMigration = null;
     throw reason;
@@ -3201,24 +3210,36 @@ function CodexChatMessage({
 }) {
   const assistant = item.role === "agent";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ left: 8, top: 8 });
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const timestamp = visibleMessageTimestamp(item.createdAt);
   const stamp = Number.isFinite(timestamp)
     ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp))
     : "时间未知";
   const status = item.metadata?.turnStatus;
   const statusText = status === "thinking" ? "Thinking…" : status === "tool" ? "Using a tool…" : status === "error" ? "Failed" : "Done";
-  const statusLabel = `${stamp}  ${statusText}`;
+  const statusStamp = Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat("en-CA", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(timestamp)).replace(",", "")
+    : "时间未知";
+  const statusLabel = `${statusStamp} ${statusText}`;
+  useEffect(() => {
+    const parsed = Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+    console.debug("[Vesper message time]", { messageId: item.id, raw: item.createdAt, parsed, displayed: stamp, timeSource: item.timeSource || item.metadata?.timeSource || "unknown" });
+  }, [item.createdAt, item.id, item.metadata?.timeSource, item.timeSource, stamp, timestamp]);
+  const toggleMenu = () => {
+    const next = !menuOpen;
+    if (next && menuButtonRef.current) {
+      const anchor = menuButtonRef.current.getBoundingClientRect();
+      const width = 168;
+      const height = assistant ? 132 : 174;
+      const left = Math.min(window.innerWidth - width - 8, Math.max(8, assistant ? anchor.left : anchor.right - width));
+      const top = anchor.bottom + height + 8 <= window.innerHeight ? anchor.bottom + 6 : Math.max(8, anchor.top - height - 6);
+      setMenuPosition({ left, top });
+    }
+    setMenuOpen(next);
+  };
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
-      {!assistant && item.metadata?.turnId && (
-        item.metadata.thoughtSummary ? (
-          <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
-            <i /> <span>{statusLabel}</span>
-          </button>
-        ) : (
-          <div className="turn-status" aria-live="polite"><i /> <span>{statusLabel}</span></div>
-        )
-      )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
         {assistant && <AvatarMark src={agentAvatar} label={agentName} kind="agent" />}
         <div>
@@ -3227,11 +3248,15 @@ function CodexChatMessage({
         </div>
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
+      {!assistant && item.metadata?.turnId && (
+        item.metadata.thoughtSummary ? <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process"><i /><span>{statusLabel}</span></button>
+          : <div className="turn-status" aria-live="polite"><i /><span>{statusLabel}</span></div>
+      )}
       <div className="message-actions">
         <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>
-        <button className="message-action" aria-label="消息操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Icon name="more" /></button>
-        {menuOpen && <div className="message-menu" role="menu"><button role="menuitem" onClick={() => { onCopy(item); setMenuOpen(false); }}><Icon name="copy" />复制</button><button role="menuitem" onClick={() => { onFavorite(item); setMenuOpen(false); }}><Icon name="bookmark" />{favorite ? "取消收藏" : "收藏"}</button>{!assistant && <button role="menuitem" onClick={() => { onEdit(item); setMenuOpen(false); }}><Icon name="edit" />编辑</button>}<button role="menuitem" className="danger" onClick={() => void onDelete(item).then(() => setMenuOpen(false)).catch(() => {})}><Icon name="trash" />删除此消息</button></div>}
+        <button ref={menuButtonRef} className="message-action" aria-label="消息操作" aria-expanded={menuOpen} onClick={toggleMenu}><Icon name="more" /></button>
       </div>
+      {menuOpen && createPortal(<><button className="message-menu-scrim" aria-label="关闭消息菜单" onClick={() => setMenuOpen(false)} /><div className="message-menu" role="menu" style={{ left: menuPosition.left, top: menuPosition.top }}><button role="menuitem" onClick={() => { onCopy(item); setMenuOpen(false); }}><Icon name="copy" />复制</button><button role="menuitem" onClick={() => { onFavorite(item); setMenuOpen(false); }}><Icon name="bookmark" />{favorite ? "取消收藏" : "收藏"}</button>{!assistant && <button role="menuitem" onClick={() => { onEdit(item); setMenuOpen(false); }}><Icon name="edit" />编辑</button>}<button role="menuitem" className="danger" onClick={() => void onDelete(item).then(() => setMenuOpen(false)).catch(() => {})}><Icon name="trash" />删除此消息</button></div></>, document.body)}
       <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
   );
@@ -3304,6 +3329,7 @@ function ConnectedChat({
   const [error, setError] = useState("");
   const [historyWarning, setHistoryWarning] = useState("");
   const [resumeError, setResumeError] = useState("");
+  const [resumeDismissed, setResumeDismissed] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
@@ -3557,8 +3583,9 @@ function ConnectedChat({
         setResumeError("");
       } catch (reason) {
         const detail = reason instanceof Error ? reason.message : "Unknown resume error";
-        setResumeError(`无法恢复原 Codex thread：${detail}`);
-        throw new Error(`原会话映射已保留。${detail}`);
+        console.warn("[Vesper thread resume]", { conversationId, threadId: threadId.current, error: detail });
+        setResumeDismissed(false);
+        setResumeError("原会话线程已不可用，历史记录仍完整保留。可继续为新会话。");
       }
     } else {
       const result = await sendRpc("thread/start", { dynamicTools, approvalPolicy: "on-request", summary: "concise" });
@@ -3569,22 +3596,22 @@ function ConnectedChat({
         .catch(() => setHistoryWarning("历史暂未同步"));
     }
   };
-  const createReplacementConversation = async () => {
+  const continueAsNewThread = async () => {
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
       setError("Codex app-server is offline");
       return;
     }
-    const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     try {
       const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
-      void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
-        .catch(() => setHistoryWarning("历史暂未同步"));
-      rememberConversation(replacementId, "替代会话", 0);
-      onSelectConversation(replacementId);
+      await persistCodexConversation(conversationId, { codexThreadId: thread.id });
+      threadId.current = thread.id;
+      setResumeError("");
+      setResumeDismissed(false);
+      setError("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not create replacement conversation");
+      setError(reason instanceof Error ? reason.message : "无法创建新的会话线程");
     }
   };
   const cancelActiveTurn = async () => {
@@ -3653,6 +3680,10 @@ function ConnectedChat({
   const send = async () => {
     const content = draft.trim();
     if ((!content && !pending.length) || busy) return;
+    if (resumeError) {
+      setError("请先点按“继续为新会话”。");
+      return;
+    }
     setBusy(true); setError(""); setDraft("");
     nearBottomRef.current = true;
     const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "thinking", metadata: { attachments: [], turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
@@ -3701,6 +3732,7 @@ function ConnectedChat({
     let cancelled = false;
     const restore = async () => {
       setHistoryReady(false);
+      setResumeDismissed(false);
       try {
         await migrateLegacyHistory();
       } catch {
@@ -3810,7 +3842,7 @@ function ConnectedChat({
       <div className="chat-status-stack">
         <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
-        {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>新建替代会话</button></div>}
+        {resumeError && !resumeDismissed && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><div><button onClick={() => void continueAsNewThread()}>继续为新会话</button><button className="dismiss" aria-label="关闭提示" onClick={() => setResumeDismissed(true)}><Icon name="close" /></button></div></div>}
       </div>
       <div className="chat-stream">
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}

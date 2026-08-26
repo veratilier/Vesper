@@ -10,6 +10,7 @@ import {
   type CSSProperties,
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
+import { createPortal } from "react-dom";
 import { mergeCodexMessages } from "./codex-message-merge";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
@@ -2352,9 +2353,6 @@ type BridgeChatMessage = {
     turnId?: string;
     threadId?: string;
     itemId?: string;
-    itemIds?: string[];
-    messageIds?: string[];
-    streaming?: boolean;
     turnStatus?: "thinking" | "tool" | "completed" | "error";
     blockType?: string;
     musicCard?: MusicCardData;
@@ -2368,7 +2366,6 @@ type BridgeSnapshot = {
   messages: BridgeChatMessage[];
   bridge: { runtime: string; online: boolean; lastSeenAt?: string };
 };
-type MessageTombstone = { threadId: string; stableId: string; deletedAt?: string };
 const deviceToken = () =>
   typeof window === "undefined"
     ? ""
@@ -3031,61 +3028,6 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
   });
 }
 
-function messageStableIds(item: BridgeChatMessage) {
-  return [...new Set([
-    item.id,
-    ...(item.metadata?.messageIds || []),
-    item.metadata?.itemId,
-    ...(item.metadata?.itemIds || []),
-  ].filter((value): value is string => Boolean(value)))];
-}
-
-function isMessageTombstoned(item: BridgeChatMessage, tombstones: MessageTombstone[], fallbackThreadId = "") {
-  const ids = new Set(messageStableIds(item));
-  const itemThreadId = item.metadata?.threadId || "";
-  return tombstones.some((tombstone) => ids.has(tombstone.stableId)
-    && (!tombstone.threadId || !itemThreadId || tombstone.threadId === itemThreadId || tombstone.threadId === fallbackThreadId));
-}
-
-function groupCodexTurnMessages(items: BridgeChatMessage[]) {
-  const grouped: BridgeChatMessage[] = [];
-  for (const item of items) {
-    const previous = grouped[grouped.length - 1];
-    const turnId = item.metadata?.turnId;
-    const sameAgentTurn = item.role === "agent" && previous?.role === "agent" && turnId
-      && previous.metadata?.turnId === turnId && !item.metadata?.musicCard && !previous.metadata?.musicCard;
-    if (!sameAgentTurn) {
-      grouped.push({
-        ...item,
-        metadata: {
-          ...item.metadata,
-          itemIds: item.metadata?.itemIds || (item.metadata?.itemId ? [item.metadata.itemId] : []),
-          messageIds: item.metadata?.messageIds || [item.id],
-        },
-      });
-      continue;
-    }
-    const itemIds = [...new Set([...(previous.metadata?.itemIds || []), ...(item.metadata?.itemIds || []), item.metadata?.itemId].filter((value): value is string => Boolean(value)))];
-    const messageIds = [...new Set([...(previous.metadata?.messageIds || [previous.id]), ...(item.metadata?.messageIds || [item.id])])];
-    grouped[grouped.length - 1] = {
-      ...previous,
-      content: [previous.content, item.content].filter(Boolean).join("\n\n"),
-      status: item.status,
-      metadata: {
-        ...previous.metadata,
-        ...item.metadata,
-        itemId: previous.metadata?.itemId || item.metadata?.itemId,
-        itemIds,
-        messageIds,
-        thoughtSummary: previous.metadata?.thoughtSummary || item.metadata?.thoughtSummary,
-        turnStatus: item.metadata?.turnStatus || previous.metadata?.turnStatus,
-        streaming: previous.metadata?.streaming || item.metadata?.streaming,
-      },
-    };
-  }
-  return grouped;
-}
-
 function codexSocketUrl() {
   const configured = readLocalValue<string>("vesper-codex-endpoint", "").trim();
   // The fixed personal deployment uses the authenticated VPS tunnel directly.
@@ -3250,7 +3192,6 @@ function CodexChatMessage({
   onPlayMusic,
   onQueueMusic,
   onOpenMusic,
-  showAgentStatus,
 }: {
   item: BridgeChatMessage;
   agentName: string;
@@ -3266,27 +3207,39 @@ function CodexChatMessage({
   onPlayMusic: (trackId: string) => void;
   onQueueMusic: (trackId: string) => void;
   onOpenMusic: () => void;
-  showAgentStatus: boolean;
 }) {
   const assistant = item.role === "agent";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ left: 8, top: 8 });
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const timestamp = visibleMessageTimestamp(item.createdAt);
-  const date = Number.isFinite(timestamp) ? new Date(timestamp) : null;
-  const two = (value: number) => String(value).padStart(2, "0");
-  const stamp = date ? `${date.getMonth() + 1}/${date.getDate()} ${two(date.getHours())}:${two(date.getMinutes())}` : "时间未知";
+  const stamp = Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp))
+    : "时间未知";
   const status = item.metadata?.turnStatus;
   const statusText = status === "thinking" ? "Thinking…" : status === "tool" ? "Using a tool…" : status === "error" ? "Failed" : "Done";
-  const statusStamp = date ? `${date.getMonth() + 1}/${date.getDate()} ${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}` : "时间未知";
+  const statusStamp = Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat("en-CA", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(timestamp)).replace(",", "")
+    : "时间未知";
   const statusLabel = `${statusStamp} ${statusText}`;
   useEffect(() => {
     const parsed = Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
     console.debug("[Vesper message time]", { messageId: item.id, raw: item.createdAt, parsed, displayed: stamp, timeSource: item.timeSource || item.metadata?.timeSource || "unknown" });
   }, [item.createdAt, item.id, item.metadata?.timeSource, item.timeSource, stamp, timestamp]);
+  const toggleMenu = () => {
+    const next = !menuOpen;
+    if (next && menuButtonRef.current) {
+      const anchor = menuButtonRef.current.getBoundingClientRect();
+      const width = 168;
+      const height = assistant ? 132 : 174;
+      const left = Math.min(window.innerWidth - width - 8, Math.max(8, assistant ? anchor.left : anchor.right - width));
+      const top = anchor.bottom + height + 8 <= window.innerHeight ? anchor.bottom + 6 : Math.max(8, anchor.top - height - 6);
+      setMenuPosition({ left, top });
+    }
+    setMenuOpen(next);
+  };
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
-      {assistant ? showAgentStatus && (item.metadata?.thoughtSummary
-        ? <button className="message-meta turn-status" onClick={() => onThought(item)} aria-label="View thought process"><i /><span>{statusLabel}</span></button>
-        : <div className="message-meta turn-status" aria-live="polite"><i /><span>{statusLabel}</span></div>)
-        : <time className="message-meta user-message-time" dateTime={date ? item.createdAt : undefined}>{stamp}</time>}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
         {assistant && <AvatarMark src={agentAvatar} label={agentName} kind="agent" />}
         <div>
@@ -3295,12 +3248,15 @@ function CodexChatMessage({
         </div>
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
-      {!item.metadata?.streaming && <div className="message-actions">
-        <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
-        <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>
-        {!assistant && <button className="message-action" aria-label="编辑" title="编辑" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
-        <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
-      </div>}
+      {!assistant && item.metadata?.turnId && (
+        item.metadata.thoughtSummary ? <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process"><i /><span>{statusLabel}</span></button>
+          : <div className="turn-status" aria-live="polite"><i /><span>{statusLabel}</span></div>
+      )}
+      <div className="message-actions">
+        <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>
+        <button ref={menuButtonRef} className="message-action" aria-label="消息操作" aria-expanded={menuOpen} onClick={toggleMenu}><Icon name="more" /></button>
+      </div>
+      {menuOpen && createPortal(<><button className="message-menu-scrim" aria-label="关闭消息菜单" onClick={() => setMenuOpen(false)} /><div className="message-menu" role="menu" style={{ left: menuPosition.left, top: menuPosition.top }}><button role="menuitem" onClick={() => { onCopy(item); setMenuOpen(false); }}><Icon name="copy" />复制</button><button role="menuitem" onClick={() => { onFavorite(item); setMenuOpen(false); }}><Icon name="bookmark" />{favorite ? "取消收藏" : "收藏"}</button>{!assistant && <button role="menuitem" onClick={() => { onEdit(item); setMenuOpen(false); }}><Icon name="edit" />编辑</button>}<button role="menuitem" className="danger" onClick={() => void onDelete(item).then(() => setMenuOpen(false)).catch(() => {})}><Icon name="trash" />删除此消息</button></div></>, document.body)}
       <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
   );
@@ -3366,11 +3322,7 @@ function ConnectedChat({
   onOpenMusic: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<BridgeChatMessage[]>(() => {
-    const cachedTombstones = readLocalValue<MessageTombstone[]>(`vesper-codex-tombstones-${conversationId}`, []);
-    return normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId)
-      .filter((item) => !isMessageTombstoned(item, cachedTombstones));
-  });
+  const [messages, setMessages] = useState<BridgeChatMessage[]>(() => normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId));
   const [pending, setPending] = useState<CodexPendingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(false);
@@ -3380,7 +3332,6 @@ function ConnectedChat({
   const [resumeDismissed, setResumeDismissed] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
-  const [activeTurnRenderId, setActiveTurnRenderId] = useState("");
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
   const socket = useRef<WebSocket | null>(null);
@@ -3388,7 +3339,6 @@ function ConnectedChat({
   const rpcId = useRef(1);
   const rpc = useRef(new Map<number, { resolve: (value: CodexSocketMessage) => void; reject: (reason: Error) => void }>());
   const threadId = useRef("");
-  const tombstonesRef = useRef<MessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
   const streamBuffers = useRef(new Map<string, string>());
   const reasoningBuffers = useRef(new Map<string, string>());
   const reasoningSummaries = useRef<string[]>([]);
@@ -3399,12 +3349,9 @@ function ConnectedChat({
   const fileInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
-  const userScrolledAwayRef = useRef(false);
-  const userScrollIntentRef = useRef(false);
 
   const save = (next: BridgeChatMessage[]) => {
-    const sanitized = normalizeCodexMessages(next, conversationId)
-      .filter((item) => !isMessageTombstoned(item, tombstonesRef.current, threadId.current));
+    const sanitized = normalizeCodexMessages(next, conversationId);
     messagesRef.current = sanitized;
     setMessages(sanitized);
     window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(sanitized));
@@ -3525,7 +3472,6 @@ function ConnectedChat({
             threadId: threadId.current,
             itemId,
             blockType: itemType,
-            turnStatus: "thinking",
           },
           createdAt: existing?.createdAt || new Date().toISOString(),
         };
@@ -3543,16 +3489,6 @@ function ConnectedChat({
     }
     if (message.method === "turn/completed") {
       setBusy(false);
-      const completedAgents = messagesRef.current.filter((item) => item.role === "agent" && item.metadata?.turnId === activeTurnId.current);
-      if (completedAgents.length) {
-        const completedIds = new Set(completedAgents.map((item) => item.id));
-        const completed = messagesRef.current.map((item) => completedIds.has(item.id)
-          ? { ...item, metadata: { ...item.metadata, turnStatus: "completed" as const } }
-          : item);
-        save(completed);
-        for (const item of completed.filter((candidate) => completedIds.has(candidate.id)))
-          void persistCodexMessage(item).catch(() => setHistoryWarning("历史暂未同步"));
-      }
       if (activeTurnUserId.current) {
         updateMessage(activeTurnUserId.current, (item) => ({
           ...item,
@@ -3612,8 +3548,7 @@ function ConnectedChat({
       const timeSource = existing?.timeSource || existing?.metadata?.timeSource || (messageTime ? "message" : turnTime ? "turn" : threadTime ? "thread" : "unknown");
       return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
-    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) =>
-      !isMessageTombstoned(item, tombstonesRef.current, threadId.current))));
+    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored));
   };
   const connect = async () => {
     if (socket.current?.readyState === WebSocket.OPEN) return;
@@ -3720,14 +3655,8 @@ function ConnectedChat({
     if (!window.confirm("删除此消息？此操作无法撤销。")) return;
     const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(item.id)}`), {
       method: "DELETE",
-      headers: codexHistoryHeaders(true),
+      headers: codexHistoryHeaders(),
       cache: "no-store",
-      body: JSON.stringify({
-        itemId: item.metadata?.itemId || null,
-        itemIds: item.metadata?.itemIds || [],
-        messageIds: item.metadata?.messageIds || [item.id],
-        threadId: item.metadata?.threadId || threadId.current || null,
-      }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string };
@@ -3735,14 +3664,8 @@ function ConnectedChat({
       setError(detail);
       throw new Error(detail);
     }
-    const payload = await response.json().catch(() => ({})) as { tombstones?: string[]; threadId?: string };
-    const stableIds = payload.tombstones?.length ? payload.tombstones : messageStableIds(item);
-    const deletedAt = new Date().toISOString();
-    tombstonesRef.current = [...tombstonesRef.current, ...stableIds.map((stableId) => ({ threadId: payload.threadId || item.metadata?.threadId || threadId.current, stableId, deletedAt }))];
-    window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
-    save(messagesRef.current.filter((message) => !isMessageTombstoned(message, tombstonesRef.current, threadId.current)));
-    const deletedIds = new Set(messageStableIds(item));
-    setFavorites((current) => current.filter((favorite) => !deletedIds.has(favorite.messageId) && !deletedIds.has(favorite.itemId || "")));
+    save(messagesRef.current.filter((message) => message.id !== item.id));
+    setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
     const { file, preview } = item;
@@ -3763,10 +3686,8 @@ function ConnectedChat({
     }
     setBusy(true); setError(""); setDraft("");
     nearBottomRef.current = true;
-    userScrolledAwayRef.current = false;
     const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "thinking", metadata: { attachments: [], turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
     activeTurnUserId.current = userMessage.id;
-    setActiveTurnRenderId(userMessage.metadata?.turnId || `pending-${userMessage.id}`);
     save([...messagesRef.current, userMessage]);
     rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
     try {
@@ -3783,7 +3704,6 @@ function ConnectedChat({
       const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
       const turn = (started.result?.turn || {}) as { id?: string };
       activeTurnId.current = turn.id || `turn-${userMessage.id}`;
-      setActiveTurnRenderId(activeTurnId.current);
       updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
       const completion = await Promise.race([done.then(() => "completed" as const), new Promise<"listening">((resolve) => window.setTimeout(() => resolve("listening"), 120000))]);
       if (completion === "listening") {
@@ -3827,16 +3747,12 @@ function ConnectedChat({
         const payload = await response.json() as {
           conversation?: { codexThreadId?: string | null } | null;
           messages?: BridgeChatMessage[];
-          tombstones?: MessageTombstone[];
         };
         if (cancelled) return;
-        threadId.current = payload.conversation?.codexThreadId || "";
-        tombstonesRef.current = [...tombstonesRef.current, ...(payload.tombstones || [])]
-          .filter((item, index, all) => all.findIndex((candidate) => candidate.threadId === item.threadId && candidate.stableId === item.stableId) === index);
-        window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
         const remote = normalizeCodexMessages(payload.messages || [], conversationId);
         const cached = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId);
         save(mergeCodexMessages(remote, cached));
+        threadId.current = payload.conversation?.codexThreadId || "";
       } catch {
         if (!cancelled) setHistoryWarning("历史暂未同步");
       } finally {
@@ -3878,17 +3794,11 @@ function ConnectedChat({
     const updateNearBottom = () => {
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       nearBottomRef.current = distance <= 96;
-      if (nearBottomRef.current) userScrolledAwayRef.current = false;
-      else if (userScrollIntentRef.current) userScrolledAwayRef.current = true;
-      userScrollIntentRef.current = false;
     };
-    const markUserScroll = () => { userScrollIntentRef.current = true; };
     updateNearBottom();
     scroller.addEventListener("scroll", updateNearBottom, { passive: true });
-    scroller.addEventListener("touchstart", markUserScroll, { passive: true });
-    scroller.addEventListener("wheel", markUserScroll, { passive: true });
     const resizeObserver = new ResizeObserver(() => {
-      if (nearBottomRef.current || (busy && !userScrolledAwayRef.current)) scroller.scrollTop = scroller.scrollHeight;
+      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
     });
     resizeObserver.observe(scroller);
     nearBottomRef.current = true;
@@ -3896,10 +3806,8 @@ function ConnectedChat({
     return () => {
       resizeObserver.disconnect();
       scroller.removeEventListener("scroll", updateNearBottom);
-      scroller.removeEventListener("touchstart", markUserScroll);
-      scroller.removeEventListener("wheel", markUserScroll);
     };
-  }, [busy, conversationId]);
+  }, [conversationId]);
   useLayoutEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
@@ -3912,13 +3820,13 @@ function ConnectedChat({
     node.style.overflowY = node.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [draft]);
   useLayoutEffect(() => {
-    if (!nearBottomRef.current && (!busy || userScrolledAwayRef.current)) return;
+    if (!nearBottomRef.current) return;
     const scroller = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
     if (!scroller) return;
     requestAnimationFrame(() => {
-      if (nearBottomRef.current || (busy && !userScrolledAwayRef.current)) scroller.scrollTop = scroller.scrollHeight;
+      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
     });
-  }, [busy, messages.length, streamingItems]);
+  }, [messages.length, streamingItems]);
   useLayoutEffect(() => {
     if (!focusMessageId) return;
     const timer = window.setTimeout(() => {
@@ -3929,32 +3837,6 @@ function ConnectedChat({
     }, 260);
     return () => window.clearTimeout(timer);
   }, [focusMessageId, messages.length]);
-  const pendingAgentDate = (() => {
-    const raw = [...messages].reverse().find((item) => item.role === "user")?.createdAt;
-    const value = raw ? new Date(raw) : new Date();
-    const two = (part: number) => String(part).padStart(2, "0");
-    return `${value.getMonth() + 1}/${value.getDate()} ${two(value.getHours())}:${two(value.getMinutes())}:${two(value.getSeconds())}`;
-  })();
-  const streamingEntries = Object.entries(streamingItems).filter(([, text]) => text.trim());
-  const timelineMessages = groupCodexTurnMessages(streamingEntries.length ? [...messages, {
-    id: `streaming-${activeTurnRenderId || "pending"}`,
-    conversationId,
-    role: "agent",
-    content: streamingEntries.map(([, text]) => text).join("\n\n"),
-    status: "thinking",
-    metadata: {
-      turnId: activeTurnRenderId || "pending",
-      itemId: streamingEntries[0][0],
-      itemIds: streamingEntries.map(([itemId]) => itemId),
-      turnStatus: "thinking",
-      streaming: true,
-    },
-    createdAt: [...messages].reverse().find((item) => item.role === "user")?.createdAt || new Date().toISOString(),
-    source: "codex",
-    timeSource: "turn",
-  }] : messages);
-  const hasActiveAgentOutput = timelineMessages.some((item) => item.role === "agent"
-    && item.metadata?.turnId === activeTurnRenderId && Boolean(item.content.trim()));
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
@@ -3964,10 +3846,15 @@ function ConnectedChat({
       </div>
       <div className="chat-stream">
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
-        {timelineMessages.map((item) => {
-          return <div className="message-with-date" key={item.id}><CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={(item.metadata?.messageIds || [item.id]).some((messageId) => favorites.some((favorite) => favorite.messageId === messageId))} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} showAgentStatus={item.role === "agent"} /></div>;
+        {messages.map((item, index) => {
+          const timestamp = visibleMessageTimestamp(item.createdAt);
+          const previousTimestamp = index ? visibleMessageTimestamp(messages[index - 1].createdAt) : Number.NaN;
+          const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
+          const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
+          const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
         })}
-        {busy && !hasActiveAgentOutput && <div className="agent-turn pending-agent-turn"><div className="message-meta turn-status"><i /><span>{pendingAgentDate} Thinking…</span></div></div>}
+        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(text)}><Icon name="copy" /></button></div></div>)}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}

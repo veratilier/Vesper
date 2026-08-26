@@ -779,7 +779,11 @@ export default function Home() {
       if (musicControl.action === "previous" && activeTracks.length) setTrackIndex((index) => (index - 1 + activeTracks.length) % activeTracks.length);
       if (musicControl.action === "play_track" && musicControl.trackId) {
         const index = activeTracks.findIndex((track) => track.id === musicControl.trackId || track.neteaseId === musicControl.trackId);
-        if (index >= 0 && activeTracks[index].url) { setTrackIndex(index); setPlaying(true); }
+        // The queue is polled separately. Keep the command pending until the
+        // newly-written queue has arrived, otherwise a fast poll could mark a
+        // valid server command as processed before its track is visible.
+        if (index < 0) return;
+        if (activeTracks[index].url) { setTrackIndex(index); setPlaying(true); }
       }
       setMusicControl({ ...musicControl, processedAt: new Date().toISOString() });
     }, 0);

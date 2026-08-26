@@ -3582,6 +3582,67 @@ body {
 .codex-chat .send-message-button { background: #6d9299 !important; color: #fff; }
 .codex-chat .send-message-button:disabled { opacity: .34; }
 
+/* Final Codex mobile density overrides (must remain last). */
+.codex-chat .chat-stream { gap: 16px; padding: 12px 14px 10px; }
+.codex-chat .agent-turn,
+.codex-chat .sent-turn { gap: 4px; }
+.codex-chat .message { gap: 8px; align-items: flex-end; }
+.codex-chat .message > .avatar-mark { width: 32px; height: 32px; flex: 0 0 32px; }
+.codex-chat .message > div { width: fit-content; max-width: 68%; padding: 10px 14px; border-radius: 18px; border: 1px solid rgba(120,145,151,.15); background: rgba(245,248,247,.78); box-shadow: none; }
+.codex-chat .message.mine > div { background: rgba(226,237,237,.78); }
+.codex-chat .message:has(pre) > div,
+.codex-chat .message:has(code) > div,
+.codex-chat .message:has(a) > div { max-width: 78%; }
+.codex-chat .message p { margin: 0; font: 15px/1.55 var(--font-geist-sans), "PingFang SC", sans-serif; letter-spacing: 0; }
+.codex-chat .message p + p { margin-top: 7px; }
+.codex-chat .message ul,
+.codex-chat .message ol { margin: 5px 0 0 16px; padding: 0; }
+.codex-chat .message li + li { margin-top: 3px; }
+.codex-chat .message pre { margin: 7px -3px 0; padding: 8px 9px; overflow-x: auto; font-size: 12px; line-height: 1.45; border-radius: 10px; }
+.codex-chat .message-actions { min-height: 18px; margin-top: 1px; }
+.codex-chat .message-action { width: 24px; height: 22px; }
+.codex-chat .thought-raw p { margin: 0 0 8px; line-height: 1.5; }
+.codex-chat .chat-compose { min-height: 64px; padding: 8px 12px calc(8px + var(--safe-bottom)); }
+.codex-chat .chat-compose textarea { min-height: 42px; max-height: 126px; padding: 10px 12px; line-height: 1.45; }
+@media (max-width: 620px) {
+  .codex-chat .message > div { max-width: 68%; }
+  .codex-chat .message:has(pre) > div,
+  .codex-chat .message:has(code) > div,
+  .codex-chat .message:has(a) > div { max-width: 78%; }
+}
+
+/* Codex mobile density: keep short messages close to their content. */
+.codex-chat .chat-stream { gap: 16px; padding: 12px 14px 10px; }
+.codex-chat .agent-turn,
+.codex-chat .sent-turn { gap: 4px; }
+.codex-chat .message { gap: 8px; align-items: flex-end; }
+.codex-chat .message > .avatar-mark,
+.codex-chat .message > img,
+.codex-chat .message > [class*="avatar"] { width: 32px; height: 32px; flex: 0 0 32px; }
+.codex-chat .message > div { width: fit-content; max-width: 68%; padding: 10px 14px; border-radius: 18px; border: 1px solid rgba(120,145,151,.15); background: rgba(245,248,247,.78); box-shadow: none; }
+.codex-chat .message.mine > div { background: rgba(226,237,237,.78); }
+.codex-chat .message:has(pre) > div,
+.codex-chat .message:has(code) > div,
+.codex-chat .message:has(a) > div { max-width: 78%; }
+.codex-chat .message p { margin: 0; font-size: 15px; line-height: 1.55; letter-spacing: 0; }
+.codex-chat .message p + p { margin-top: 7px; }
+.codex-chat .message ul,
+.codex-chat .message ol { margin: 5px 0 0 16px; padding: 0; }
+.codex-chat .message li + li { margin-top: 3px; }
+.codex-chat .message pre { margin: 7px -3px 0; padding: 8px 9px; overflow-x: auto; font-size: 12px; line-height: 1.45; border-radius: 10px; }
+.codex-chat .message-actions { min-height: 18px; margin-top: 1px; }
+.codex-chat .message-action { width: 24px; height: 22px; }
+.codex-chat .thought-raw p { margin: 0 0 8px; line-height: 1.5; }
+.codex-chat .chat-compose { min-height: 64px; padding: 8px 12px calc(8px + var(--safe-bottom)); }
+.codex-chat .chat-compose textarea { min-height: 42px; max-height: 126px; padding: 10px 12px; line-height: 1.45; }
+
+@media (max-width: 620px) {
+  .codex-chat .message > div { max-width: 68%; }
+  .codex-chat .message:has(pre) > div,
+  .codex-chat .message:has(code) > div,
+  .codex-chat .message:has(a) > div { max-width: 78%; }
+}
+
 /* Codex timeline: compact, content-sized messages with status and actions outside the bubble. */
 .codex-chat .chat-stream { gap: 16px; padding-top: 14px; }
 .codex-chat .agent-turn,
@@ -5780,3 +5841,32 @@ body {
 .codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }
 .codex-chat .send-message-button { background: #6d9299 !important; color: #fff; }
 .codex-chat .send-message-button:disabled { opacity: .34; }
+
+/* Final Codex mobile density overrides (must remain last). */
+.codex-chat .chat-stream { gap: 16px; padding: 12px 14px 10px; }
+.codex-chat .agent-turn,
+.codex-chat .sent-turn { gap: 4px; }
+.codex-chat .message { gap: 8px; align-items: flex-end; }
+.codex-chat .message > .avatar-mark { width: 32px; height: 32px; flex: 0 0 32px; }
+.codex-chat .message > div { width: fit-content; max-width: 68%; padding: 10px 14px; border-radius: 18px; border: 1px solid rgba(120,145,151,.15); background: rgba(245,248,247,.78); box-shadow: none; }
+.codex-chat .message.mine > div { background: rgba(226,237,237,.78); }
+.codex-chat .message:has(pre) > div,
+.codex-chat .message:has(code) > div,
+.codex-chat .message:has(a) > div { max-width: 78%; }
+.codex-chat .message p { margin: 0; font: 15px/1.55 var(--font-geist-sans), "PingFang SC", sans-serif; letter-spacing: 0; }
+.codex-chat .message p + p { margin-top: 7px; }
+.codex-chat .message ul,
+.codex-chat .message ol { margin: 5px 0 0 16px; padding: 0; }
+.codex-chat .message li + li { margin-top: 3px; }
+.codex-chat .message pre { margin: 7px -3px 0; padding: 8px 9px; overflow-x: auto; font-size: 12px; line-height: 1.45; border-radius: 10px; }
+.codex-chat .message-actions { min-height: 18px; margin-top: 1px; }
+.codex-chat .message-action { width: 24px; height: 22px; }
+.codex-chat .thought-raw p { margin: 0 0 8px; line-height: 1.5; }
+.codex-chat .chat-compose { min-height: 64px; padding: 8px 12px calc(8px + var(--safe-bottom)); }
+.codex-chat .chat-compose textarea { min-height: 42px; max-height: 126px; padding: 10px 12px; line-height: 1.45; }
+@media (max-width: 620px) {
+  .codex-chat .message > div { max-width: 68%; }
+  .codex-chat .message:has(pre) > div,
+  .codex-chat .message:has(code) > div,
+  .codex-chat .message:has(a) > div { max-width: 78%; }
+}

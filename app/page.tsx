@@ -3094,7 +3094,7 @@ function migrateLegacyHistory() {
         const detail = await fetch(apiUrl(`/api/chat?conversationId=${encodeURIComponent(summary.id)}`), { headers: deviceHeaders(), cache: "no-store" });
         if (!detail.ok) throw new Error(`旧 D1 会话 ${summary.id} 读取失败`);
         const payload = await detail.json() as { messages?: BridgeChatMessage[] };
-        ensureConversation(summary.id, summary.title, summary.updatedAt).messages.push(...(payload.messages || []));
+        ensureConversation(summary.id, summary.title, summary.updatedAt).messages.push(...(payload.messages || []).map((message) => ({ ...message, source: "legacy-vesper" as const })));
       }
     } else if (listResponse.status !== 404) {
       throw new Error("旧 D1 历史读取失败");
@@ -3107,7 +3107,8 @@ function migrateLegacyHistory() {
         ? key.slice("vesper-codex-chat-".length)
         : key.slice("vesper-local-chat-".length).replace(/^(api|mcp|cyberboss)-/, ""));
       if (!id) continue;
-      const items = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(key, []), id);
+      const source = key.startsWith("vesper-codex-chat-") ? "codex" as const : "legacy-vesper" as const;
+      const items = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(key, []), id).map((message) => ({ ...message, source: message.source || source }));
       ensureConversation(id, summary?.title || items[0]?.content.slice(0, 42) || "未命名对话", summary?.updatedAt || "").messages.push(...items);
     }
 
@@ -3115,14 +3116,15 @@ function migrateLegacyHistory() {
       const unique = new Map<string, BridgeChatMessage>();
       entry.messages.forEach((message, index) => {
         const id = message.id || `legacy-${entry.id}-${index}`;
-        const normalized = { ...message, id, conversationId: entry.id, source: "legacy-vesper" as const, timeSource: message.createdAt ? "message" as const : "unknown" as const };
+        const normalized = { ...message, id, conversationId: entry.id, source: message.source || "legacy-vesper" as const, timeSource: message.createdAt ? "message" as const : "unknown" as const };
         unique.set(id, unique.has(id) ? { ...unique.get(id)!, ...normalized } : normalized);
       });
       const messages = [...unique.values()];
       const dated = messages.map((item) => item.createdAt).filter((value) => Number.isFinite(Date.parse(value))).sort();
       entry.createdAt ||= dated[0] || entry.updatedAt || new Date().toISOString();
       entry.updatedAt ||= dated.at(-1) || entry.createdAt;
-      await persistCodexConversation(entry.id, { title: entry.title, createdAt: entry.createdAt, updatedAt: entry.updatedAt, source: "legacy-vesper" });
+      const source = messages.some((message) => message.source === "codex") ? "codex" : "legacy-vesper";
+      await persistCodexConversation(entry.id, { title: entry.title, createdAt: entry.createdAt, updatedAt: entry.updatedAt, source });
       for (const message of messages) await persistCodexMessage(message, entry.title);
     }
     window.localStorage.setItem("vesper-history-migration-v1", "complete");
@@ -3701,6 +3703,10 @@ function ConnectedChat({
       setHistoryReady(false);
       try {
         await migrateLegacyHistory();
+      } catch {
+        if (!cancelled) setHistoryWarning("历史暂未同步");
+      }
+      try {
         const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
           headers: codexHistoryHeaders(),
           cache: "no-store",

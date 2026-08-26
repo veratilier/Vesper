@@ -535,8 +535,41 @@ type Track = {
   neteaseId?: string;
   album?: string;
   playable?: boolean;
+  lyrics?: Array<{ time: number; text: string }>;
 };
 type MusicPlayMode = "order" | "repeat" | "single" | "random";
+type MusicTogetherState = {
+  status?: "idle" | "invited" | "connected" | "offline";
+  distanceKm?: number;
+  totalListeningSeconds?: number;
+  sessionStartedAt?: string;
+  updatedAt?: string;
+  inviteRequestedAt?: string;
+};
+type MusicAnnotation = {
+  id: string;
+  trackId: string;
+  author: "user" | "agent";
+  text: string;
+  createdAt: string;
+};
+type PlayerSnapshot = {
+  playing: boolean;
+  currentTime: number;
+  duration: number;
+  trackId?: string;
+  canSeek: boolean;
+};
+type PlayerAdapter = {
+  play: () => void;
+  pause: () => void;
+  toggle: () => void;
+  seek: (time: number) => void;
+  previous: () => void;
+  next: () => void;
+  select: (index: number) => void;
+  getState: () => PlayerSnapshot;
+};
 type MusicCardData = {
   trackId: string;
   title: string;
@@ -648,6 +681,9 @@ export default function Home() {
   const [queue, setQueue] = usePersistentDocument<Track[]>("musicQueue", []);
   const [favorites, setFavorites] = usePersistentDocument<FavoriteItem[]>("favorites", []);
   const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
+  const [musicTogether, setMusicTogether] = usePersistentDocument<MusicTogetherState>("musicTogether", {});
+  const [musicAnnotations, setMusicAnnotations] = usePersistentDocument<MusicAnnotation[]>("musicAnnotations", []);
+  const [musicFavorites, setMusicFavorites] = usePersistentDocument<string[]>("musicFavorites", []);
   const [playMode, setPlayMode] = useState<MusicPlayMode>(() => readLocalValue<MusicPlayMode>("vesper-music-play-mode", "order"));
   const [musicToast, setMusicToast] = useState("");
   const globalPlayer = useRef<HTMLAudioElement>(null);
@@ -659,6 +695,52 @@ export default function Home() {
   const queueSeeded = readLocalValue<boolean>("vesper-music-queue-seeded", false);
   const activeTracks = queueSeeded ? queue : tracks;
   const currentTrack = activeTracks[trackIndex];
+  const showMusicToast = (message: string) => {
+    setMusicToast(message);
+    window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
+  };
+  const playerAdapter: PlayerAdapter = {
+    play: () => {
+      if (!currentTrack?.url || currentTrack.playable === false) return showMusicToast("当前歌曲没有可播放音频");
+      setPlaying(true);
+    },
+    pause: () => setPlaying(false),
+    toggle: () => {
+      if (playing) setPlaying(false);
+      else {
+        if (!currentTrack?.url || currentTrack.playable === false) return showMusicToast("当前歌曲没有可播放音频");
+        setPlaying(true);
+      }
+    },
+    seek: (time) => {
+      if (!Number.isFinite(playbackDuration) || playbackDuration <= 0) return showMusicToast("音频时长尚未就绪");
+      const nextTime = Math.max(0, Math.min(playbackDuration, time));
+      if (globalPlayer.current) globalPlayer.current.currentTime = nextTime;
+      setPlaybackTime(nextTime);
+    },
+    previous: () => {
+      if (!activeTracks.length) return;
+      setTrackIndex((index) => (index - 1 + activeTracks.length) % activeTracks.length);
+    },
+    next: () => {
+      if (!activeTracks.length) return;
+      setTrackIndex((index) => (index + 1) % activeTracks.length);
+    },
+    select: (index) => {
+      const track = activeTracks[index];
+      if (!track) return;
+      if (!track.url || track.playable === false) return showMusicToast("这首歌没有可播放音频");
+      setTrackIndex(index);
+      setPlaying(true);
+    },
+    getState: () => ({
+      playing,
+      currentTime: playbackTime,
+      duration: playbackDuration,
+      trackId: currentTrack?.id,
+      canSeek: Boolean(currentTrack?.url && playbackDuration > 0),
+    }),
+  };
   useAutonomousWake(agentName);
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -678,7 +760,7 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=15", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=16", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
     const timer = window.setTimeout(() => {
       setSplashVisible(false);
@@ -983,17 +1065,22 @@ export default function Home() {
         src={currentTrack?.url}
         onTimeUpdate={(event) => setPlaybackTime(event.currentTarget.currentTime)}
         onLoadedMetadata={(event) => setPlaybackDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
+        onError={() => {
+          setPlaying(false);
+          setPlaybackDuration(0);
+          showMusicToast("此音频当前无法在网页播放");
+        }}
       />
       <section className="app-shell" style={shellStyle}>
         <header
           className={`${active === "聊天" ? "app-header chat-mode" : "app-header"}${historyOpen ? " history-host-shift" : ""}`}
         >
           <button
-            className="icon-button"
-            aria-label="打开目录"
-            onClick={() => setDrawerOpen(true)}
+            className={active === "音乐" ? "icon-button music-back-button" : "icon-button"}
+            aria-label={active === "音乐" ? "返回今日" : "打开目录"}
+            onClick={() => active === "音乐" ? setActive("今日") : setDrawerOpen(true)}
           >
-            <Icon name="menu" />
+            <Icon name={active === "音乐" ? "chevron" : "menu"} />
           </button>
           {active === "今日" ? (
             <div className="wordmark">
@@ -1038,6 +1125,14 @@ export default function Home() {
                 <Icon name="archive" />
               </button>
             </div>
+          ) : active === "音乐" ? (
+            <button
+              className="icon-button music-header-queue"
+              aria-label="打开播放队列"
+              onClick={() => window.dispatchEvent(new Event("vesper-music-open-queue"))}
+            >
+              <Icon name="queue" />
+            </button>
           ) : (
             <button
               className="avatar-button"
@@ -1092,26 +1187,39 @@ export default function Home() {
           ) : active === "魔盒" ? (
             <MagicBox />
           ) : active === "音乐" ? (
-            <MusicPage
-              tracks={tracks}
+            <MusicPlayerUI
               queue={activeTracks}
               onQueue={(value) => {
                 window.localStorage.setItem("vesper-music-queue-seeded", "true");
                 setQueue(value);
               }}
-              playing={playing}
-              onToggle={() => setPlaying(!playing)}
-              onSelect={setTrackIndex}
               selected={trackIndex}
               onTracks={setTracks}
               playMode={playMode}
               onCycleMode={cyclePlayMode}
               toast={musicToast}
-              currentTime={playbackTime}
-              duration={playbackDuration}
-              onSeek={(time) => {
-                if (globalPlayer.current) globalPlayer.current.currentTime = time;
-                setPlaybackTime(time);
+              adapter={playerAdapter}
+              userName={userName}
+              agentName={agentName}
+              userAvatar={userAvatar}
+              agentAvatar={agentAvatar}
+              together={musicTogether}
+              onInvite={() => setMusicTogether((current) => current.status === "connected" ? current : { ...current, status: "invited", inviteRequestedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })}
+              annotations={musicAnnotations}
+              onAddAnnotation={(entry) => setMusicAnnotations((items) => [...items, entry])}
+              onRemoveAnnotation={(id) => setMusicAnnotations((items) => items.filter((item) => item.id !== id))}
+              favorite={currentTrack ? musicFavorites.includes(currentTrack.id) : false}
+              onFavorite={() => {
+                if (!currentTrack) return;
+                setMusicFavorites((items) => items.includes(currentTrack.id) ? items.filter((id) => id !== currentTrack.id) : [...items, currentTrack.id]);
+              }}
+              onRemoveQueueItem={(index) => {
+                const nextQueue = activeTracks.filter((_, itemIndex) => itemIndex !== index);
+                window.localStorage.setItem("vesper-music-queue-seeded", "true");
+                setQueue(nextQueue);
+                if (!nextQueue.length) setPlaying(false);
+                else if (index < trackIndex) setTrackIndex((current) => Math.max(0, current - 1));
+                else if (index === trackIndex) setTrackIndex(Math.min(index, nextQueue.length - 1));
               }}
             />
           ) : active === "记忆库" ? (
@@ -5398,123 +5506,169 @@ function formatPlaybackTime(value: number) {
   if (!Number.isFinite(value) || value < 0) return "0:00";
   return `${Math.floor(value / 60)}:${String(Math.floor(value) % 60).padStart(2, "0")}`;
 }
-function MusicPage({
-  tracks,
-  queue,
-  onQueue,
-  playing,
-  onToggle,
-  onSelect,
-  selected,
-  onTracks,
-  playMode,
-  onCycleMode,
-  toast,
-  currentTime,
-  duration,
-  onSeek,
+function useCoverTint(source?: string) {
+  const [tint, setTint] = useState({ r: 151, g: 184, b: 191 });
+  useEffect(() => {
+    if (!source) return;
+    let active = true;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 16; canvas.height = 16;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0, 16, 16);
+        const pixels = context.getImageData(0, 0, 16, 16).data;
+        let r = 0, g = 0, b = 0, count = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          const brightness = (pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3;
+          if (brightness < 24 || brightness > 238) continue;
+          r += pixels[index]; g += pixels[index + 1]; b += pixels[index + 2]; count += 1;
+        }
+        if (active && count) {
+          // Pull the cover colour gently toward Vesper's blue-grey paper palette.
+          setTint({ r: Math.round((r / count + 156) / 2), g: Math.round((g / count + 189) / 2), b: Math.round((b / count + 197) / 2) });
+        }
+      } catch {
+        // Remote artwork without CORS permission keeps the neutral Vesper tint.
+      }
+    };
+    image.src = source;
+    return () => { active = false; };
+  }, [source]);
+  return tint;
+}
+
+function togetherCopy(state: MusicTogetherState) {
+  const status = state.status || "idle";
+  if (status === "invited") return "已发出一起听邀请 · 等待对方响应";
+  if (status === "offline") return "对方离线 · 共听状态会在连接恢复后更新";
+  if (status !== "connected") return "尚未连接一起听";
+  const parts: string[] = [];
+  if (Number.isFinite(state.distanceKm)) parts.push(`相距 ${Number(state.distanceKm).toFixed(2)} 公里`);
+  if (Number.isFinite(state.totalListeningSeconds)) {
+    const total = Math.max(0, Math.floor(Number(state.totalListeningSeconds)));
+    parts.push(`一起听了 ${Math.floor(total / 3600)} 小时 ${Math.floor(total % 3600 / 60)} 分钟`);
+  }
+  return parts.length ? parts.join(" · ") : "已连接 · 等待共听数据";
+}
+
+function MusicPlayerUI({
+  queue, onQueue, selected, onTracks, playMode, onCycleMode, toast, adapter,
+  userName, agentName, userAvatar, agentAvatar, together, onInvite,
+  annotations, onAddAnnotation, onRemoveAnnotation, favorite, onFavorite, onRemoveQueueItem,
 }: {
-  tracks: Track[];
   queue: Track[];
   onQueue: (value: Track[]) => void;
-  playing: boolean;
-  onToggle: () => void;
-  onSelect: (index: number) => void;
   selected: number;
   onTracks: (value: Track[]) => void;
   playMode: MusicPlayMode;
   onCycleMode: () => void;
   toast: string;
-  currentTime: number;
-  duration: number;
-  onSeek: (time: number) => void;
+  adapter: PlayerAdapter;
+  userName: string;
+  agentName: string;
+  userAvatar: string;
+  agentAvatar: string;
+  together: MusicTogetherState;
+  onInvite: () => void;
+  annotations: MusicAnnotation[];
+  onAddAnnotation: (entry: MusicAnnotation) => void;
+  onRemoveAnnotation: (id: string) => void;
+  favorite: boolean;
+  onFavorite: () => void;
+  onRemoveQueueItem: (index: number) => void;
 }) {
   const track = queue[selected];
-  const [queueOpen, setQueueOpen] = useState(false);
+  const state = adapter.getState();
+  const [pane, setPane] = useState<"lyrics" | "queue">("lyrics");
+  const [scrubValue, setScrubValue] = useState<number | null>(null);
+  const [annotationOpen, setAnnotationOpen] = useState(false);
+  const [annotationText, setAnnotationText] = useState("");
+  const [annotationAuthor, setAnnotationAuthor] = useState<MusicAnnotation["author"]>("user");
   const [syncOpen, setSyncOpen] = useState(false);
-  const [queueDragY, setQueueDragY] = useState(0);
-  const queueDragStart = useRef<number | null>(null);
   const [neteaseMeta, setNeteaseMeta] = useLocalDocument<Record<string, string>>("music-connection-meta", {});
-  const add = () => {
-    const title = window.prompt("歌曲名称");
-    if (!title?.trim()) return;
-    const url = window.prompt("可直接播放的音频 URL");
-    if (!url?.trim()) return;
-    const artist = window.prompt("歌手（可留空）") || "";
-    const nextTrack = {
-      id: crypto.randomUUID(),
-      title: title.trim(),
-      artist: artist.trim(),
-      url: url.trim(),
-      playable: true,
-    } satisfies Track;
-    onTracks([
-      ...tracks,
-      nextTrack,
-    ]);
-    onQueue([...queue, nextTrack]);
-    onSelect(queue.length);
-  };
+  const lyricsPanel = useRef<HTMLDivElement>(null);
+  const tint = useCoverTint(track?.cover);
+  const lyrics = track?.lyrics || [];
+  const activeLyric = lyrics.reduce((active, line, index) => line.time <= state.currentTime ? index : active, -1);
+  const canSeek = state.canSeek;
+  const displayedTime = scrubValue ?? state.currentTime;
   const modeLabels: Record<MusicPlayMode, string> = { order: "顺序播放", repeat: "列表循环", single: "单曲循环", random: "随机播放" };
   const modeIcons: Record<MusicPlayMode, string> = { order: "menu", repeat: "repeat", single: "one", random: "shuffle" };
-  const remove = (index: number) => {
-    const next = queue.filter((_, itemIndex) => itemIndex !== index);
-    onQueue(next);
-    if (index < selected) onSelect(Math.max(0, selected - 1));
-    else if (selected >= next.length) onSelect(Math.max(0, next.length - 1));
+  const songAnnotations = track ? annotations.filter((item) => item.trackId === track.id) : [];
+  const roomStyle = { "--music-tint": `${tint.r}, ${tint.g}, ${tint.b}` } as CSSProperties;
+
+  useEffect(() => {
+    const openQueue = () => {
+      setPane("queue");
+      window.requestAnimationFrame(() => lyricsPanel.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    };
+    window.addEventListener("vesper-music-open-queue", openQueue);
+    return () => window.removeEventListener("vesper-music-open-queue", openQueue);
+  }, []);
+  useEffect(() => {
+    if (pane !== "lyrics" || activeLyric < 0) return;
+    const active = lyricsPanel.current?.querySelector<HTMLElement>(`[data-lyric-index="${activeLyric}"]`);
+    active?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeLyric, pane]);
+  const commitSeek = () => {
+    if (scrubValue != null) adapter.seek(scrubValue);
+    setScrubValue(null);
   };
-  return (
-    <div className="page-body music-page">
-      <div className="music-top">
-        <span>NOW PLAYING</span>
-        <div>
-          <button aria-label="添加音乐" onClick={add}>
-            <Icon name="plus" />
-          </button>
-        </div>
+  const addAnnotation = () => {
+    if (!track || !annotationText.trim()) return;
+    onAddAnnotation({ id: crypto.randomUUID(), trackId: track.id, author: annotationAuthor, text: annotationText.trim(), createdAt: new Date().toISOString() });
+    setAnnotationText(""); setAnnotationOpen(false);
+  };
+  return <div className="page-body music-player-ui" style={roomStyle}>
+    <section className="listening-room-top">
+      <div className="together-identities" aria-label={`${agentName} 和 ${userName} 的一起听状态`}>
+        <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
+        <AvatarMark src={userAvatar} label={userName} kind="user" />
       </div>
-      {track ? (
-        <>
-          <div className="vinyl-stage">
-            <div className={playing ? "vinyl spinning" : "vinyl"}>
-              {track.cover ? (
-                <img src={track.cover} alt="" />
-              ) : (
-                <div className="vinyl-label">V</div>
-              )}
-            </div>
+      <div className="together-copy"><small>PRIVATE LISTENING ROOM</small><p>{togetherCopy(together)}</p></div>
+      {together.status === "connected" ? <span className="together-state connected">已连接</span> : <button className="together-invite" onClick={onInvite}>{together.status === "invited" ? "已邀请" : "邀请一起听"}</button>}
+    </section>
+
+    {track ? <>
+      <section className="cover-orbit" aria-label={`正在播放：${track.title}`}>
+        <div className={state.playing ? "cover-stardust rotating" : "cover-stardust"}>
+          <div className="album-disc">
+            {track.cover ? <img src={track.cover} alt={`${track.title} 封面`} /> : <span className="album-fallback">V</span>}
           </div>
-          <section className="now-track">
-            <h1>{track.title}</h1>
-            <p>{track.artist || "未知歌手"}</p>
-          </section>
-          <div className="music-progress live-progress">
-            <input aria-label="播放进度" type="range" min="0" max={Math.max(duration, 1)} step="0.1" value={Math.min(currentTime, Math.max(duration, 1))} onChange={(event) => onSeek(Number(event.target.value))} />
-            <span>{formatPlaybackTime(currentTime)}</span><span>{formatPlaybackTime(duration)}</span>
-          </div>
-          <div className="music-controls">
-            <button className="mode-control" aria-label={modeLabels[playMode]} title={modeLabels[playMode]} onClick={onCycleMode}><Icon name={modeIcons[playMode]} /><small>{modeLabels[playMode]}</small></button>
-            <button aria-label="上一首" onClick={() => onSelect((selected - 1 + queue.length) % queue.length)}><Icon name="back" /></button>
-            <button className="main-play" onClick={onToggle}>
-              <Icon name={playing ? "pause" : "play"} />
-            </button>
-            <button aria-label="下一首" onClick={() => onSelect((selected + 1) % queue.length)}><Icon name="forward" /></button>
-            <button className="queue-control" aria-label="打开播放队列" onClick={() => setQueueOpen(true)}><Icon name="queue" /><small>{queue.length}</small></button>
-          </div>
-          {toast && <div className="music-toast" role="status">{toast}</div>}
-        </>
-      ) : (
-        <>
-          <EmptyState text="还没有音乐。添加可直接播放的音频 URL 后，主页播放器会同步。" />
-          <button className="primary-action" onClick={add}>
-            <Icon name="plus" />
-            添加音乐
-          </button>
-        </>
-      )}
-      {queueOpen && <div className="queue-sheet-layer"><button className="modal-scrim" aria-label="关闭播放队列" onClick={() => { setQueueOpen(false); setQueueDragY(0); }} /><section className="queue-sheet" style={{ transform: `translateY(${queueDragY}px)` }} onTouchStart={(event) => { queueDragStart.current = event.touches[0]?.clientY ?? null; }} onTouchMove={(event) => { const start = queueDragStart.current; const current = event.touches[0]?.clientY; if (start == null || current == null || current <= start) return; setQueueDragY(Math.min(260, current - start)); }} onTouchEnd={() => { if (queueDragY > 96) setQueueOpen(false); setQueueDragY(0); queueDragStart.current = null; }}><div className="queue-sheet-grabber" /><div className="queue-sheet-head"><div><h2>{syncOpen ? "同步歌单" : "播放队列"}</h2><span>{syncOpen ? "NETEASE CLOUD MUSIC" : `${queue.length} 首歌曲`}</span></div><div className="queue-sheet-actions">{!syncOpen && <button onClick={() => onQueue([])} disabled={!queue.length}>清空队列</button>}<button className="queue-sync-button" onClick={() => setSyncOpen((value) => !value)}>{syncOpen ? "返回队列" : "同步歌单"}</button><button aria-label="关闭" onClick={() => { setQueueOpen(false); setQueueDragY(0); }}><Icon name="close" /></button></div></div>{syncOpen ? <NeteaseSyncPanel meta={neteaseMeta} onMeta={setNeteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); onSelect(0); setNeteaseMeta(nextMeta); }} /> : <div className="queue-sheet-list">{queue.length ? queue.map((item, index) => <div className={selected === index ? "queue-row active" : "queue-row"} key={item.id}><button onClick={() => { onSelect(index); setQueueOpen(false); }}><span>{index + 1}</span><div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div>{selected === index && <i className="queue-playing-mark" aria-label="正在播放" />}</button><button aria-label="移除歌曲" onClick={() => remove(index)}><Icon name="close" /></button></div>) : <EmptyState text="播放队列为空。" />}</div>}</section></div>}
-    </div>
-  );
+        </div>
+      </section>
+
+      <section className="music-song-copy">
+        <div><small>NOW PLAYING</small><h2>{track.title}</h2><p>{track.artist || "未知歌手"}{track.album ? ` · ${track.album}` : ""}</p></div>
+        <div className="song-note-actions"><button aria-label={favorite ? "取消收藏" : "收藏歌曲"} className={favorite ? "saved" : ""} onClick={onFavorite}><Icon name="heart" /></button><button aria-label="写下共听批注" onClick={() => setAnnotationOpen((value) => !value)}><Icon name="chat" /></button></div>
+      </section>
+      {annotationOpen && <section className="annotation-editor"><div><button className={annotationAuthor === "user" ? "active" : ""} onClick={() => setAnnotationAuthor("user")}>{userName}</button><button className={annotationAuthor === "agent" ? "active" : ""} onClick={() => setAnnotationAuthor("agent")}>{agentName}</button></div><textarea value={annotationText} maxLength={180} placeholder="留下一句只属于这次共听的话…" onChange={(event) => setAnnotationText(event.target.value)} /><button onClick={addAnnotation} disabled={!annotationText.trim()}>保存批注</button></section>}
+      {songAnnotations.length > 0 && <section className="shared-annotations" aria-label="共听批注">{songAnnotations.map((item) => <article key={item.id}><AvatarMark src={item.author === "agent" ? agentAvatar : userAvatar} label={item.author === "agent" ? agentName : userName} kind={item.author === "agent" ? "agent" : "user"} /><p><b>{item.author === "agent" ? agentName : userName}</b>{item.text}</p><button aria-label="删除批注" onClick={() => onRemoveAnnotation(item.id)}><Icon name="close" /></button></article>)}</section>}
+
+      <section className="immersive-progress" aria-label="播放进度">
+        <input aria-label="播放进度" type="range" min="0" max={Math.max(state.duration, 1)} step="0.1" disabled={!canSeek} value={Math.min(displayedTime, Math.max(state.duration, 1))} onChange={(event) => setScrubValue(Number(event.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} />
+        <div><span>{canSeek ? formatPlaybackTime(displayedTime) : "—"}</span><span>{canSeek ? formatPlaybackTime(state.duration) : "等待音频时长"}</span></div>
+      </section>
+      <section className="immersive-controls">
+        <button className="mode-control" aria-label={modeLabels[playMode]} title={modeLabels[playMode]} onClick={onCycleMode}><Icon name={modeIcons[playMode]} /><small>{modeLabels[playMode]}</small></button>
+        <button aria-label="上一首" onClick={adapter.previous}><Icon name="back" /></button>
+        <button className="immersive-play" aria-label={state.playing ? "暂停" : "播放"} onClick={adapter.toggle}><Icon name={state.playing ? "pause" : "play"} /></button>
+        <button aria-label="下一首" onClick={adapter.next}><Icon name="forward" /></button>
+        <button className="queue-control" aria-label="查看播放队列" onClick={() => setPane("queue")}><Icon name="queue" /><small>{queue.length}</small></button>
+      </section>
+    </> : <section className="music-empty-state"><Icon name="music" /><h2>播放队列为空</h2><p>同步网易云歌单或加入可播放歌曲后，这里才会出现真实播放状态。</p></section>}
+
+    <section className="music-lower-panel" ref={lyricsPanel}>
+      <div className="music-panel-tabs"><button className={pane === "lyrics" ? "active" : ""} onClick={() => setPane("lyrics")}>歌词</button><button className={pane === "queue" ? "active" : ""} onClick={() => setPane("queue")}>队列 <small>{queue.length}</small></button><button className="sync-link" onClick={() => setSyncOpen(true)}>同步歌单</button></div>
+      {pane === "lyrics" ? <div className="lyrics-scroll">{lyrics.length ? lyrics.map((line, index) => <p data-lyric-index={index} className={index === activeLyric ? "active" : ""} key={`${line.time}-${index}`}>{line.text}</p>) : <EmptyState text="这首歌暂时没有可显示的歌词。" />}</div> : <div className="immersive-queue">{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="queue-track" onClick={() => adapter.select(index)}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "—"}</time>{selected === index && <i aria-label="正在播放" />}</button><button className="queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div>}
+    </section>
+    {toast && <div className="music-toast" role="status">{toast}</div>}
+    {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="关闭同步歌单" onClick={() => setSyncOpen(false)} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="关闭" onClick={() => setSyncOpen(false)}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onMeta={setNeteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); }} /></section></div>}
+  </div>;
 }
 
 function NeteaseSyncPanel({ meta, onMeta, onSync }: { meta: Record<string, string>; onMeta: (value: Record<string, string>) => void; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {

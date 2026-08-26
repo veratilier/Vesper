@@ -66,9 +66,19 @@ npx wrangler secret put CODEX_APP_SERVER_URL --config wrangler.production.jsonc
 npx wrangler secret put CODEX_APP_SERVER_TOKEN --config wrangler.production.jsonc
 ```
 
-The browser advertises two safe Vesper dynamic tools (`read_vesper_state` and
-`write_vesper_state`). Codex calls them with `item/tool/call`; Vesper executes
-them locally and returns `inputText` content to the same app-server turn.
+The browser obtains the dynamic-tool catalog from `/api/codex/tools`, but the
+handlers run on the authenticated Vesper Worker and persist through D1. Codex
+calls them with `item/tool/call`; the client forwards the call to the server
+bridge and returns an `inputText` result to the same app-server turn. The
+current bridge exposes `read_vesper_state`, `search_vesper_state`, and
+`write_vesper_state`.
+
+The chat renderer uses a strict item whitelist: only assistant message items
+with text content become bubbles. Reasoning summaries, tool calls, shell
+commands, tool output, system/developer events, and unknown item types are
+kept out of the transcript; unknown events are recorded only as redacted
+diagnostic metadata. History is normalized with the same filter when a thread
+is resumed.
 Images and audio are sent as inline data URLs, videos contribute a representative
 frame, and text/JSON/HTML files are included as text. Other files are uploaded
 to the existing media bucket and shown in the transcript.

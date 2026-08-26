@@ -155,14 +155,14 @@
 }
 
 .codex-chat .turn-status i { width: 6px; height: 6px; border-radius: 50%; background: #86aeb3; box-shadow: 0 0 0 3px rgba(134, 174, 179, .14); }
-.codex-chat .message-actions { display: flex; align-items: center; gap: 1px; min-height: 36px; margin: -1px calc(var(--chat-avatar-size) + var(--chat-avatar-gap)) 0; }
+.codex-chat .message-actions { display: flex; align-items: center; gap: 0; min-height: 32px; margin: -1px calc(var(--chat-avatar-size) + var(--chat-avatar-gap)) 0; }
 .codex-chat .sent-turn .message-actions { justify-content: flex-end; }
 .codex-chat .message-actions time { color: #8b989a; font: 10px/1.2 var(--font-geist-mono), monospace; }
-.codex-chat .message-action { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(78, 98, 102, .48); }
+.codex-chat .message-action { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(78, 98, 102, .48); }
 .codex-chat .message-action:active { background: rgba(105, 133, 138, .1); color: rgba(62, 82, 86, .82); }
 .codex-chat .message-action.active { color: rgba(83, 126, 132, .9); }
 .codex-chat .message-action.danger { color: rgba(158, 73, 73, .62); }
-.codex-chat .message-action .ui-icon { width: 15px; height: 15px; stroke-width: 1.65; }
+.codex-chat .message-action .ui-icon { width: 14px; height: 14px; stroke-width: 1.65; }
 .codex-chat .agent-turn .message-attachments { align-self: flex-start; margin-left: calc(var(--chat-avatar-size) + var(--chat-avatar-gap)); }
 .codex-chat .sent-turn .message-attachments { align-self: flex-end; margin-right: calc(var(--chat-avatar-size) + var(--chat-avatar-gap)); }
 

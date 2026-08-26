@@ -50,6 +50,15 @@ CREATE INDEX IF NOT EXISTS messages_turn
   ON messages(vesper_conversation_id, turn_id);
 CREATE INDEX IF NOT EXISTS messages_created
   ON messages(vesper_conversation_id, created_at, id);
+CREATE TABLE IF NOT EXISTS message_tombstones (
+  vesper_conversation_id TEXT NOT NULL REFERENCES conversations(vesper_conversation_id),
+  codex_thread_id TEXT NOT NULL DEFAULT '',
+  stable_id TEXT NOT NULL,
+  deleted_at TEXT NOT NULL,
+  PRIMARY KEY (vesper_conversation_id, codex_thread_id, stable_id)
+);
+CREATE INDEX IF NOT EXISTS message_tombstones_lookup
+  ON message_tombstones(vesper_conversation_id, stable_id);
 """
 
 
@@ -112,6 +121,10 @@ def message(row: sqlite3.Row) -> dict:
         metadata = json.loads(row["metadata_json"] or "{}")
     except json.JSONDecodeError:
         metadata = {}
+    if row["item_id"]:
+        metadata["itemId"] = row["item_id"]
+    if row["turn_id"]:
+        metadata["turnId"] = row["turn_id"]
     return {
         "id": row["id"],
         "conversationId": row["vesper_conversation_id"],
@@ -211,7 +224,13 @@ class Handler(BaseHTTPRequestHandler):
             row = connection.execute("SELECT * FROM conversations WHERE vesper_conversation_id = ?", (conversation_id,)).fetchone()
             messages = connection.execute("""SELECT * FROM messages WHERE vesper_conversation_id = ?
               ORDER BY created_at ASC, rowid ASC LIMIT 1000""", (conversation_id,)).fetchall()
-        self.send_json(200, {"conversation": conversation(row) if row else None, "messages": [message(item) for item in messages]})
+            tombstones = connection.execute("""SELECT codex_thread_id, stable_id, deleted_at FROM message_tombstones
+              WHERE vesper_conversation_id = ? ORDER BY deleted_at ASC""", (conversation_id,)).fetchall()
+        self.send_json(200, {
+            "conversation": conversation(row) if row else None,
+            "messages": [message(item) for item in messages],
+            "tombstones": [{"threadId": item["codex_thread_id"], "stableId": item["stable_id"], "deletedAt": item["deleted_at"]} for item in tombstones],
+        })
 
     def upsert_conversation(self, conversation_id: str) -> None:
         body = self.body()
@@ -267,6 +286,17 @@ class Handler(BaseHTTPRequestHandler):
                 updated_at = CASE WHEN excluded.updated_at > conversations.updated_at THEN excluded.updated_at ELSE conversations.updated_at END,
                 archived_at = NULL""",
               (conversation_id, title, created_at, conversation_updated_at, source))
+            thread_row = connection.execute("SELECT codex_thread_id FROM conversations WHERE vesper_conversation_id = ?", (conversation_id,)).fetchone()
+            thread_id = str(metadata.get("threadId") or (thread_row["codex_thread_id"] if thread_row else "") or "")
+            stable_ids = [message_id] + ([item_id] if item_id and item_id != message_id else [])
+            placeholders = ",".join("?" for _ in stable_ids)
+            deleted = connection.execute(f"""SELECT 1 FROM message_tombstones
+              WHERE vesper_conversation_id = ? AND stable_id IN ({placeholders})
+              AND (codex_thread_id = '' OR codex_thread_id = ?) LIMIT 1""",
+              (conversation_id, *stable_ids, thread_id)).fetchone()
+            if deleted:
+                self.send_json(200, {"ok": True, "suppressedByTombstone": True})
+                return
             existing = connection.execute("""SELECT id FROM messages WHERE vesper_conversation_id = ?
               AND ((? IS NOT NULL AND item_id = ?) OR id = ?) LIMIT 1""",
               (conversation_id, item_id, item_id, message_id)).fetchone()
@@ -302,24 +332,36 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"ok": True, "archived": cursor.rowcount})
 
     def delete_message(self, conversation_id: str, message_id: str) -> None:
+        body = self.body()
         with db() as connection:
-            cursor = connection.execute(
-                "DELETE FROM messages WHERE vesper_conversation_id = ? AND id = ?",
-                (conversation_id, message_id),
-            )
-            if cursor.rowcount:
-                latest = connection.execute(
-                    "SELECT MAX(created_at) AS latest FROM messages WHERE vesper_conversation_id = ?",
-                    (conversation_id,),
-                ).fetchone()["latest"]
-                connection.execute(
-                    "UPDATE conversations SET updated_at = ? WHERE vesper_conversation_id = ?",
-                    (latest or now(), conversation_id),
-                )
-        if not cursor.rowcount:
-            self.send_json(404, {"error": "Message not found"})
-            return
-        self.send_json(200, {"ok": True, "deleted": 1})
+            row = connection.execute("""SELECT m.id, m.item_id, c.codex_thread_id FROM messages m
+              JOIN conversations c ON c.vesper_conversation_id = m.vesper_conversation_id
+              WHERE m.vesper_conversation_id = ? AND (m.id = ? OR m.item_id = ?) LIMIT 1""",
+              (conversation_id, message_id, message_id)).fetchone()
+            thread_id = str(body.get("threadId") or (row["codex_thread_id"] if row else "") or "")
+            supplied_item_id = str(body.get("itemId") or "").strip()
+            stable_ids = {message_id}
+            if supplied_item_id: stable_ids.add(supplied_item_id)
+            if row:
+                stable_ids.add(row["id"])
+                if row["item_id"]: stable_ids.add(row["item_id"])
+            timestamp = now()
+            for stable_id in stable_ids:
+                connection.execute("""INSERT INTO message_tombstones
+                  (vesper_conversation_id, codex_thread_id, stable_id, deleted_at) VALUES (?, ?, ?, ?)
+                  ON CONFLICT(vesper_conversation_id, codex_thread_id, stable_id)
+                  DO UPDATE SET deleted_at = excluded.deleted_at""",
+                  (conversation_id, thread_id, stable_id, timestamp))
+            cursor = connection.execute("""DELETE FROM messages WHERE vesper_conversation_id = ?
+              AND (id IN ({}) OR item_id IN ({}))""".format(
+                ",".join("?" for _ in stable_ids), ",".join("?" for _ in stable_ids)),
+              (conversation_id, *stable_ids, *stable_ids))
+            latest = connection.execute(
+                "SELECT MAX(created_at) AS latest FROM messages WHERE vesper_conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()["latest"]
+            connection.execute("UPDATE conversations SET updated_at = ? WHERE vesper_conversation_id = ?", (latest or timestamp, conversation_id))
+        self.send_json(200, {"ok": True, "deleted": cursor.rowcount, "tombstones": sorted(stable_ids), "threadId": thread_id})
 
     do_GET = dispatch
     do_POST = dispatch

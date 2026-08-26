@@ -656,9 +656,6 @@ export default function Home() {
     () => false,
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [splashVisible, setSplashVisible] = useState(() =>
-    typeof window === "undefined" ? true : window.sessionStorage.getItem("vesper-splash-seen-v3") !== "1",
-  );
   const [active, setActive] = useState("今日");
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -762,12 +759,7 @@ export default function Home() {
     if ("serviceWorker" in navigator) {
       void navigator.serviceWorker.register("/sw.js?v=16", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
-    const timer = window.setTimeout(() => {
-      setSplashVisible(false);
-      window.sessionStorage.setItem("vesper-splash-seen-v3", "1");
-    }, splashVisible ? 1400 : 0);
-    return () => window.clearTimeout(timer);
-  }, [splashVisible]);
+  }, []);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const code = query.get("code");
@@ -1055,11 +1047,6 @@ export default function Home() {
     );
   return (
     <main className="stage" style={shellStyle}>
-      <div className={splashVisible ? "vesper-splash" : "vesper-splash leaving"} aria-hidden={!splashVisible}>
-        <img src="/icon-192-20260823-v8.png" alt="" />
-        <b>Vesper</b>
-        <span />
-      </div>
       <audio
         ref={globalPlayer}
         src={currentTrack?.url}
@@ -1636,7 +1623,7 @@ function useAutonomousWake(agentName: string) {
           await registration?.showNotification(agentName || "Vesper", {
             body: `给你留了一张便笺：${text}`,
             tag: `vesper-wake-${generation}`,
-            icon: "/icon-192.png",
+            icon: "/icon-192-20260823-v8.png",
           });
         }
       } finally {
@@ -3545,9 +3532,7 @@ function ConnectedChat({
     const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
     if (!compose || !scroller || typeof ResizeObserver === "undefined") return;
     const syncComposerHeight = () => {
-      const composerStyles = getComputedStyle(compose);
-      const safeBottom = parseFloat(composerStyles.paddingBottom) || 0;
-      const contentHeight = Math.max(48, compose.getBoundingClientRect().height - safeBottom);
+      const contentHeight = Math.max(68, compose.getBoundingClientRect().height);
       scroller.style.setProperty("--composer-height", `${Math.ceil(contentHeight)}px`);
       if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
     };
@@ -3556,6 +3541,26 @@ function ConnectedChat({
     observer.observe(compose);
     return () => observer.disconnect();
   }, [conversationId, pending.length]);
+  useLayoutEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const syncKeyboardOffset = () => {
+      const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      document.documentElement.style.setProperty("--chat-keyboard-offset", `${Math.round(offset)}px`);
+      if (nearBottomRef.current) {
+        const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
+        if (scroller) requestAnimationFrame(() => { if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight; });
+      }
+    };
+    syncKeyboardOffset();
+    viewport.addEventListener("resize", syncKeyboardOffset);
+    viewport.addEventListener("scroll", syncKeyboardOffset);
+    return () => {
+      viewport.removeEventListener("resize", syncKeyboardOffset);
+      viewport.removeEventListener("scroll", syncKeyboardOffset);
+      document.documentElement.style.removeProperty("--chat-keyboard-offset");
+    };
+  }, [conversationId]);
   useLayoutEffect(() => {
     if (!nearBottomRef.current) return;
     const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
@@ -5667,27 +5672,28 @@ function MusicPlayerUI({
       {pane === "lyrics" ? <div className="lyrics-scroll">{lyrics.length ? lyrics.map((line, index) => <p data-lyric-index={index} className={index === activeLyric ? "active" : ""} key={`${line.time}-${index}`}>{line.text}</p>) : <EmptyState text="这首歌暂时没有可显示的歌词。" />}</div> : <div className="immersive-queue">{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="queue-track" onClick={() => adapter.select(index)}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "—"}</time>{selected === index && <i aria-label="正在播放" />}</button><button className="queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div>}
     </section>
     {toast && <div className="music-toast" role="status">{toast}</div>}
-    {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="关闭同步歌单" onClick={() => setSyncOpen(false)} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="关闭" onClick={() => setSyncOpen(false)}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onMeta={setNeteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); }} /></section></div>}
+    {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="关闭同步歌单" onClick={() => setSyncOpen(false)} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="关闭" onClick={() => setSyncOpen(false)}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); }} /></section></div>}
   </div>;
 }
 
-function NeteaseSyncPanel({ meta, onMeta, onSync }: { meta: Record<string, string>; onMeta: (value: Record<string, string>) => void; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {
-  const [form, setForm] = useState({ baseUrl: meta.baseUrl || "https://music-api.r-vera.com", uid: meta.uid || "", playlistId: meta.playlistId || "", cookie: "", strategy: "keep-local", bidirectional: "false" });
-  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; trackCount?: number }>>([]);
+function NeteaseSyncPanel({ meta, onSync }: { meta: Record<string, string>; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {
+  const [playlistId, setPlaylistId] = useState(meta.playlistId || "");
   const [message, setMessage] = useState(meta.lastSyncAt ? `上次同步：${new Date(meta.lastSyncAt).toLocaleString()}` : "");
   const [syncing, setSyncing] = useState(false);
-  const request = async (action: "playlists" | "sync") => {
-    setSyncing(true); setMessage(action === "sync" ? "正在读取网易云歌单…" : "正在读取歌单列表…");
+  const sync = async () => {
+    if (!playlistId.trim()) { setMessage("请先粘贴网易云歌单 ID"); return; }
+    setSyncing(true); setMessage("正在读取网易云歌单…");
     try {
-      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action, ...form }) });
-      const result = await response.json() as { error?: string; playlists?: Array<{ id: string; name: string; trackCount?: number }>; tracks?: Track[]; queue?: Track[]; meta?: Record<string, string>; summary?: string };
+      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "sync", playlistId: playlistId.trim() }) });
+      const result = await response.json() as { error?: string; tracks?: Track[]; queue?: Track[]; meta?: Record<string, string>; summary?: string };
       if (!response.ok) throw new Error(result.error || "网易云同步失败");
-      if (action === "playlists") { setPlaylists(result.playlists || []); setMessage(`找到 ${result.playlists?.length || 0} 个歌单`); }
-      else { const nextMeta = result.meta || { baseUrl: form.baseUrl, uid: form.uid, playlistId: form.playlistId, lastSyncAt: new Date().toISOString() }; onSync(result.tracks || [], result.queue || [], nextMeta); setMessage(result.summary || "同步完成"); }
+      const nextMeta = result.meta || { playlistId: playlistId.trim(), lastSyncAt: new Date().toISOString() };
+      onSync(result.tracks || [], result.queue || [], nextMeta);
+      setMessage(result.summary || "同步完成");
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "同步失败"); }
     finally { setSyncing(false); }
   };
-  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未连接或同步"}</div><p>凭证只在本次请求中发送到 Vesper 服务端，不会保存到浏览器。</p><label className="profile-field"><span>接口地址</span><input value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} /></label><label className="profile-field"><span>网易云 UID</span><input value={form.uid} onChange={(event) => setForm({ ...form, uid: event.target.value })} /></label><label className="profile-field"><span>登录 Cookie / Token</span><input type="password" value={form.cookie} placeholder="仅本次同步使用" onChange={(event) => setForm({ ...form, cookie: event.target.value })} /></label><label className="profile-field"><span>歌单</span><select value={form.playlistId} onChange={(event) => setForm({ ...form, playlistId: event.target.value })}><option value="">先读取歌单列表</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}{playlist.trackCount ? ` · ${playlist.trackCount} 首` : ""}</option>)}</select></label><div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，不删除</b></div><label className="sync-toggle"><input type="checkbox" checked={form.bidirectional === "true"} onChange={(event) => setForm({ ...form, bidirectional: String(event.target.checked) })} /><span>双向同步（需单独确认冲突策略）</span></label><div className="sync-buttons"><button className="reset-background" disabled={syncing} onClick={() => void request("playlists")}>读取歌单</button><button className="save-profile" disabled={syncing || !form.playlistId} onClick={() => void request("sync")}>{syncing ? "同步中…" : "开始同步"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
+  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>只需粘贴歌单 ID（也可粘贴包含 ID 的歌单链接）。Vesper 会读取公开歌单；没有可播放 URL 的版权歌曲会保留为不可播放状态。</p><label className="profile-field"><span>网易云歌单 ID</span><input inputMode="numeric" autoComplete="off" value={playlistId} placeholder="例如 123456789" onChange={(event) => setPlaylistId(event.target.value)} /></label><div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，不删除</b></div><div className="sync-buttons"><button className="save-profile" disabled={syncing || !playlistId.trim()} onClick={() => void sync()}>{syncing ? "同步中…" : "同步歌单"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
 }
 
 function MemoryLibrary() {

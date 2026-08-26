@@ -1144,8 +1144,9 @@ export default function Home() {
             />
           ) : active === "聊天" ? (
               <ConnectedChat
-              key={conversationId}
-              conversationId={conversationId}
+                key={conversationId}
+                conversationId={conversationId}
+                onSelectConversation={setConversationId}
               agentName={agentName}
               userName={userName}
               agentAvatar={agentAvatar}
@@ -1811,8 +1812,8 @@ function HistoryModal({
   useEffect(() => {
     const token = deviceToken();
     if (!token) return;
-    fetch(apiUrl("/api/chat?list=1"), {
-      headers: { "x-vesper-device-token": token },
+    fetch(codexHistoryUrl("/conversations"), {
+      headers: codexHistoryHeaders(),
       cache: "no-store",
     })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -1832,8 +1833,8 @@ function HistoryModal({
     const token = deviceToken();
     if (token) {
       const response = await fetch(
-        apiUrl(`/api/chat?conversationId=${encodeURIComponent(item.id)}`),
-        { method: "DELETE", headers: { "x-vesper-device-token": token } },
+        codexHistoryUrl(`/conversations/${encodeURIComponent(item.id)}`),
+        { method: "DELETE", headers: codexHistoryHeaders() },
       );
       if (!response.ok && response.status !== 404) {
         window.alert("云端聊天记录删除失败，请稍后重试");
@@ -1855,6 +1856,7 @@ function HistoryModal({
     const next = conversations.map((entry) => entry.id === item.id ? { ...entry, title, updatedAt: new Date().toISOString() } : entry);
     setConversations(next);
     window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(next));
+    void persistCodexConversation(item.id, { title }).catch(() => window.alert("云端标题同步失败，请稍后重试"));
   };
   const nowMs = new Date().getTime();
   const groups = [
@@ -2963,6 +2965,23 @@ function visibleAssistantText(item: CodexItem) {
   return typeof item.text === "string" ? item.text : "";
 }
 
+function visibleUserText(item: CodexItem) {
+  if (typeof item.text === "string") return item.text;
+  if (!Array.isArray(item.content)) return "";
+  return item.content.flatMap((part) => {
+    if (!part || typeof part !== "object") return [];
+    const value = part as { text?: unknown };
+    return typeof value.text === "string" ? [value.text] : [];
+  }).join("");
+}
+
+function codexTimestamp(value: unknown, fallback: string) {
+  if (typeof value === "number" && Number.isFinite(value))
+    return new Date(value < 10_000_000_000 ? value * 1000 : value).toISOString();
+  if (typeof value === "string" && Number.isFinite(Date.parse(value))) return new Date(value).toISOString();
+  return fallback;
+}
+
 function normalizeCodexMessages(value: unknown, conversationId: string): BridgeChatMessage[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw) => {
@@ -2985,6 +3004,63 @@ function codexSocketUrl() {
   const token = deviceToken();
   if (token) url.searchParams.set("token", token);
   return url.toString();
+}
+
+const CODEX_HISTORY_ORIGIN = "https://codex.r-vera.com/history";
+
+function codexHistoryUrl(path: string) {
+  return `${CODEX_HISTORY_ORIGIN}${path}`;
+}
+
+function codexHistoryHeaders(json = false) {
+  return {
+    ...(json ? { "content-type": "application/json" } : {}),
+    authorization: `Bearer ${deviceToken()}`,
+  };
+}
+
+function codexMessageKey(item: BridgeChatMessage) {
+  if (item.metadata?.itemId) return `item:${item.metadata.itemId}`;
+  if (item.metadata?.turnId) return `turn:${item.metadata.turnId}:${item.role}:${item.content}`;
+  return `id:${item.id}`;
+}
+
+function mergeCodexMessages(...groups: BridgeChatMessage[][]) {
+  const merged = new Map<string, BridgeChatMessage>();
+  for (const item of groups.flat()) {
+    const key = codexMessageKey(item);
+    const existing = merged.get(key);
+    merged.set(key, existing ? {
+      ...existing,
+      ...item,
+      id: existing.id || item.id,
+      createdAt: existing.createdAt || item.createdAt,
+      metadata: { ...existing.metadata, ...item.metadata },
+    } : item);
+  }
+  return [...merged.values()].sort((left, right) =>
+    Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id));
+}
+
+async function persistCodexConversation(conversationId: string, value: { title?: string; codexThreadId?: string | null }) {
+  const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
+    method: "POST",
+    headers: codexHistoryHeaders(true),
+    cache: "no-store",
+    body: JSON.stringify(value),
+  });
+  if (!response.ok) throw new Error("Conversation history could not be saved");
+  return response.json() as Promise<{ conversation?: { codexThreadId?: string | null; title?: string } }>;
+}
+
+async function persistCodexMessage(item: BridgeChatMessage, title?: string) {
+  const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(item.conversationId)}/messages`), {
+    method: "POST",
+    headers: codexHistoryHeaders(true),
+    cache: "no-store",
+    body: JSON.stringify({ ...item, title }),
+  });
+  if (!response.ok) throw new Error("Message history could not be saved");
 }
 
 function readDataUrl(file: File) {
@@ -3115,6 +3191,7 @@ function MusicMessageCard({
 
 function ConnectedChat({
   conversationId,
+  onSelectConversation,
   agentName,
   userName,
   agentAvatar,
@@ -3129,6 +3206,7 @@ function ConnectedChat({
   onOpenMusic,
 }: {
   conversationId: string;
+  onSelectConversation: (id: string) => void;
   agentName: string;
   userName: string;
   agentAvatar: string;
@@ -3148,13 +3226,16 @@ function ConnectedChat({
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(false);
   const [error, setError] = useState("");
+  const [resumeError, setResumeError] = useState("");
+  const [historyReady, setHistoryReady] = useState(false);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
   const socket = useRef<WebSocket | null>(null);
+  const messagesRef = useRef(messages);
   const rpcId = useRef(1);
   const rpc = useRef(new Map<number, { resolve: (value: CodexSocketMessage) => void; reject: (reason: Error) => void }>());
-  const threadId = useRef(readLocalValue<Record<string, string>>("vesper-codex-threads", {})[conversationId] || "");
+  const threadId = useRef("");
   const streamBuffers = useRef(new Map<string, string>());
   const reasoningBuffers = useRef(new Map<string, string>());
   const reasoningSummaries = useRef<string[]>([]);
@@ -3163,18 +3244,20 @@ function ConnectedChat({
   const activeTurnUserId = useRef("");
   const streamEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const composeRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
 
   const save = (next: BridgeChatMessage[]) => {
     const sanitized = normalizeCodexMessages(next, conversationId);
+    messagesRef.current = sanitized;
     setMessages(sanitized);
     window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(sanitized));
   };
   const updateMessage = (id: string, update: (item: BridgeChatMessage) => BridgeChatMessage) => {
-    const current = readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []);
-    save(current.map((item) => item.id === id ? update(item) : item));
+    const updated = messagesRef.current.map((item) => item.id === id ? update(item) : item);
+    save(updated);
+    const item = updated.find((candidate) => candidate.id === id);
+    if (item) void persistCodexMessage(item).catch(() => setError("History sync is temporarily unavailable"));
   };
   const logCodexDiagnostic = (message: CodexSocketMessage) => {
     const method = typeof message.method === "string" ? message.method : "rpc-response";
@@ -3208,7 +3291,7 @@ function ConnectedChat({
     if (typeof message.id !== "number") return;
     const params = message.params || {};
     const name = String(params.tool || params.name || "");
-    const itemId = String(params.itemId || "");
+    const itemId = String(params.itemId || params.callId || "");
     setTurnStatus("tool");
     try {
       const result = await callServerTool(name, (params.arguments || params.input || {}) as Record<string, unknown>, itemId);
@@ -3237,12 +3320,9 @@ function ConnectedChat({
       else pendingRpc.resolve(message);
       return;
     }
+    // Generated bindings for the installed app-server identify this as the dynamic-tool request.
     if (message.method === "item/tool/call") {
       void sendToolResult(message);
-      return;
-    }
-    if (message.method === "attestation/generate" && typeof message.id === "number") {
-      socket.current?.send(JSON.stringify({ id: message.id, result: { token: `v1.vesper-${crypto.randomUUID()}` } }));
       return;
     }
     if (message.method === "currentTime/read" && typeof message.id === "number") {
@@ -3278,7 +3358,7 @@ function ConnectedChat({
       }
       const content = (streamBuffers.current.get(itemId) || visibleAssistantText(item)).trim();
       if (content && activeTurnId.current && CODEX_ASSISTANT_ITEM_TYPES.has(itemType) && (!item.role || item.role === "assistant")) {
-        const current = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []), conversationId);
+        const current = messagesRef.current;
         const existing = current.find((candidate) => candidate.metadata?.itemId === itemId);
         const agentMessage: BridgeChatMessage = {
           id: existing?.id || crypto.randomUUID(), conversationId, role: "agent", content,
@@ -3293,6 +3373,7 @@ function ConnectedChat({
           createdAt: existing?.createdAt || new Date().toISOString(),
         };
         save(existing ? current.map((candidate) => candidate.id === existing.id ? agentMessage : candidate) : [...current, agentMessage]);
+        void persistCodexMessage(agentMessage).catch(() => setError("History sync is temporarily unavailable"));
       }
       if (CODEX_ASSISTANT_ITEM_TYPES.has(itemType)) {
         setStreamingItems((current) => {
@@ -3327,29 +3408,39 @@ function ConnectedChat({
       activeTurnUserId.current = "";
     }
     if (message.method === "turn/started" || message.method === "turn/inProgress") setTurnStatus("thinking");
-    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "item/tool/call", "attestation/generate", "currentTime/read"]);
-    if (message.method && !knownMethods.has(message.method) && !message.method.includes("requestApproval")) logCodexDiagnostic(message);
+    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "item/tool/call", "currentTime/read"]);
+    if (message.method && !knownMethods.has(message.method) && !message.method.includes("requestApproval")) {
+      logCodexDiagnostic(message);
+      if (typeof message.id === "number") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
+    }
   };
   const hydrateThreadSnapshot = (response: CodexSocketMessage) => {
     const root = response.result || {};
-    const thread = (root.thread || root) as { turns?: unknown[]; items?: unknown[]; messages?: unknown[] };
+    const thread = (root.thread || root) as { createdAt?: unknown; turns?: unknown[]; items?: unknown[]; messages?: unknown[] };
     const turns = Array.isArray(thread.turns) ? thread.turns : [];
     const rawItems = [
-      ...(Array.isArray(thread.items) ? thread.items : []),
-      ...(Array.isArray(thread.messages) ? thread.messages : []),
-      ...turns.flatMap((turn) => turn && typeof turn === "object" && Array.isArray((turn as { items?: unknown[] }).items) ? (turn as { items: unknown[] }).items : []),
+      ...(Array.isArray(thread.items) ? thread.items.map((item) => ({ item, turnId: "", createdAt: thread.createdAt })) : []),
+      ...(Array.isArray(thread.messages) ? thread.messages.map((item) => ({ item, turnId: "", createdAt: thread.createdAt })) : []),
+      ...turns.flatMap((turn) => {
+        if (!turn || typeof turn !== "object") return [];
+        const value = turn as { id?: string; startedAt?: unknown; items?: unknown[] };
+        return Array.isArray(value.items) ? value.items.map((item) => ({ item, turnId: value.id || "", createdAt: value.startedAt })) : [];
+      }),
     ];
-    const restored = rawItems.flatMap((raw) => {
-      if (!raw || typeof raw !== "object") return [];
-      const item = raw as CodexItem;
+    const restored = rawItems.flatMap((entry) => {
+      if (!entry.item || typeof entry.item !== "object") return [];
+      const item = entry.item as CodexItem & { createdAt?: unknown; startedAt?: unknown };
       const type = String(item.type || "");
       const role = item.role === "user" || type === "userMessage" || type === "userInput" ? "user" : "agent";
-      const content = role === "agent" ? visibleAssistantText(item) : (typeof item.text === "string" ? item.text : "");
+      const content = role === "agent" ? visibleAssistantText(item) : visibleUserText(item);
       if (!content.trim()) return [];
       if (role === "agent" && (!CODEX_ASSISTANT_ITEM_TYPES.has(type) || (item.role && item.role !== "assistant"))) return [];
-      return [{ id: String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { itemId: item.id, blockType: type, threadId: threadId.current }, createdAt: new Date().toISOString() } satisfies BridgeChatMessage];
+      const existing = messagesRef.current.find((candidate) =>
+        (item.id && candidate.metadata?.itemId === item.id) ||
+        (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && candidate.content === content.trim()));
+      return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current }, createdAt: existing?.createdAt || codexTimestamp(item.createdAt ?? item.startedAt ?? entry.createdAt, codexTimestamp(thread.createdAt, "1970-01-01T00:00:00.000Z")) } satisfies BridgeChatMessage];
     });
-    if (restored.length) save(restored);
+    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored));
   };
   const connect = async () => {
     if (socket.current?.readyState === WebSocket.OPEN) return;
@@ -3365,7 +3456,7 @@ function ConnectedChat({
       ws.onerror = () => reject(new Error("Codex app-server is offline"));
     });
     setOnline(true);
-    await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.5.0" }, capabilities: { experimentalApi: true, requestAttestation: true } });
+    await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
     ws.send(JSON.stringify({ method: "initialized" }));
     let dynamicTools = CODEX_DYNAMIC_TOOLS;
     try {
@@ -3377,37 +3468,56 @@ function ConnectedChat({
     } catch {
       // The fallback keeps the app-server handshake useful while the bridge is offline.
     }
-    const stored = readLocalValue<Record<string, string>>("vesper-codex-threads", {});
-    if (threadId.current || stored[conversationId]) {
-      threadId.current = threadId.current || stored[conversationId];
+    if (threadId.current) {
       try {
         const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
         hydrateThreadSnapshot(resumed);
-      } catch {
-        threadId.current = "";
-        const nextStored = { ...stored };
-        delete nextStored[conversationId];
-        window.localStorage.setItem("vesper-codex-threads", JSON.stringify(nextStored));
+        setResumeError("");
+      } catch (reason) {
+        const detail = reason instanceof Error ? reason.message : "Unknown resume error";
+        setResumeError(`无法恢复原 Codex thread：${detail}`);
+        throw new Error(`原会话映射已保留。${detail}`);
       }
     } else {
       const result = await sendRpc("thread/start", { dynamicTools, approvalPolicy: "on-request", summary: "concise" });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       threadId.current = thread.id;
-      window.localStorage.setItem("vesper-codex-threads", JSON.stringify({ ...stored, [conversationId]: thread.id }));
+      await persistCodexConversation(conversationId, { codexThreadId: thread.id });
     }
-    if (!threadId.current) {
-      const result = await sendRpc("thread/start", { dynamicTools, approvalPolicy: "on-request", summary: "concise" });
+  };
+  const createReplacementConversation = async () => {
+    if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
+      setError("Codex app-server is offline");
+      return;
+    }
+    const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
+    try {
+      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
-      threadId.current = thread.id;
-      window.localStorage.setItem("vesper-codex-threads", JSON.stringify({ ...stored, [conversationId]: thread.id }));
+      await persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id });
+      rememberConversation(replacementId, "替代会话", 0);
+      onSelectConversation(replacementId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not create replacement conversation");
+    }
+  };
+  const cancelActiveTurn = async () => {
+    if (!activeTurnId.current || !threadId.current) return;
+    try {
+      await sendRpc("turn/interrupt", { threadId: threadId.current, turnId: activeTurnId.current });
+      setError("已请求取消当前回复。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not cancel the active turn");
     }
   };
   const editMessage = (item: BridgeChatMessage) => {
     const content = window.prompt("Edit message", item.content)?.trim();
     if (!content || content === item.content) return;
-    save(messages.map((message) => message.id === item.id ? { ...message, content } : message));
+    const updated = { ...item, content };
+    save(messagesRef.current.map((message) => message.id === item.id ? updated : message));
+    void persistCodexMessage(updated).catch(() => setError("History sync is temporarily unavailable"));
   };
   const copyMessage = async (item: BridgeChatMessage) => {
     try {
@@ -3444,13 +3554,16 @@ function ConnectedChat({
     const content = draft.trim();
     if ((!content && !pending.length) || busy) return;
     setBusy(true); setError(""); setDraft("");
+    nearBottomRef.current = true;
     const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "thinking", metadata: { attachments: [], turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
     activeTurnUserId.current = userMessage.id;
+    save([...messagesRef.current, userMessage]);
+    rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
     try {
+      await persistCodexMessage(userMessage, content.slice(0, 42) || "Attachment");
       const prepared = await Promise.all(pending.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
-      const current = [...messages, userMessage];
-      save(current);
+      updateMessage(userMessage.id, () => userMessage);
       const input: CodexInput[] = [{ type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." }];
       for (const item of prepared) if (item.input) input.push(item.input);
       await connect();
@@ -3460,8 +3573,11 @@ function ConnectedChat({
       const turn = (started.result?.turn || {}) as { id?: string };
       activeTurnId.current = turn.id || `turn-${userMessage.id}`;
       updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
-      await Promise.race([done, new Promise<void>((_, reject) => window.setTimeout(() => reject(new Error("Codex response timed out")), 120000))]);
-      rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
+      const completion = await Promise.race([done.then(() => "completed" as const), new Promise<"listening">((resolve) => window.setTimeout(() => resolve("listening"), 120000))]);
+      if (completion === "listening") {
+        setError("回复仍在服务器上运行，Vesper 会继续监听；也可手动取消。");
+        return;
+      }
       setPending([]);
     } catch (reason) {
       updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
@@ -3481,14 +3597,41 @@ function ConnectedChat({
     setListening(true); recognition.start();
   };
   useEffect(() => {
-    void connect().catch((reason) => setError(reason instanceof Error ? reason.message : "Codex app-server is offline"));
-    return () => { socket.current?.close(); socket.current = null; };
+    let cancelled = false;
+    const restore = async () => {
+      setHistoryReady(false);
+      try {
+        const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
+          headers: codexHistoryHeaders(),
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("无法读取 VPS 历史记录");
+        const payload = await response.json() as {
+          conversation?: { codexThreadId?: string | null } | null;
+          messages?: BridgeChatMessage[];
+        };
+        if (cancelled) return;
+        const remote = normalizeCodexMessages(payload.messages || [], conversationId);
+        const cached = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId);
+        save(mergeCodexMessages(remote, cached));
+        threadId.current = payload.conversation?.codexThreadId || "";
+        setHistoryReady(true);
+        await connect();
+      } catch (reason) {
+        if (!cancelled) {
+          setHistoryReady(true);
+          setError(reason instanceof Error ? reason.message : "Codex app-server is offline");
+        }
+      }
+    };
+    void restore();
+    return () => { cancelled = true; socket.current?.close(); socket.current = null; };
   }, [conversationId]);
   useEffect(() => {
     const receiveCard = (event: Event) => {
       const detail = (event as CustomEvent<{ conversationId?: string; card?: MusicCardData }>).detail;
       if (detail?.conversationId !== conversationId || !detail.card) return;
-      const current = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(`vesper-codex-chat-${conversationId}`, []), conversationId);
+      const current = messagesRef.current;
       const cardMessage: BridgeChatMessage = {
         id: crypto.randomUUID(),
         conversationId,
@@ -3499,12 +3642,13 @@ function ConnectedChat({
         createdAt: new Date().toISOString(),
       };
       save([...current, cardMessage]);
+      void persistCodexMessage(cardMessage).catch(() => setError("History sync is temporarily unavailable"));
     };
     window.addEventListener("vesper-music-card", receiveCard);
     return () => window.removeEventListener("vesper-music-card", receiveCard);
   }, [conversationId]);
   useLayoutEffect(() => {
-    const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
+    const scroller = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
     if (!scroller) return;
     const updateNearBottom = () => {
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
@@ -3519,51 +3663,17 @@ function ConnectedChat({
   useLayoutEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
-    node.style.height = "auto";
+    node.style.height = "24px";
     const styles = getComputedStyle(node);
     const lineHeight = parseFloat(styles.lineHeight) || 20;
     const maxHeight = Math.ceil(lineHeight * 4 + (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0));
     const nextHeight = Math.min(node.scrollHeight, maxHeight);
-    node.style.height = `${Math.max(lineHeight, nextHeight)}px`;
+    node.style.height = `${Math.max(24, nextHeight)}px`;
     node.style.overflowY = node.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [draft]);
   useLayoutEffect(() => {
-    const compose = composeRef.current;
-    const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
-    if (!compose || !scroller || typeof ResizeObserver === "undefined") return;
-    const syncComposerHeight = () => {
-      const contentHeight = Math.max(68, compose.getBoundingClientRect().height);
-      scroller.style.setProperty("--composer-height", `${Math.ceil(contentHeight)}px`);
-      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
-    };
-    syncComposerHeight();
-    const observer = new ResizeObserver(syncComposerHeight);
-    observer.observe(compose);
-    return () => observer.disconnect();
-  }, [conversationId, pending.length]);
-  useLayoutEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const syncKeyboardOffset = () => {
-      const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-      document.documentElement.style.setProperty("--chat-keyboard-offset", `${Math.round(offset)}px`);
-      if (nearBottomRef.current) {
-        const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
-        if (scroller) requestAnimationFrame(() => { if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight; });
-      }
-    };
-    syncKeyboardOffset();
-    viewport.addEventListener("resize", syncKeyboardOffset);
-    viewport.addEventListener("scroll", syncKeyboardOffset);
-    return () => {
-      viewport.removeEventListener("resize", syncKeyboardOffset);
-      viewport.removeEventListener("scroll", syncKeyboardOffset);
-      document.documentElement.style.removeProperty("--chat-keyboard-offset");
-    };
-  }, [conversationId]);
-  useLayoutEffect(() => {
     if (!nearBottomRef.current) return;
-    const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
+    const scroller = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
     if (!scroller) return;
     requestAnimationFrame(() => {
       if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
@@ -3581,18 +3691,21 @@ function ConnectedChat({
   }, [focusMessageId, messages.length]);
   return (
     <div className="page-body chat-page codex-chat">
-      <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
+      <div className="chat-status-stack">
+        <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
+        {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>新建替代会话</button></div>}
+      </div>
       <div className="chat-stream">
-        {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
+        {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
         {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} />)}
         {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(text)}><Icon name="copy" /></button></div></div>)}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}
-      <div className="chat-compose" ref={composeRef}>
+      <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span><button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
+        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
     </div>

@@ -3200,7 +3200,6 @@ function CodexChatMessage({
   onOpenMusic: () => void;
 }) {
   const assistant = item.role === "agent";
-  const [menuOpen, setMenuOpen] = useState(false);
   const timestamp = visibleMessageTimestamp(item.createdAt);
   const stamp = Number.isFinite(timestamp)
     ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp))
@@ -3210,8 +3209,8 @@ function CodexChatMessage({
   const statusLabel = `${stamp}  ${statusText}`;
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
-      {!assistant && item.metadata?.turnId && (
-        item.metadata.thoughtSummary ? (
+      {assistant && (
+        item.metadata?.thoughtSummary ? (
           <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
             <i /> <span>{statusLabel}</span>
           </button>
@@ -3228,9 +3227,11 @@ function CodexChatMessage({
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
       <div className="message-actions">
-        <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>
-        <button className="message-action" aria-label="消息操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Icon name="more" /></button>
-        {menuOpen && <div className="message-menu" role="menu"><button role="menuitem" onClick={() => { onCopy(item); setMenuOpen(false); }}><Icon name="copy" />复制</button><button role="menuitem" onClick={() => { onFavorite(item); setMenuOpen(false); }}><Icon name="bookmark" />{favorite ? "取消收藏" : "收藏"}</button>{!assistant && <button role="menuitem" onClick={() => { onEdit(item); setMenuOpen(false); }}><Icon name="edit" />编辑</button>}<button role="menuitem" className="danger" onClick={() => void onDelete(item).then(() => setMenuOpen(false)).catch(() => {})}><Icon name="trash" />删除此消息</button></div>}
+        {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
+        <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
+        <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>
+        {!assistant && <button className="message-action" aria-label="编辑" title="编辑" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
+        <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
       </div>
       <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
@@ -3805,6 +3806,7 @@ function ConnectedChat({
     }, 260);
     return () => window.clearTimeout(timer);
   }, [focusMessageId, messages.length]);
+  const liveStatusStamp = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
@@ -3822,7 +3824,8 @@ function ConnectedChat({
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
           return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
         })}
-        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(text)}><Icon name="copy" /></button></div></div>)}
+        {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
+        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div></div>)}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}

@@ -1029,7 +1029,7 @@ body {
   display: flex;
   flex-direction: column;
 }
-.chat-stream {
+.chat-page:not(.codex-chat) .chat-stream {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1070,7 +1070,7 @@ body {
   background: #6d807d;
   color: white;
 }
-.chat-compose {
+.chat-page:not(.codex-chat) .chat-compose {
   position: absolute;
   z-index: 4;
   left: 16px;
@@ -1086,7 +1086,7 @@ body {
   box-shadow: 0 10px 34px rgba(47, 65, 62, 0.15);
   backdrop-filter: blur(20px);
 }
-.chat-compose input {
+.chat-page:not(.codex-chat) .chat-compose input {
   min-width: 0;
   flex: 1;
   border: 0;
@@ -1094,7 +1094,7 @@ body {
   background: transparent;
   font-size: 11px;
 }
-.chat-compose button {
+.chat-page:not(.codex-chat) .chat-compose button {
   width: 40px;
   height: 40px;
   border: 0;
@@ -1102,12 +1102,12 @@ body {
   display: grid;
   place-items: center;
 }
-.chat-compose svg {
+.chat-page:not(.codex-chat) .chat-compose svg {
   width: 18px;
   height: 18px;
   stroke-width: 1.4;
 }
-.chat-compose .send {
+.chat-page:not(.codex-chat) .chat-compose .send {
   width: 35px;
   height: 35px;
   border-radius: 50%;
@@ -1939,7 +1939,7 @@ body {
 .chat-page {
   margin-top: -11px;
 }
-.chat-stream {
+.chat-page:not(.codex-chat) .chat-stream {
   gap: 12px;
   padding: 9px 0 150px;
 }
@@ -1994,7 +1994,7 @@ body {
 .message.mine > div {
   background: #dededb;
 }
-.chat-compose {
+.chat-page:not(.codex-chat) .chat-compose {
   height: 122px;
   display: flex;
   flex-direction: column;
@@ -2007,7 +2007,7 @@ body {
   border: 1px solid white;
   box-shadow: 0 12px 38px rgba(0, 0, 0, 0.13);
 }
-.chat-compose textarea {
+.chat-page:not(.codex-chat) .chat-compose textarea {
   width: 100%;
   height: 54px;
   resize: none;
@@ -2019,7 +2019,7 @@ body {
     serif;
   color: #222;
 }
-.chat-compose textarea::placeholder {
+.chat-page:not(.codex-chat) .chat-compose textarea::placeholder {
   color: #aaa;
 }
 .compose-actions {
@@ -3524,7 +3524,7 @@ body {
     transform: none;
   }
 }
-.chat-compose {
+.chat-page:not(.codex-chat) .chat-compose {
   position: relative;
   height: 128px;
 }
@@ -3604,16 +3604,6 @@ body {
 .compose-actions > button:not(.model-pill) svg {
   width: 17px;
   height: 17px;
-}
-
-/* chat layout refinement */
-.chat-page .chat-compose {
-  position: absolute;
-  z-index: 6;
-  left: 16px;
-  right: 16px;
-  bottom: calc(10px + var(--safe-bottom));
-  height: 122px;
 }
 
 .drawer .nav-row span {
@@ -4006,9 +3996,6 @@ html {
 
 
 
-.chat-page .chat-stream {
-  padding-bottom: 168px;
-}
 .agent-turn > time {
   font-size: 7px;
   letter-spacing: 0.04em;
@@ -4799,21 +4786,6 @@ html {
   }
 }
 
-/* compact chat composer */
-.chat-page .chat-compose {
-  height: 96px;
-  padding: 10px 12px 8px;
-  border-radius: 21px;
-  bottom: calc(8px + var(--safe-bottom));
-}
-.chat-compose textarea {
-  height: 40px;
-  font-size: 14px;
-}
-.chat-page .chat-stream {
-  padding-bottom: 136px;
-}
-
 /* CyberBoss bridge */
 .bridge-presence {
   position: sticky;
@@ -4993,7 +4965,7 @@ html {
   width: 9px;
   height: 9px;
 }
-.chat-compose:has(.compose-previews) {
+.chat-page:not(.codex-chat) .chat-compose:has(.compose-previews) {
   height: auto;
   min-height: 148px;
 }
@@ -5674,13 +5646,6 @@ body {
 
 .settings-page.detail-active .modal-head { align-items: center; margin-bottom: 16px; }
 .settings-page.detail-active .connection-symbol { margin: 10px auto 16px; }
-
-.chat-page .chat-compose {
-  background: #fafbfa !important;
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-  box-shadow: 0 8px 28px rgba(64,78,81,.1), inset 0 0 0 1px rgba(70,82,84,.1);
-}
 
 .message.assistant > div > .thought-toggle {
   min-height: 20px;

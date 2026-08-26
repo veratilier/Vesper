@@ -10,6 +10,7 @@ import {
   type CSSProperties,
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
+import { mergeCodexMessages } from "./codex-message-merge";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
   const add = () =>
@@ -3019,29 +3020,6 @@ function codexHistoryHeaders(json = false) {
   };
 }
 
-function codexMessageKey(item: BridgeChatMessage) {
-  if (item.metadata?.itemId) return `item:${item.metadata.itemId}`;
-  if (item.metadata?.turnId) return `turn:${item.metadata.turnId}:${item.role}:${item.content}`;
-  return `id:${item.id}`;
-}
-
-function mergeCodexMessages(...groups: BridgeChatMessage[][]) {
-  const merged = new Map<string, BridgeChatMessage>();
-  for (const item of groups.flat()) {
-    const key = codexMessageKey(item);
-    const existing = merged.get(key);
-    merged.set(key, existing ? {
-      ...existing,
-      ...item,
-      id: existing.id || item.id,
-      createdAt: existing.createdAt || item.createdAt,
-      metadata: { ...existing.metadata, ...item.metadata },
-    } : item);
-  }
-  return [...merged.values()].sort((left, right) =>
-    Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id));
-}
-
 async function persistCodexConversation(conversationId: string, value: { title?: string; codexThreadId?: string | null }) {
   const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
     method: "POST",
@@ -3226,6 +3204,7 @@ function ConnectedChat({
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(false);
   const [error, setError] = useState("");
+  const [historyWarning, setHistoryWarning] = useState("");
   const [resumeError, setResumeError] = useState("");
   const [historyReady, setHistoryReady] = useState(false);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
@@ -3257,7 +3236,7 @@ function ConnectedChat({
     const updated = messagesRef.current.map((item) => item.id === id ? update(item) : item);
     save(updated);
     const item = updated.find((candidate) => candidate.id === id);
-    if (item) void persistCodexMessage(item).catch(() => setError("History sync is temporarily unavailable"));
+    if (item) void persistCodexMessage(item).catch(() => setHistoryWarning("历史暂未同步"));
   };
   const logCodexDiagnostic = (message: CodexSocketMessage) => {
     const method = typeof message.method === "string" ? message.method : "rpc-response";
@@ -3373,7 +3352,7 @@ function ConnectedChat({
           createdAt: existing?.createdAt || new Date().toISOString(),
         };
         save(existing ? current.map((candidate) => candidate.id === existing.id ? agentMessage : candidate) : [...current, agentMessage]);
-        void persistCodexMessage(agentMessage).catch(() => setError("History sync is temporarily unavailable"));
+        void persistCodexMessage(agentMessage).catch(() => setHistoryWarning("历史暂未同步"));
       }
       if (CODEX_ASSISTANT_ITEM_TYPES.has(itemType)) {
         setStreamingItems((current) => {
@@ -3483,7 +3462,8 @@ function ConnectedChat({
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       threadId.current = thread.id;
-      await persistCodexConversation(conversationId, { codexThreadId: thread.id });
+      void persistCodexConversation(conversationId, { codexThreadId: thread.id })
+        .catch(() => setHistoryWarning("历史暂未同步"));
     }
   };
   const createReplacementConversation = async () => {
@@ -3496,7 +3476,8 @@ function ConnectedChat({
       const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
-      await persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id });
+      void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
+        .catch(() => setHistoryWarning("历史暂未同步"));
       rememberConversation(replacementId, "替代会话", 0);
       onSelectConversation(replacementId);
     } catch (reason) {
@@ -3517,7 +3498,7 @@ function ConnectedChat({
     if (!content || content === item.content) return;
     const updated = { ...item, content };
     save(messagesRef.current.map((message) => message.id === item.id ? updated : message));
-    void persistCodexMessage(updated).catch(() => setError("History sync is temporarily unavailable"));
+    void persistCodexMessage(updated).catch(() => setHistoryWarning("历史暂未同步"));
   };
   const copyMessage = async (item: BridgeChatMessage) => {
     try {
@@ -3560,7 +3541,8 @@ function ConnectedChat({
     save([...messagesRef.current, userMessage]);
     rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
     try {
-      await persistCodexMessage(userMessage, content.slice(0, 42) || "Attachment");
+      void persistCodexMessage(userMessage, content.slice(0, 42) || "Attachment")
+        .catch(() => setHistoryWarning("历史暂未同步"));
       const prepared = await Promise.all(pending.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
@@ -3615,13 +3597,16 @@ function ConnectedChat({
         const cached = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId);
         save(mergeCodexMessages(remote, cached));
         threadId.current = payload.conversation?.codexThreadId || "";
-        setHistoryReady(true);
+      } catch {
+        if (!cancelled) setHistoryWarning("历史暂未同步");
+      } finally {
+        if (!cancelled) setHistoryReady(true);
+      }
+      if (cancelled) return;
+      try {
         await connect();
       } catch (reason) {
-        if (!cancelled) {
-          setHistoryReady(true);
-          setError(reason instanceof Error ? reason.message : "Codex app-server is offline");
-        }
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "Codex app-server is offline");
       }
     };
     void restore();
@@ -3642,7 +3627,7 @@ function ConnectedChat({
         createdAt: new Date().toISOString(),
       };
       save([...current, cardMessage]);
-      void persistCodexMessage(cardMessage).catch(() => setError("History sync is temporarily unavailable"));
+      void persistCodexMessage(cardMessage).catch(() => setHistoryWarning("历史暂未同步"));
     };
     window.addEventListener("vesper-music-card", receiveCard);
     return () => window.removeEventListener("vesper-music-card", receiveCard);
@@ -3656,9 +3641,16 @@ function ConnectedChat({
     };
     updateNearBottom();
     scroller.addEventListener("scroll", updateNearBottom, { passive: true });
+    const resizeObserver = new ResizeObserver(() => {
+      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+    });
+    resizeObserver.observe(scroller);
     nearBottomRef.current = true;
     requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
-    return () => scroller.removeEventListener("scroll", updateNearBottom);
+    return () => {
+      resizeObserver.disconnect();
+      scroller.removeEventListener("scroll", updateNearBottom);
+    };
   }, [conversationId]);
   useLayoutEffect(() => {
     const node = textareaRef.current;
@@ -3693,6 +3685,7 @@ function ConnectedChat({
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
         <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
+        {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>新建替代会话</button></div>}
       </div>
       <div className="chat-stream">

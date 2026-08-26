@@ -51,6 +51,14 @@
   color: inherit;
 }
 
+.codex-chat .chat-history-warning {
+  width: max-content;
+  margin: 0 auto 6px;
+  color: #866f55;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .codex-chat .chat-stream {
   grid-row: 2;
   display: flex;

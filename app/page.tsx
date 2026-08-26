@@ -2889,6 +2889,9 @@ function ConnectedChat({
   const activeTurnUserId = useRef("");
   const streamEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const composeRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const nearBottomRef = useRef(true);
 
   const save = (next: BridgeChatMessage[]) => {
     const sanitized = normalizeCodexMessages(next, conversationId);
@@ -3204,7 +3207,54 @@ function ConnectedChat({
     void connect().catch((reason) => setError(reason instanceof Error ? reason.message : "Codex app-server is offline"));
     return () => { socket.current?.close(); socket.current = null; };
   }, [conversationId]);
-  useLayoutEffect(() => { const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null; if (scroller) scroller.scrollTop = scroller.scrollHeight; }, [messages.length, streamingItems]);
+  useLayoutEffect(() => {
+    const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
+    if (!scroller) return;
+    const updateNearBottom = () => {
+      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      nearBottomRef.current = distance <= 96;
+    };
+    updateNearBottom();
+    scroller.addEventListener("scroll", updateNearBottom, { passive: true });
+    nearBottomRef.current = true;
+    requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+    return () => scroller.removeEventListener("scroll", updateNearBottom);
+  }, [conversationId]);
+  useLayoutEffect(() => {
+    const node = textareaRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    const styles = getComputedStyle(node);
+    const lineHeight = parseFloat(styles.lineHeight) || 20;
+    const maxHeight = Math.ceil(lineHeight * 4 + (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0));
+    const nextHeight = Math.min(node.scrollHeight, maxHeight);
+    node.style.height = `${Math.max(lineHeight, nextHeight)}px`;
+    node.style.overflowY = node.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [draft]);
+  useLayoutEffect(() => {
+    const compose = composeRef.current;
+    const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
+    if (!compose || !scroller || typeof ResizeObserver === "undefined") return;
+    const syncComposerHeight = () => {
+      const composerStyles = getComputedStyle(compose);
+      const safeBottom = parseFloat(composerStyles.paddingBottom) || 0;
+      const contentHeight = Math.max(48, compose.getBoundingClientRect().height - safeBottom);
+      scroller.style.setProperty("--composer-height", `${Math.ceil(contentHeight)}px`);
+      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+    };
+    syncComposerHeight();
+    const observer = new ResizeObserver(syncComposerHeight);
+    observer.observe(compose);
+    return () => observer.disconnect();
+  }, [conversationId, pending.length]);
+  useLayoutEffect(() => {
+    if (!nearBottomRef.current) return;
+    const scroller = streamEnd.current?.closest(".scroll-view") as HTMLElement | null;
+    if (!scroller) return;
+    requestAnimationFrame(() => {
+      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+    });
+  }, [messages.length, streamingItems]);
   useLayoutEffect(() => {
     if (!focusMessageId) return;
     const timer = window.setTimeout(() => {
@@ -3224,10 +3274,10 @@ function ConnectedChat({
         {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(text)}><Icon name="copy" /></button></div></div>)}
         <div ref={streamEnd} />
       </div>
-      <div className="chat-compose">
+      <div className="chat-compose" ref={composeRef}>
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
-        <textarea placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="codex-connection-pill"><i className={online ? "online" : ""} /> Codex</span><span>{busy ? "Sending…" : listening ? "Listening…" : ""}</span><button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
+        <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
+        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span><button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
     </div>

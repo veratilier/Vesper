@@ -2,6 +2,7 @@ import { allowedDocumentKeys } from "@/db/schema";
 import { ensureSchema, getDb } from "@/lib/db";
 
 type ToolInput = Record<string, unknown>;
+type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
 
 const sectionToKey: Record<string, string> = {
   today: "todos",
@@ -61,6 +62,56 @@ export const codexToolDefinitions = [
       required: ["kind"],
     },
   },
+  {
+    name: "music_search",
+    description: "Search the Vesper music library by title, artist, album, or keyword. Read-only.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "music_play",
+    description: "Play one uniquely identified Vesper song on the user's current device. Never claims success when no playable audio URL exists.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } },
+      required: ["trackId"],
+    },
+  },
+  {
+    name: "music_queue_add",
+    description: "Add one Vesper song to the shared playback queue, either next or at the end.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } },
+      required: ["trackId", "position"],
+    },
+  },
+  {
+    name: "music_send_card",
+    description: "Return a structured Vesper song card for the chat timeline without starting playback.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" }, message: { type: "string" } },
+      required: ["trackId"],
+    },
+  },
+  {
+    name: "music_playlist_add",
+    description: "Add a Vesper song to the persistent local music library/playlist; this is separate from the temporary playback queue.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" } },
+      required: ["trackId"],
+    },
+  },
 ] as const;
 
 async function readDocument(key: string): Promise<unknown> {
@@ -77,6 +128,13 @@ async function writeDocument(key: string, value: unknown) {
     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`)
     .bind(key, JSON.stringify(value), new Date().toISOString()).run();
   return value;
+}
+
+async function readMusicTracks(key: "music" | "musicQueue") {
+  return await readDocument(key) as MusicTrack[];
+}
+function findMusicTrack(tracks: MusicTrack[], trackId: string) {
+  return tracks.find((track) => track.id === trackId || track.neteaseId === trackId);
 }
 
 export async function executeCodexTool(name: string, input: ToolInput) {
@@ -135,6 +193,52 @@ export async function executeCodexTool(name: string, input: ToolInput) {
       return { saved: true, section: "journal", date };
     }
     throw new Error(`Unsupported write kind: ${kind}`);
+  }
+  if (name === "music_search") {
+    const query = String(input.query || "").trim().toLowerCase();
+    const limit = Math.min(20, Math.max(1, Number(input.limit || 8)));
+    if (!query) return { matches: [] };
+    const matches = (await readMusicTracks("music")).filter((track) => JSON.stringify(track).toLowerCase().includes(query)).slice(0, limit).map((track) => ({ trackId: track.id, title: track.title, artist: track.artist, album: track.album || "", cover: track.cover || "", duration: track.duration || "", playable: Boolean(track.url && track.playable !== false), source: track.neteaseId ? "netease" : "vesper" }));
+    return { matches };
+  }
+  if (name === "music_play") {
+    const trackId = String(input.trackId || "");
+    const tracks = await readMusicTracks("music");
+    const track = findMusicTrack(tracks, trackId);
+    if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
+    if (!track.url || track.playable === false) throw new Error("这首歌没有可播放音源");
+    const queue = await readMusicTracks("musicQueue");
+    const replaceQueue = input.replaceQueue === true;
+    const nextQueue = replaceQueue ? [track] : queue.some((item) => item.id === track.id || item.neteaseId === track.neteaseId) ? queue : [...queue, track];
+    await writeDocument("musicQueue", nextQueue);
+    const command = { id: crypto.randomUUID(), action: "play_track", trackId: track.id, replaceQueue, createdAt: new Date().toISOString() };
+    await writeDocument("musicControl", command);
+    return { ok: true, action: "playing", track: { trackId: track.id, title: track.title, artist: track.artist }, queueLength: nextQueue.length };
+  }
+  if (name === "music_queue_add") {
+    const trackId = String(input.trackId || "");
+    const position = input.position === "next" ? "next" : "end";
+    const track = findMusicTrack(await readMusicTracks("music"), trackId);
+    if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
+    const queue = await readMusicTracks("musicQueue");
+    if (queue.some((item) => item.id === track.id || item.neteaseId === track.neteaseId)) return { ok: true, alreadyQueued: true, trackId: track.id, queueLength: queue.length };
+    if (position === "next") queue.splice(Math.min(1, queue.length), 0, track);
+    else queue.push(track);
+    await writeDocument("musicQueue", queue);
+    return { ok: true, position, trackId: track.id, queueLength: queue.length };
+  }
+  if (name === "music_send_card") {
+    const trackId = String(input.trackId || "");
+    const track = findMusicTrack(await readMusicTracks("music"), trackId);
+    if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
+    return { ok: true, musicCard: { trackId: track.id, title: track.title, artist: track.artist, album: track.album || "", cover: track.cover || "", duration: track.duration || "", url: track.url || "", playable: Boolean(track.url && track.playable !== false), source: track.neteaseId ? "netease" : "vesper", message: typeof input.message === "string" ? input.message : "" } };
+  }
+  if (name === "music_playlist_add") {
+    const trackId = String(input.trackId || "");
+    const tracks = await readMusicTracks("music");
+    const track = findMusicTrack(tracks, trackId);
+    if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
+    return { ok: true, alreadyInPlaylist: true, trackId: track.id, playlist: "Vesper music" };
   }
   throw new Error(`Unknown Codex tool: ${name}`);
 }

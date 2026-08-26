@@ -3615,6 +3615,7 @@ body {
 .codex-chat .chat-stream {
   padding-bottom: calc(var(--composer-height, 64px) + env(safe-area-inset-bottom) + 16px) !important;
 }
+.scroll-view:has(.codex-chat) { padding-bottom: 0 !important; }
 .codex-chat .chat-compose {
   position: fixed !important;
   z-index: 12;

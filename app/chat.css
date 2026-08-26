@@ -82,6 +82,12 @@
   gap: 5px;
 }
 
+.codex-chat .message-with-date { display: contents; }
+.codex-chat .chat-date-divider { display: flex; align-items: center; gap: 10px; width: 100%; margin: 6px 0 2px; color: #879598; font-size: 11px; }
+.codex-chat .chat-date-divider::before,
+.codex-chat .chat-date-divider::after { content: ""; flex: 1; height: 1px; background: rgba(116, 139, 144, .14); }
+.codex-chat .chat-date-divider span { flex: none; }
+
 .codex-chat .message {
   display: flex;
   align-items: flex-start;
@@ -147,10 +153,17 @@
 }
 
 .codex-chat .turn-status i { width: 6px; height: 6px; border-radius: 50%; background: #86aeb3; box-shadow: 0 0 0 3px rgba(134, 174, 179, .14); }
-.codex-chat .message-actions { display: flex; gap: 4px; min-height: 22px; margin: 0 calc(var(--chat-avatar-size) + var(--chat-avatar-gap)); }
+.codex-chat .message-actions { position: relative; display: flex; align-items: center; gap: 4px; min-height: 22px; margin: 0 calc(var(--chat-avatar-size) + var(--chat-avatar-gap)); }
 .codex-chat .sent-turn .message-actions { justify-content: flex-end; }
+.codex-chat .message-actions time { color: #8b989a; font: 10px/1.2 var(--font-geist-mono), monospace; }
 .codex-chat .message-action { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 4px; border: 0; border-radius: 50%; background: transparent; color: #819093; }
 .codex-chat .message-action .ui-icon { width: 14px; height: 14px; }
+.codex-chat .message-menu { position: absolute; z-index: 8; top: 24px; left: 0; display: grid; min-width: 142px; padding: 6px; border: 1px solid rgba(93, 115, 119, .16); border-radius: 13px; background: #fff; box-shadow: 0 12px 30px rgba(55, 76, 81, .16); }
+.codex-chat .sent-turn .message-menu { right: 0; left: auto; }
+.codex-chat .message-menu button { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 9px; border: 0; border-radius: 9px; background: transparent; color: #405156; font-size: 12px; text-align: left; }
+.codex-chat .message-menu button:hover { background: #f0f5f5; }
+.codex-chat .message-menu button.danger { color: #a05454; }
+.codex-chat .message-menu .ui-icon { width: 14px; height: 14px; }
 .codex-chat .agent-turn .message-attachments { align-self: flex-start; margin-left: calc(var(--chat-avatar-size) + var(--chat-avatar-gap)); }
 .codex-chat .sent-turn .message-attachments { align-self: flex-end; margin-right: calc(var(--chat-avatar-size) + var(--chat-avatar-gap)); }
 

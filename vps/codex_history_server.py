@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   title TEXT NOT NULL DEFAULT '新对话',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  archived_at TEXT
+  archived_at TEXT,
+  source TEXT NOT NULL DEFAULT 'codex'
 );
 CREATE INDEX IF NOT EXISTS conversations_updated
   ON conversations(archived_at, updated_at DESC);
@@ -38,7 +39,9 @@ CREATE TABLE IF NOT EXISTS messages (
   turn_id TEXT,
   metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'codex',
+  time_source TEXT NOT NULL DEFAULT 'message'
 );
 CREATE UNIQUE INDEX IF NOT EXISTS messages_item
   ON messages(vesper_conversation_id, item_id) WHERE item_id IS NOT NULL;
@@ -60,6 +63,14 @@ def db() -> sqlite3.Connection:
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA journal_mode = WAL")
     connection.executescript(SCHEMA)
+    conversation_columns = {row["name"] for row in connection.execute("PRAGMA table_info(conversations)")}
+    message_columns = {row["name"] for row in connection.execute("PRAGMA table_info(messages)")}
+    if "source" not in conversation_columns:
+        connection.execute("ALTER TABLE conversations ADD COLUMN source TEXT NOT NULL DEFAULT 'codex'")
+    if "source" not in message_columns:
+        connection.execute("ALTER TABLE messages ADD COLUMN source TEXT NOT NULL DEFAULT 'codex'")
+    if "time_source" not in message_columns:
+        connection.execute("ALTER TABLE messages ADD COLUMN time_source TEXT NOT NULL DEFAULT 'message'")
     return connection
 
 
@@ -73,6 +84,7 @@ def conversation(row: sqlite3.Row, message_count: int | None = None) -> dict:
         "updatedAt": row["updated_at"],
         "archived": row["archived_at"] is not None,
         "archivedAt": row["archived_at"],
+        "source": row["source"],
     }
     if message_count is not None:
         value["messageCount"] = message_count
@@ -92,6 +104,8 @@ def message(row: sqlite3.Row) -> dict:
         "status": row["status"],
         "metadata": metadata,
         "createdAt": row["created_at"],
+        "source": row["source"],
+        "timeSource": row["time_source"],
     }
 
 
@@ -156,6 +170,8 @@ class Handler(BaseHTTPRequestHandler):
             else: self.send_json(405, {"error": "Method not allowed"})
         elif len(path) == 3 and path[0] == "conversations" and path[2] == "messages" and self.command == "POST":
             self.upsert_message(path[1])
+        elif len(path) == 4 and path[0] == "conversations" and path[2] == "messages" and self.command == "DELETE":
+            self.delete_message(path[1], path[3])
         else:
             self.send_json(404, {"error": "Not found"})
 
@@ -187,15 +203,22 @@ class Handler(BaseHTTPRequestHandler):
         title = str(body.get("title") or "新对话").strip()[:120] or "新对话"
         thread_present = "codexThreadId" in body
         thread_id = str(body.get("codexThreadId") or "").strip() or None
+        source = str(body.get("source") or "codex")
+        source = source if source in {"legacy-vesper", "codex"} else "codex"
+        created_at = str(body.get("createdAt") or timestamp)
+        updated_at = str(body.get("updatedAt") or timestamp)
         with db() as connection:
             connection.execute("""INSERT INTO conversations
-              (vesper_conversation_id, codex_thread_id, title, created_at, updated_at, archived_at)
-              VALUES (?, ?, ?, ?, ?, NULL)
+              (vesper_conversation_id, codex_thread_id, title, created_at, updated_at, archived_at, source)
+              VALUES (?, ?, ?, ?, ?, NULL, ?)
               ON CONFLICT(vesper_conversation_id) DO UPDATE SET
                 codex_thread_id = CASE WHEN ? THEN excluded.codex_thread_id ELSE conversations.codex_thread_id END,
                 title = CASE WHEN excluded.title <> '新对话' THEN excluded.title ELSE conversations.title END,
-                updated_at = excluded.updated_at, archived_at = NULL""",
-              (conversation_id, thread_id, title, timestamp, timestamp, thread_present))
+                created_at = CASE WHEN conversations.created_at = '' THEN excluded.created_at ELSE conversations.created_at END,
+                updated_at = CASE WHEN excluded.updated_at > conversations.updated_at THEN excluded.updated_at ELSE conversations.updated_at END,
+                source = CASE WHEN conversations.source = 'codex' THEN conversations.source ELSE excluded.source END,
+                archived_at = NULL""",
+              (conversation_id, thread_id, title, created_at, updated_at, source, thread_present))
             row = connection.execute("SELECT * FROM conversations WHERE vesper_conversation_id = ?", (conversation_id,)).fetchone()
         self.send_json(200, {"conversation": conversation(row)})
 
@@ -210,31 +233,38 @@ class Handler(BaseHTTPRequestHandler):
         metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         item_id = str(metadata.get("itemId") or "").strip() or None
         turn_id = str(metadata.get("turnId") or "").strip() or None
-        created_at = str(body.get("createdAt") or now())
+        created_at = str(body.get("createdAt") or "")
         timestamp = now()
+        conversation_updated_at = created_at if created_at else timestamp
         status = str(body.get("status") or "delivered")[:32]
         title = str(body.get("title") or content[:42]).strip()[:120] or "新对话"
+        source = str(body.get("source") or "codex")
+        source = source if source in {"legacy-vesper", "codex"} else "codex"
+        time_source = str(body.get("timeSource") or metadata.get("timeSource") or ("message" if created_at else "unknown"))[:32]
         with db() as connection:
             connection.execute("""INSERT INTO conversations
-              (vesper_conversation_id, title, created_at, updated_at, archived_at)
-              VALUES (?, ?, ?, ?, NULL)
+              (vesper_conversation_id, title, created_at, updated_at, archived_at, source)
+              VALUES (?, ?, ?, ?, NULL, ?)
               ON CONFLICT(vesper_conversation_id) DO UPDATE SET
                 title = CASE WHEN conversations.title = '新对话' THEN excluded.title ELSE conversations.title END,
-                updated_at = excluded.updated_at, archived_at = NULL""",
-              (conversation_id, title, created_at, timestamp))
+                updated_at = CASE WHEN excluded.updated_at > conversations.updated_at THEN excluded.updated_at ELSE conversations.updated_at END,
+                archived_at = NULL""",
+              (conversation_id, title, created_at, conversation_updated_at, source))
             existing = connection.execute("""SELECT id FROM messages WHERE vesper_conversation_id = ?
               AND ((? IS NOT NULL AND item_id = ?) OR id = ?) LIMIT 1""",
               (conversation_id, item_id, item_id, message_id)).fetchone()
             target_id = existing["id"] if existing else message_id
             connection.execute("""INSERT INTO messages
-              (id, vesper_conversation_id, role, content, status, item_id, turn_id, metadata_json, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (id, vesper_conversation_id, role, content, status, item_id, turn_id, metadata_json, created_at, updated_at, source, time_source)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET content = excluded.content, status = excluded.status,
                 item_id = COALESCE(excluded.item_id, messages.item_id),
                 turn_id = COALESCE(excluded.turn_id, messages.turn_id),
-                metadata_json = excluded.metadata_json, updated_at = excluded.updated_at""",
+                metadata_json = excluded.metadata_json,
+                created_at = CASE WHEN messages.created_at = '' THEN excluded.created_at ELSE messages.created_at END,
+                source = excluded.source, time_source = excluded.time_source, updated_at = excluded.updated_at""",
               (target_id, conversation_id, role, content, status, item_id, turn_id,
-               json.dumps(metadata, ensure_ascii=False), created_at, timestamp))
+               json.dumps(metadata, ensure_ascii=False), created_at, timestamp, source, time_source))
             row = connection.execute("SELECT * FROM messages WHERE id = ?", (target_id,)).fetchone()
         self.send_json(200, {"message": message(row)})
 
@@ -243,6 +273,26 @@ class Handler(BaseHTTPRequestHandler):
         with db() as connection:
             cursor = connection.execute("UPDATE conversations SET archived_at = ?, updated_at = ? WHERE vesper_conversation_id = ?", (timestamp, timestamp, conversation_id))
         self.send_json(200, {"ok": True, "archived": cursor.rowcount})
+
+    def delete_message(self, conversation_id: str, message_id: str) -> None:
+        with db() as connection:
+            cursor = connection.execute(
+                "DELETE FROM messages WHERE vesper_conversation_id = ? AND id = ?",
+                (conversation_id, message_id),
+            )
+            if cursor.rowcount:
+                latest = connection.execute(
+                    "SELECT MAX(created_at) AS latest FROM messages WHERE vesper_conversation_id = ?",
+                    (conversation_id,),
+                ).fetchone()["latest"]
+                connection.execute(
+                    "UPDATE conversations SET updated_at = ? WHERE vesper_conversation_id = ?",
+                    (latest or now(), conversation_id),
+                )
+        if not cursor.rowcount:
+            self.send_json(404, {"error": "Message not found"})
+            return
+        self.send_json(200, {"ok": True, "deleted": 1})
 
     do_GET = dispatch
     do_POST = dispatch

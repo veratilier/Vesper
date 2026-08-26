@@ -5683,6 +5683,12 @@ body {
 .message-edit svg { width: 13px; height: 13px; }
 
 .history-item-row { min-height: 54px; display: grid; grid-template-columns: 1fr 38px; align-items: center; border-bottom: 1px solid #e5e5e2; }
+.history-item-row { position: relative; }
+.history-item-menu { position: absolute; z-index: 9; top: 43px; right: 6px; display: grid; min-width: 132px; padding: 6px; border: 1px solid rgba(73,88,91,.14); border-radius: 12px; background: #fff; box-shadow: 0 12px 28px rgba(48,65,69,.16); }
+.history-item-menu button { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: #445559; font-size: 12px; text-align: left; }
+.history-item-menu button.danger { color: #a05252; }
+.history-item-menu .ui-icon { width: 14px; height: 14px; }
+.history-error { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: #fff0ed; color: #965d53; font-size: 11px; line-height: 1.4; }
 .history-item-row.selected { background: #e9e9e6; }
 .history-open,.history-delete { border: 0; background: transparent; }
 .history-open { min-width: 0; padding: 10px; display: grid; gap: 5px; text-align: left; }

@@ -1810,9 +1810,17 @@ function HistoryModal({
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"conversations" | "favorites">("conversations");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [menuId, setMenuId] = useState("");
+  const [historyError, setHistoryError] = useState("");
   useEffect(() => {
     const token = deviceToken();
     if (!token) return;
+    void migrateLegacyHistory().then(async () => {
+      const response = await fetch(codexHistoryUrl("/conversations"), { headers: codexHistoryHeaders(), cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json() as { conversations?: ConversationSummary[] };
+      setConversations(data.conversations || []);
+    }).catch((reason) => setHistoryError(reason instanceof Error ? reason.message : "旧历史迁移失败"));
     fetch(codexHistoryUrl("/conversations"), {
       headers: codexHistoryHeaders(),
       cache: "no-store",
@@ -1838,7 +1846,8 @@ function HistoryModal({
         { method: "DELETE", headers: codexHistoryHeaders() },
       );
       if (!response.ok && response.status !== 404) {
-        window.alert("云端聊天记录删除失败，请稍后重试");
+        const payload = await response.json().catch(() => ({})) as { error?: string };
+        setHistoryError(payload.error || `删除失败（HTTP ${response.status}）`);
         return;
       }
     }
@@ -1850,14 +1859,21 @@ function HistoryModal({
     setConversations(next);
     window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(next));
     onDelete(item.id);
+    setMenuId("");
   };
-  const rename = (item: ConversationSummary) => {
+  const rename = async (item: ConversationSummary) => {
     const title = window.prompt("重命名对话", item.title || "对话")?.trim();
     if (!title || title === item.title) return;
+    try {
+      await persistCodexConversation(item.id, { title });
+    } catch (reason) {
+      setHistoryError(reason instanceof Error ? reason.message : "云端标题同步失败");
+      return;
+    }
     const next = conversations.map((entry) => entry.id === item.id ? { ...entry, title, updatedAt: new Date().toISOString() } : entry);
     setConversations(next);
     window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(next));
-    void persistCodexConversation(item.id, { title }).catch(() => window.alert("云端标题同步失败，请稍后重试"));
+    setMenuId("");
   };
   const nowMs = new Date().getTime();
   const groups = [
@@ -1879,9 +1895,10 @@ function HistoryModal({
           <div className="history-drawer-actions"><button aria-label="搜索" onClick={() => setSearchOpen((value) => !value)}><Icon name="search" /></button><button aria-label="关闭" onClick={onClose}><Icon name="close" /></button></div>
         </header>
         {searchOpen && <label className="history-search compact"><Icon name="search" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "favorites" ? "搜索收藏" : "搜索对话"} /></label>}
+        {historyError && <div className="history-error" role="alert">{historyError}</div>}
         {tab === "conversations" ? (
           <div className="history-list drawer-list">
-            {groups.map(([label, items]) => items.length ? <section className="history-group" key={label}><h3>{label}</h3>{items.map((item) => <article onContextMenu={(event) => { event.preventDefault(); rename(item); }} className={item.id === activeId ? "history-item-row selected" : "history-item-row"} key={item.id}><button className="history-open" onClick={() => onSelect(item.id)}><b>{item.title || "未命名对话"}</b><span>{item.messageCount} 条 · {new Date(item.updatedAt).toLocaleDateString("zh-CN")}</span></button><button className="history-delete" aria-label={`删除 ${item.title || "对话"}`} onClick={() => void remove(item)}><Icon name="more" /></button></article>)}</section> : null)}
+            {groups.map(([label, items]) => items.length ? <section className="history-group" key={label}><h3>{label}</h3>{items.map((item) => <article className={item.id === activeId ? "history-item-row selected" : "history-item-row"} key={item.id}><button className="history-open" onClick={() => onSelect(item.id)}><b>{item.title || "未命名对话"}</b><span>{item.messageCount} 条 · {new Date(item.updatedAt).toLocaleDateString("zh-CN")}</span></button><button className="history-delete" aria-label={`${item.title || "对话"}的更多操作`} aria-expanded={menuId === item.id} onClick={() => setMenuId((current) => current === item.id ? "" : item.id)}><Icon name="more" /></button>{menuId === item.id && <div className="history-item-menu" role="menu"><button role="menuitem" onClick={() => void rename(item)}><Icon name="edit" />重命名</button><button role="menuitem" className="danger" onClick={() => void remove(item)}><Icon name="trash" />删除会话</button></div>}</article>)}</section> : null)}
             {!visible.length && <EmptyState text="还没有聊天记录。" />}
           </div>
         ) : (
@@ -2338,8 +2355,11 @@ type BridgeChatMessage = {
     turnStatus?: "thinking" | "tool" | "completed" | "error";
     blockType?: string;
     musicCard?: MusicCardData;
+    timeSource?: "message" | "turn" | "thread" | "unknown";
   };
   createdAt: string;
+  source?: "legacy-vesper" | "codex";
+  timeSource?: "message" | "turn" | "thread" | "unknown";
 };
 type BridgeSnapshot = {
   messages: BridgeChatMessage[];
@@ -2976,11 +2996,16 @@ function visibleUserText(item: CodexItem) {
   }).join("");
 }
 
-function codexTimestamp(value: unknown, fallback: string) {
+function codexTimestamp(value: unknown, fallback = "") {
   if (typeof value === "number" && Number.isFinite(value))
     return new Date(value < 10_000_000_000 ? value * 1000 : value).toISOString();
   if (typeof value === "string" && Number.isFinite(Date.parse(value))) return new Date(value).toISOString();
   return fallback;
+}
+
+function visibleMessageTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).getUTCFullYear() > 1971 ? timestamp : Number.NaN;
 }
 
 function normalizeCodexMessages(value: unknown, conversationId: string): BridgeChatMessage[] {
@@ -3020,7 +3045,7 @@ function codexHistoryHeaders(json = false) {
   };
 }
 
-async function persistCodexConversation(conversationId: string, value: { title?: string; codexThreadId?: string | null }) {
+async function persistCodexConversation(conversationId: string, value: { title?: string; codexThreadId?: string | null; createdAt?: string; updatedAt?: string; source?: "legacy-vesper" | "codex" }) {
   const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
     method: "POST",
     headers: codexHistoryHeaders(true),
@@ -3036,9 +3061,76 @@ async function persistCodexMessage(item: BridgeChatMessage, title?: string) {
     method: "POST",
     headers: codexHistoryHeaders(true),
     cache: "no-store",
-    body: JSON.stringify({ ...item, title }),
+    body: JSON.stringify({ ...item, title, source: item.source || "codex", timeSource: item.timeSource || item.metadata?.timeSource || (item.createdAt ? "message" : "unknown") }),
   });
   if (!response.ok) throw new Error("Message history could not be saved");
+}
+
+let legacyHistoryMigration: Promise<void> | null = null;
+
+function migrateLegacyHistory() {
+  if (legacyHistoryMigration) return legacyHistoryMigration;
+  legacyHistoryMigration = (async () => {
+    if (!deviceToken() || window.localStorage.getItem("vesper-history-migration-v1") === "complete") return;
+    const summaries = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []);
+    const conversations = new Map<string, { id: string; title: string; createdAt: string; updatedAt: string; messages: BridgeChatMessage[] }>();
+    const ensureConversation = (id: string, title = "未命名对话", updatedAt = "") => {
+      const existing = conversations.get(id);
+      if (existing) {
+        if (title && existing.title === "未命名对话") existing.title = title;
+        if (updatedAt && (!existing.updatedAt || updatedAt > existing.updatedAt)) existing.updatedAt = updatedAt;
+        return existing;
+      }
+      const value = { id, title: title || "未命名对话", createdAt: "", updatedAt, messages: [] as BridgeChatMessage[] };
+      conversations.set(id, value);
+      return value;
+    };
+    for (const summary of summaries) ensureConversation(summary.id, summary.title, summary.updatedAt);
+
+    const listResponse = await fetch(apiUrl("/api/chat?list=1"), { headers: deviceHeaders(), cache: "no-store" });
+    if (listResponse.ok) {
+      const list = await listResponse.json() as { conversations?: ConversationSummary[] };
+      for (const summary of list.conversations || []) {
+        const detail = await fetch(apiUrl(`/api/chat?conversationId=${encodeURIComponent(summary.id)}`), { headers: deviceHeaders(), cache: "no-store" });
+        if (!detail.ok) throw new Error(`旧 D1 会话 ${summary.id} 读取失败`);
+        const payload = await detail.json() as { messages?: BridgeChatMessage[] };
+        ensureConversation(summary.id, summary.title, summary.updatedAt).messages.push(...(payload.messages || []));
+      }
+    } else if (listResponse.status !== 404) {
+      throw new Error("旧 D1 历史读取失败");
+    }
+
+    for (const key of Object.keys(window.localStorage)) {
+      if (!key.startsWith("vesper-local-chat-") && !key.startsWith("vesper-codex-chat-")) continue;
+      const summary = summaries.find((item) => key.endsWith(`-${item.id}`));
+      const id = summary?.id || (key.startsWith("vesper-codex-chat-")
+        ? key.slice("vesper-codex-chat-".length)
+        : key.slice("vesper-local-chat-".length).replace(/^(api|mcp|cyberboss)-/, ""));
+      if (!id) continue;
+      const items = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(key, []), id);
+      ensureConversation(id, summary?.title || items[0]?.content.slice(0, 42) || "未命名对话", summary?.updatedAt || "").messages.push(...items);
+    }
+
+    for (const entry of conversations.values()) {
+      const unique = new Map<string, BridgeChatMessage>();
+      entry.messages.forEach((message, index) => {
+        const id = message.id || `legacy-${entry.id}-${index}`;
+        const normalized = { ...message, id, conversationId: entry.id, source: "legacy-vesper" as const, timeSource: message.createdAt ? "message" as const : "unknown" as const };
+        unique.set(id, unique.has(id) ? { ...unique.get(id)!, ...normalized } : normalized);
+      });
+      const messages = [...unique.values()];
+      const dated = messages.map((item) => item.createdAt).filter((value) => Number.isFinite(Date.parse(value))).sort();
+      entry.createdAt ||= dated[0] || entry.updatedAt || new Date().toISOString();
+      entry.updatedAt ||= dated.at(-1) || entry.createdAt;
+      await persistCodexConversation(entry.id, { title: entry.title, createdAt: entry.createdAt, updatedAt: entry.updatedAt, source: "legacy-vesper" });
+      for (const message of messages) await persistCodexMessage(message, entry.title);
+    }
+    window.localStorage.setItem("vesper-history-migration-v1", "complete");
+  })().catch((reason) => {
+    legacyHistoryMigration = null;
+    throw reason;
+  });
+  return legacyHistoryMigration;
 }
 
 function readDataUrl(file: File) {
@@ -3085,6 +3177,7 @@ function CodexChatMessage({
   onCopy,
   favorite,
   onFavorite,
+  onDelete,
   onPlayMusic,
   onQueueMusic,
   onOpenMusic,
@@ -3099,12 +3192,17 @@ function CodexChatMessage({
   onCopy: (item: BridgeChatMessage) => void;
   favorite: boolean;
   onFavorite: (item: BridgeChatMessage) => void;
+  onDelete: (item: BridgeChatMessage) => Promise<void>;
   onPlayMusic: (trackId: string) => void;
   onQueueMusic: (trackId: string) => void;
   onOpenMusic: () => void;
 }) {
   const assistant = item.role === "agent";
-  const stamp = new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(item.createdAt));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const timestamp = visibleMessageTimestamp(item.createdAt);
+  const stamp = Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp))
+    : "时间未知";
   const status = item.metadata?.turnStatus;
   const statusText = status === "thinking" ? "Thinking…" : status === "tool" ? "Using a tool…" : status === "error" ? "Failed" : "Done";
   const statusLabel = `${stamp}  ${statusText}`;
@@ -3128,11 +3226,9 @@ function CodexChatMessage({
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
       <div className="message-actions">
-        {assistant ? (
-          <><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => onCopy(item)}><Icon name="copy" /></button><button className={favorite ? "message-action favorite active" : "message-action favorite"} aria-label={favorite ? "Remove from favorites" : "Add to favorites"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button></>
-        ) : (
-          <button className="message-action" aria-label="Edit message" title="Edit" onClick={() => onEdit(item)}><Icon name="edit" /></button>
-        )}
+        <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>
+        <button className="message-action" aria-label="消息操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Icon name="more" /></button>
+        {menuOpen && <div className="message-menu" role="menu"><button role="menuitem" onClick={() => { onCopy(item); setMenuOpen(false); }}><Icon name="copy" />复制</button><button role="menuitem" onClick={() => { onFavorite(item); setMenuOpen(false); }}><Icon name="bookmark" />{favorite ? "取消收藏" : "收藏"}</button>{!assistant && <button role="menuitem" onClick={() => { onEdit(item); setMenuOpen(false); }}><Icon name="edit" />编辑</button>}<button role="menuitem" className="danger" onClick={() => void onDelete(item).then(() => setMenuOpen(false)).catch(() => {})}><Icon name="trash" />删除此消息</button></div>}
       </div>
       <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
@@ -3417,7 +3513,12 @@ function ConnectedChat({
       const existing = messagesRef.current.find((candidate) =>
         (item.id && candidate.metadata?.itemId === item.id) ||
         (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && candidate.content === content.trim()));
-      return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current }, createdAt: existing?.createdAt || codexTimestamp(item.createdAt ?? item.startedAt ?? entry.createdAt, codexTimestamp(thread.createdAt, "1970-01-01T00:00:00.000Z")) } satisfies BridgeChatMessage];
+      const messageTime = codexTimestamp(item.createdAt ?? item.startedAt);
+      const turnTime = codexTimestamp(entry.createdAt);
+      const threadTime = codexTimestamp(thread.createdAt);
+      const createdAt = existing?.createdAt || messageTime || turnTime || threadTime;
+      const timeSource = existing?.timeSource || existing?.metadata?.timeSource || (messageTime ? "message" : turnTime ? "turn" : threadTime ? "thread" : "unknown");
+      return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
     if (restored.length) save(mergeCodexMessages(messagesRef.current, restored));
   };
@@ -3521,6 +3622,22 @@ function ConnectedChat({
       conversationId, conversationTitle: title, role: item.role, content: item.content, createdAt: item.createdAt,
     }]);
   };
+  const deleteMessage = async (item: BridgeChatMessage) => {
+    if (!window.confirm("删除此消息？此操作无法撤销。")) return;
+    const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(item.id)}`), {
+      method: "DELETE",
+      headers: codexHistoryHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      const detail = payload.error || `删除失败（HTTP ${response.status}）`;
+      setError(detail);
+      throw new Error(detail);
+    }
+    save(messagesRef.current.filter((message) => message.id !== item.id));
+    setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
+  };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
     const { file, preview } = item;
     let attachment: ChatAttachment = { key: crypto.randomUUID(), url: preview, name: file.name, type: file.type || "application/octet-stream", size: file.size };
@@ -3583,6 +3700,7 @@ function ConnectedChat({
     const restore = async () => {
       setHistoryReady(false);
       try {
+        await migrateLegacyHistory();
         const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
           headers: codexHistoryHeaders(),
           cache: "no-store",
@@ -3690,7 +3808,14 @@ function ConnectedChat({
       </div>
       <div className="chat-stream">
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
-        {messages.map((item) => <CodexChatMessage key={item.id} item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} />)}
+        {messages.map((item, index) => {
+          const timestamp = visibleMessageTimestamp(item.createdAt);
+          const previousTimestamp = index ? visibleMessageTimestamp(messages[index - 1].createdAt) : Number.NaN;
+          const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
+          const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
+          const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
+        })}
         {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div><div className="message-actions"><button className="message-action" aria-label="Copy response" title="Copy" onClick={() => void navigator.clipboard.writeText(text)}><Icon name="copy" /></button></div></div>)}
         <div ref={streamEnd} />
       </div>

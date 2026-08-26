@@ -2352,6 +2352,9 @@ type BridgeChatMessage = {
     turnId?: string;
     threadId?: string;
     itemId?: string;
+    itemIds?: string[];
+    messageIds?: string[];
+    streaming?: boolean;
     turnStatus?: "thinking" | "tool" | "completed" | "error";
     blockType?: string;
     musicCard?: MusicCardData;
@@ -3029,7 +3032,12 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
 }
 
 function messageStableIds(item: BridgeChatMessage) {
-  return [item.id, item.metadata?.itemId].filter((value): value is string => Boolean(value));
+  return [...new Set([
+    item.id,
+    ...(item.metadata?.messageIds || []),
+    item.metadata?.itemId,
+    ...(item.metadata?.itemIds || []),
+  ].filter((value): value is string => Boolean(value)))];
 }
 
 function isMessageTombstoned(item: BridgeChatMessage, tombstones: MessageTombstone[], fallbackThreadId = "") {
@@ -3037,6 +3045,45 @@ function isMessageTombstoned(item: BridgeChatMessage, tombstones: MessageTombsto
   const itemThreadId = item.metadata?.threadId || "";
   return tombstones.some((tombstone) => ids.has(tombstone.stableId)
     && (!tombstone.threadId || !itemThreadId || tombstone.threadId === itemThreadId || tombstone.threadId === fallbackThreadId));
+}
+
+function groupCodexTurnMessages(items: BridgeChatMessage[]) {
+  const grouped: BridgeChatMessage[] = [];
+  for (const item of items) {
+    const previous = grouped[grouped.length - 1];
+    const turnId = item.metadata?.turnId;
+    const sameAgentTurn = item.role === "agent" && previous?.role === "agent" && turnId
+      && previous.metadata?.turnId === turnId && !item.metadata?.musicCard && !previous.metadata?.musicCard;
+    if (!sameAgentTurn) {
+      grouped.push({
+        ...item,
+        metadata: {
+          ...item.metadata,
+          itemIds: item.metadata?.itemIds || (item.metadata?.itemId ? [item.metadata.itemId] : []),
+          messageIds: item.metadata?.messageIds || [item.id],
+        },
+      });
+      continue;
+    }
+    const itemIds = [...new Set([...(previous.metadata?.itemIds || []), ...(item.metadata?.itemIds || []), item.metadata?.itemId].filter((value): value is string => Boolean(value)))];
+    const messageIds = [...new Set([...(previous.metadata?.messageIds || [previous.id]), ...(item.metadata?.messageIds || [item.id])])];
+    grouped[grouped.length - 1] = {
+      ...previous,
+      content: [previous.content, item.content].filter(Boolean).join("\n\n"),
+      status: item.status,
+      metadata: {
+        ...previous.metadata,
+        ...item.metadata,
+        itemId: previous.metadata?.itemId || item.metadata?.itemId,
+        itemIds,
+        messageIds,
+        thoughtSummary: previous.metadata?.thoughtSummary || item.metadata?.thoughtSummary,
+        turnStatus: item.metadata?.turnStatus || previous.metadata?.turnStatus,
+        streaming: previous.metadata?.streaming || item.metadata?.streaming,
+      },
+    };
+  }
+  return grouped;
 }
 
 function codexSocketUrl() {
@@ -3248,12 +3295,12 @@ function CodexChatMessage({
         </div>
         {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
-      <div className="message-actions">
+      {!item.metadata?.streaming && <div className="message-actions">
         <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
         <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>
         {!assistant && <button className="message-action" aria-label="编辑" title="编辑" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
         <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
-      </div>
+      </div>}
       <MessageAttachments items={item.metadata?.attachments || []} />
     </div>
   );
@@ -3333,6 +3380,7 @@ function ConnectedChat({
   const [resumeDismissed, setResumeDismissed] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
+  const [activeTurnRenderId, setActiveTurnRenderId] = useState("");
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
   const socket = useRef<WebSocket | null>(null);
@@ -3351,6 +3399,8 @@ function ConnectedChat({
   const fileInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
+  const userScrolledAwayRef = useRef(false);
+  const userScrollIntentRef = useRef(false);
 
   const save = (next: BridgeChatMessage[]) => {
     const sanitized = normalizeCodexMessages(next, conversationId)
@@ -3493,8 +3543,16 @@ function ConnectedChat({
     }
     if (message.method === "turn/completed") {
       setBusy(false);
-      const completedAgent = messagesRef.current.find((item) => item.role === "agent" && item.metadata?.turnId === activeTurnId.current);
-      if (completedAgent) updateMessage(completedAgent.id, (item) => ({ ...item, metadata: { ...item.metadata, turnStatus: "completed" } }));
+      const completedAgents = messagesRef.current.filter((item) => item.role === "agent" && item.metadata?.turnId === activeTurnId.current);
+      if (completedAgents.length) {
+        const completedIds = new Set(completedAgents.map((item) => item.id));
+        const completed = messagesRef.current.map((item) => completedIds.has(item.id)
+          ? { ...item, metadata: { ...item.metadata, turnStatus: "completed" as const } }
+          : item);
+        save(completed);
+        for (const item of completed.filter((candidate) => completedIds.has(candidate.id)))
+          void persistCodexMessage(item).catch(() => setHistoryWarning("历史暂未同步"));
+      }
       if (activeTurnUserId.current) {
         updateMessage(activeTurnUserId.current, (item) => ({
           ...item,
@@ -3664,7 +3722,12 @@ function ConnectedChat({
       method: "DELETE",
       headers: codexHistoryHeaders(true),
       cache: "no-store",
-      body: JSON.stringify({ itemId: item.metadata?.itemId || null, threadId: item.metadata?.threadId || threadId.current || null }),
+      body: JSON.stringify({
+        itemId: item.metadata?.itemId || null,
+        itemIds: item.metadata?.itemIds || [],
+        messageIds: item.metadata?.messageIds || [item.id],
+        threadId: item.metadata?.threadId || threadId.current || null,
+      }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string };
@@ -3678,7 +3741,8 @@ function ConnectedChat({
     tombstonesRef.current = [...tombstonesRef.current, ...stableIds.map((stableId) => ({ threadId: payload.threadId || item.metadata?.threadId || threadId.current, stableId, deletedAt }))];
     window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
     save(messagesRef.current.filter((message) => !isMessageTombstoned(message, tombstonesRef.current, threadId.current)));
-    setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
+    const deletedIds = new Set(messageStableIds(item));
+    setFavorites((current) => current.filter((favorite) => !deletedIds.has(favorite.messageId) && !deletedIds.has(favorite.itemId || "")));
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
     const { file, preview } = item;
@@ -3699,8 +3763,10 @@ function ConnectedChat({
     }
     setBusy(true); setError(""); setDraft("");
     nearBottomRef.current = true;
+    userScrolledAwayRef.current = false;
     const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "thinking", metadata: { attachments: [], turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
     activeTurnUserId.current = userMessage.id;
+    setActiveTurnRenderId(userMessage.metadata?.turnId || `pending-${userMessage.id}`);
     save([...messagesRef.current, userMessage]);
     rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
     try {
@@ -3717,6 +3783,7 @@ function ConnectedChat({
       const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
       const turn = (started.result?.turn || {}) as { id?: string };
       activeTurnId.current = turn.id || `turn-${userMessage.id}`;
+      setActiveTurnRenderId(activeTurnId.current);
       updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
       const completion = await Promise.race([done.then(() => "completed" as const), new Promise<"listening">((resolve) => window.setTimeout(() => resolve("listening"), 120000))]);
       if (completion === "listening") {
@@ -3811,11 +3878,17 @@ function ConnectedChat({
     const updateNearBottom = () => {
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       nearBottomRef.current = distance <= 96;
+      if (nearBottomRef.current) userScrolledAwayRef.current = false;
+      else if (userScrollIntentRef.current) userScrolledAwayRef.current = true;
+      userScrollIntentRef.current = false;
     };
+    const markUserScroll = () => { userScrollIntentRef.current = true; };
     updateNearBottom();
     scroller.addEventListener("scroll", updateNearBottom, { passive: true });
+    scroller.addEventListener("touchstart", markUserScroll, { passive: true });
+    scroller.addEventListener("wheel", markUserScroll, { passive: true });
     const resizeObserver = new ResizeObserver(() => {
-      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+      if (nearBottomRef.current || (busy && !userScrolledAwayRef.current)) scroller.scrollTop = scroller.scrollHeight;
     });
     resizeObserver.observe(scroller);
     nearBottomRef.current = true;
@@ -3823,8 +3896,10 @@ function ConnectedChat({
     return () => {
       resizeObserver.disconnect();
       scroller.removeEventListener("scroll", updateNearBottom);
+      scroller.removeEventListener("touchstart", markUserScroll);
+      scroller.removeEventListener("wheel", markUserScroll);
     };
-  }, [conversationId]);
+  }, [busy, conversationId]);
   useLayoutEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
@@ -3837,13 +3912,13 @@ function ConnectedChat({
     node.style.overflowY = node.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [draft]);
   useLayoutEffect(() => {
-    if (!nearBottomRef.current) return;
+    if (!nearBottomRef.current && (!busy || userScrolledAwayRef.current)) return;
     const scroller = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
     if (!scroller) return;
     requestAnimationFrame(() => {
-      if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+      if (nearBottomRef.current || (busy && !userScrolledAwayRef.current)) scroller.scrollTop = scroller.scrollHeight;
     });
-  }, [messages.length, streamingItems]);
+  }, [busy, messages.length, streamingItems]);
   useLayoutEffect(() => {
     if (!focusMessageId) return;
     const timer = window.setTimeout(() => {
@@ -3860,6 +3935,26 @@ function ConnectedChat({
     const two = (part: number) => String(part).padStart(2, "0");
     return `${value.getMonth() + 1}/${value.getDate()} ${two(value.getHours())}:${two(value.getMinutes())}:${two(value.getSeconds())}`;
   })();
+  const streamingEntries = Object.entries(streamingItems).filter(([, text]) => text.trim());
+  const timelineMessages = groupCodexTurnMessages(streamingEntries.length ? [...messages, {
+    id: `streaming-${activeTurnRenderId || "pending"}`,
+    conversationId,
+    role: "agent",
+    content: streamingEntries.map(([, text]) => text).join("\n\n"),
+    status: "thinking",
+    metadata: {
+      turnId: activeTurnRenderId || "pending",
+      itemId: streamingEntries[0][0],
+      itemIds: streamingEntries.map(([itemId]) => itemId),
+      turnStatus: "thinking",
+      streaming: true,
+    },
+    createdAt: [...messages].reverse().find((item) => item.role === "user")?.createdAt || new Date().toISOString(),
+    source: "codex",
+    timeSource: "turn",
+  }] : messages);
+  const hasActiveAgentOutput = timelineMessages.some((item) => item.role === "agent"
+    && item.metadata?.turnId === activeTurnRenderId && Boolean(item.content.trim()));
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
@@ -3869,14 +3964,10 @@ function ConnectedChat({
       </div>
       <div className="chat-stream">
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
-        {messages.map((item, index) => {
-          const turnId = item.metadata?.turnId;
-          const showAgentStatus = item.role === "agent" && !messages.slice(0, index).some((candidate) =>
-            candidate.role === "agent" && turnId && candidate.metadata?.turnId === turnId);
-          return <div className="message-with-date" key={item.id}><CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} showAgentStatus={showAgentStatus} /></div>;
+        {timelineMessages.map((item) => {
+          return <div className="message-with-date" key={item.id}><CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={(item.metadata?.messageIds || [item.id]).some((messageId) => favorites.some((favorite) => favorite.messageId === messageId))} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} showAgentStatus={item.role === "agent"} /></div>;
         })}
-        {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="message-meta turn-status"><i /><span>{pendingAgentDate} Thinking…</span></div></div>}
-        {Object.entries(streamingItems).map(([itemId, text], index) => <div className="agent-turn" key={itemId}>{index === 0 && <div className="message-meta turn-status"><i /><span>{pendingAgentDate} Thinking…</span></div>}<div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div></div>)}
+        {busy && !hasActiveAgentOutput && <div className="agent-turn pending-agent-turn"><div className="message-meta turn-status"><i /><span>{pendingAgentDate} Thinking…</span></div></div>}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}

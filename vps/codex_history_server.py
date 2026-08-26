@@ -342,6 +342,10 @@ class Handler(BaseHTTPRequestHandler):
             supplied_item_id = str(body.get("itemId") or "").strip()
             stable_ids = {message_id}
             if supplied_item_id: stable_ids.add(supplied_item_id)
+            for value in body.get("itemIds", []) if isinstance(body.get("itemIds"), list) else []:
+                if str(value).strip(): stable_ids.add(str(value).strip())
+            for value in body.get("messageIds", []) if isinstance(body.get("messageIds"), list) else []:
+                if str(value).strip(): stable_ids.add(str(value).strip())
             if row:
                 stable_ids.add(row["id"])
                 if row["item_id"]: stable_ids.add(row["item_id"])

@@ -3034,9 +3034,9 @@ function messageStableIds(item: BridgeChatMessage) {
 
 function isMessageTombstoned(item: BridgeChatMessage, tombstones: MessageTombstone[], fallbackThreadId = "") {
   const ids = new Set(messageStableIds(item));
-  const itemThreadId = item.metadata?.threadId || fallbackThreadId;
+  const itemThreadId = item.metadata?.threadId || "";
   return tombstones.some((tombstone) => ids.has(tombstone.stableId)
-    && (!tombstone.threadId || !itemThreadId || tombstone.threadId === itemThreadId));
+    && (!tombstone.threadId || !itemThreadId || tombstone.threadId === itemThreadId || tombstone.threadId === fallbackThreadId));
 }
 
 function codexSocketUrl() {

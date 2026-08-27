@@ -1050,7 +1050,7 @@ export default function Home() {
     <main className="stage" style={shellStyle}>
       <audio
         ref={globalPlayer}
-        src={currentTrack?.url}
+        src={currentTrack?.url ? apiUrl(`/api/music/proxy?url=${encodeURIComponent(currentTrack.url)}`) : undefined}
         onTimeUpdate={(event) => setPlaybackTime(event.currentTarget.currentTime)}
         onLoadedMetadata={(event) => setPlaybackDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onError={() => {
@@ -5880,10 +5880,7 @@ function MusicPlayerUI({
   const [annotationAuthor, setAnnotationAuthor] = useState<MusicAnnotation["author"]>("user");
   const [syncOpen, setSyncOpen] = useState(false);
   const [neteaseMeta, setNeteaseMeta] = useLocalDocument<Record<string, string>>("music-connection-meta", {});
-  const lyricsPanel = useRef<HTMLDivElement>(null);
   const tint = useCoverTint(track?.cover);
-  const lyrics = track?.lyrics || [];
-  const activeLyric = lyrics.reduce((active, line, index) => line.time <= state.currentTime ? index : active, -1);
   const canSeek = state.canSeek;
   const displayedTime = scrubValue ?? state.currentTime;
   const modeLabels: Record<MusicPlayMode, string> = { order: "顺序播放", repeat: "列表循环", single: "单曲循环", random: "随机播放" };
@@ -5892,18 +5889,10 @@ function MusicPlayerUI({
   const roomStyle = { "--music-tint": `${tint.r}, ${tint.g}, ${tint.b}` } as CSSProperties;
 
   useEffect(() => {
-    const openQueue = () => {
-      setPane("queue");
-      window.requestAnimationFrame(() => lyricsPanel.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
-    };
+    const openQueue = () => setPane("queue");
     window.addEventListener("vesper-music-open-queue", openQueue);
     return () => window.removeEventListener("vesper-music-open-queue", openQueue);
   }, []);
-  useEffect(() => {
-    if (pane !== "lyrics" || activeLyric < 0) return;
-    const active = lyricsPanel.current?.querySelector<HTMLElement>(`[data-lyric-index="${activeLyric}"]`);
-    active?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [activeLyric, pane]);
   const commitSeek = () => {
     if (scrubValue != null) adapter.seek(scrubValue);
     setScrubValue(null);
@@ -5953,10 +5942,7 @@ function MusicPlayerUI({
       </section>
     </> : <section className="music-empty-state"><Icon name="music" /><h2>播放队列为空</h2><p>同步网易云歌单或加入可播放歌曲后，这里才会出现真实播放状态。</p></section>}
 
-    <section className="music-lower-panel" ref={lyricsPanel}>
-      <div className="music-panel-tabs"><button className={pane === "lyrics" ? "active" : ""} onClick={() => setPane("lyrics")}>歌词</button><button className="sync-link" onClick={() => setSyncOpen(true)}>同步歌单</button></div>
-      <div className="lyrics-scroll">{lyrics.length ? lyrics.map((line, index) => <p data-lyric-index={index} className={index === activeLyric ? "active" : ""} key={`${line.time}-${index}`}>{line.text}</p>) : <EmptyState text="这首歌暂时没有可显示的歌词。" />}</div>
-    </section>
+    <div className="music-sync-bar"><button className="sync-link" onClick={() => setSyncOpen(true)}>同步歌单</button></div>
     {pane === "queue" && <div className="queue-sheet-layer"><button className="modal-scrim" aria-label="关闭队列" onClick={() => setPane("lyrics")} /><section className="queue-sheet"><div className="queue-sheet-head"><h3>播放队列 <small>{queue.length}</small></h3><button aria-label="关闭" onClick={() => setPane("lyrics")}><Icon name="close" /></button></div><div className="immersive-queue">{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="queue-track" onClick={() => adapter.select(index)}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "—"}</time>{selected === index && <i aria-label="正在播放" />}</button><button className="queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div></section></div>}
     {toast && <div className="music-toast" role="status">{toast}</div>}
     {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="关闭同步歌单" onClick={() => setSyncOpen(false)} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="关闭" onClick={() => setSyncOpen(false)}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); }} /></section></div>}

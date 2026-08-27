@@ -51,15 +51,13 @@ CREATE INDEX IF NOT EXISTS messages_created
   ON messages(vesper_conversation_id, created_at, id);
 CREATE TABLE IF NOT EXISTS message_tombstones (
   vesper_conversation_id TEXT NOT NULL REFERENCES conversations(vesper_conversation_id),
-  stable_key TEXT NOT NULL,
-  thread_id TEXT,
-  item_id TEXT,
-  message_id TEXT NOT NULL,
+  codex_thread_id TEXT NOT NULL DEFAULT '',
+  stable_id TEXT NOT NULL,
   deleted_at TEXT NOT NULL,
-  PRIMARY KEY (vesper_conversation_id, stable_key)
+  PRIMARY KEY (vesper_conversation_id, codex_thread_id, stable_id)
 );
 CREATE INDEX IF NOT EXISTS message_tombstones_lookup
-  ON message_tombstones(vesper_conversation_id, message_id, item_id);
+  ON message_tombstones(vesper_conversation_id, stable_id);
 """
 
 
@@ -206,13 +204,13 @@ class Handler(BaseHTTPRequestHandler):
             row = connection.execute("SELECT * FROM conversations WHERE vesper_conversation_id = ?", (conversation_id,)).fetchone()
             messages = connection.execute("""SELECT * FROM messages WHERE vesper_conversation_id = ?
               ORDER BY created_at ASC, rowid ASC LIMIT 1000""", (conversation_id,)).fetchall()
-            tombstones = connection.execute("""SELECT thread_id, item_id, message_id, deleted_at
+            tombstones = connection.execute("""SELECT codex_thread_id, stable_id, deleted_at
               FROM message_tombstones WHERE vesper_conversation_id = ?""", (conversation_id,)).fetchall()
         self.send_json(200, {
             "conversation": conversation(row) if row else None,
             "messages": [message(item) for item in messages],
-            "tombstones": [{"threadId": item["thread_id"], "itemId": item["item_id"],
-                            "messageId": item["message_id"], "deletedAt": item["deleted_at"]}
+            "tombstones": [{"threadId": item["codex_thread_id"], "stableId": item["stable_id"],
+                            "messageId": item["stable_id"], "deletedAt": item["deleted_at"]}
                            for item in tombstones],
         })
 
@@ -270,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
                 archived_at = NULL""",
               (conversation_id, title, created_at, conversation_updated_at, source))
             deleted = connection.execute("""SELECT 1 FROM message_tombstones
-              WHERE vesper_conversation_id = ? AND (message_id = ? OR (? IS NOT NULL AND item_id = ?)) LIMIT 1""",
+              WHERE vesper_conversation_id = ? AND (stable_id = ? OR (? IS NOT NULL AND stable_id = ?)) LIMIT 1""",
               (conversation_id, message_id, item_id, item_id)).fetchone()
             if deleted:
                 self.send_json(200, {"ok": True, "deleted": True})
@@ -318,12 +316,13 @@ class Handler(BaseHTTPRequestHandler):
             item_id = str(body.get("itemId") or (row["item_id"] if row else "") or "").strip() or None
             thread_id = str(body.get("threadId") or metadata.get("threadId") or
                             (conversation_row["codex_thread_id"] if conversation_row else "") or "").strip() or None
-            stable_key = f"{thread_id or 'conversation'}:{item_id or message_id}"
-            connection.execute("""INSERT INTO message_tombstones
-              (vesper_conversation_id, stable_key, thread_id, item_id, message_id, deleted_at)
-              VALUES (?, ?, ?, ?, ?, ?)
-              ON CONFLICT(vesper_conversation_id, stable_key) DO UPDATE SET deleted_at = excluded.deleted_at""",
-              (conversation_id, stable_key, thread_id, item_id, message_id, now()))
+            for stable_id in {message_id, item_id} - {None, ""}:
+                connection.execute("""INSERT INTO message_tombstones
+                  (vesper_conversation_id, codex_thread_id, stable_id, deleted_at)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT(vesper_conversation_id, codex_thread_id, stable_id)
+                  DO UPDATE SET deleted_at = excluded.deleted_at""",
+                  (conversation_id, thread_id or "", stable_id, now()))
             cursor = connection.execute(
                 "DELETE FROM messages WHERE vesper_conversation_id = ? AND id = ?",
                 (conversation_id, message_id),

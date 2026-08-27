@@ -2934,7 +2934,7 @@ type CodexInput =
   | { type: "image"; url: string }
   | { type: "audio"; url: string };
 type CodexPendingFile = { file: File; preview: string };
-type CodexMessageTombstone = { threadId?: string | null; itemId?: string | null; messageId: string; deletedAt?: string };
+type CodexMessageTombstone = { threadId?: string | null; stableId?: string; itemId?: string | null; messageId: string; deletedAt?: string };
 
 const CODEX_DYNAMIC_TOOLS = [
   {
@@ -3022,8 +3022,8 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
 
 function messageIsTombstoned(item: BridgeChatMessage, tombstones: CodexMessageTombstone[]) {
   return tombstones.some((deleted) =>
-    deleted.messageId === item.id ||
-    Boolean(deleted.itemId && item.metadata?.itemId && deleted.itemId === item.metadata.itemId));
+    deleted.messageId === item.id || deleted.stableId === item.id ||
+    Boolean(item.metadata?.itemId && (deleted.itemId === item.metadata.itemId || deleted.stableId === item.metadata.itemId)));
 }
 
 function codexSocketUrl() {
@@ -3831,7 +3831,7 @@ function ConnectedChat({
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">
-        {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
+        {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在准备对话…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
         {messages.map((item, index) => {
           const timestamp = visibleMessageTimestamp(item.createdAt);
           const previousTimestamp = index ? visibleMessageTimestamp(messages[index - 1].createdAt) : Number.NaN;

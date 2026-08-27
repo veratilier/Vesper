@@ -3324,7 +3324,7 @@ function ConnectedChat({
   const streamBuffers = useRef(new Map<string, string>());
   const reasoningBuffers = useRef(new Map<string, string>());
   const reasoningSummaries = useRef<string[]>([]);
-  const turnDone = useRef<((value?: unknown) => void) | null>(null);
+  const turnDone = useRef<((outcome: "completed" | "error") => void) | null>(null);
   const activeTurnId = useRef("");
   const activeTurnUserId = useRef("");
   const streamEnd = useRef<HTMLDivElement>(null);
@@ -3359,6 +3359,32 @@ function ConnectedChat({
   const setTurnStatus = (status: "thinking" | "tool" | "completed" | "error") => {
     if (!activeTurnUserId.current) return;
     updateMessage(activeTurnUserId.current, (item) => ({ ...item, metadata: { ...item.metadata, turnStatus: status } }));
+  };
+  // Every way a turn can end - completion, failure, abort, a dropped socket or a
+  // manual cancel - has to run this, otherwise `busy` stays true and the
+  // composer stays disabled until the page is reloaded.
+  const finishTurn = (outcome: "completed" | "error") => {
+    setBusy(false);
+    if (activeTurnUserId.current) {
+      updateMessage(activeTurnUserId.current, (item) => ({
+        ...item,
+        status: outcome === "completed" ? "completed" : "error",
+        metadata: {
+          ...item.metadata,
+          turnId: activeTurnId.current || item.metadata?.turnId,
+          turnStatus: outcome,
+          thoughtSummary: reasoningSummaries.current.length ? reasoningSummaries.current.join("\n") : undefined,
+        },
+      }));
+    }
+    setStreamingItems({});
+    streamBuffers.current.clear();
+    reasoningBuffers.current.clear();
+    reasoningSummaries.current = [];
+    turnDone.current?.(outcome);
+    turnDone.current = null;
+    activeTurnId.current = "";
+    activeTurnUserId.current = "";
   };
 
   const callServerTool = async (name: string, args: Record<string, unknown>, itemId: string) => {
@@ -3470,31 +3496,16 @@ function ConnectedChat({
         streamBuffers.current.delete(itemId);
       }
     }
-    if (message.method === "turn/completed") {
-      setBusy(false);
-      if (activeTurnUserId.current) {
-        updateMessage(activeTurnUserId.current, (item) => ({
-          ...item,
-          status: "completed",
-          metadata: {
-            ...item.metadata,
-            turnId: activeTurnId.current || item.metadata?.turnId,
-            turnStatus: "completed",
-            thoughtSummary: reasoningSummaries.current.length ? reasoningSummaries.current.join("\n") : undefined,
-          },
-        }));
-      }
-      setStreamingItems({});
-      streamBuffers.current.clear();
-      reasoningBuffers.current.clear();
-      reasoningSummaries.current = [];
-      turnDone.current?.(params.turn);
-      turnDone.current = null;
-      activeTurnId.current = "";
-      activeTurnUserId.current = "";
+    if (message.method === "turn/completed") finishTurn("completed");
+    if (message.method === "turn/failed" || message.method === "turn/aborted") {
+      const failure = (params.error || {}) as { message?: unknown };
+      setError(message.method === "turn/aborted"
+        ? "这次回复已被取消。"
+        : String(failure.message || "Codex 未能完成这次回复，请重试。"));
+      finishTurn("error");
     }
     if (message.method === "turn/started" || message.method === "turn/inProgress") setTurnStatus("thinking");
-    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "item/tool/call", "currentTime/read"]);
+    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/failed", "turn/aborted", "turn/started", "turn/inProgress", "item/started", "item/tool/call", "currentTime/read"]);
     if (message.method && !knownMethods.has(message.method) && !message.method.includes("requestApproval")) {
       logCodexDiagnostic(message);
       if (typeof message.id === "number") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
@@ -3540,12 +3551,26 @@ function ConnectedChat({
     ws.onmessage = (event) => {
       try { handleSocketMessage(JSON.parse(String(event.data)) as CodexSocketMessage); } catch { setError("Invalid message from Codex app-server"); }
     };
-    ws.onclose = () => { setOnline(false); socket.current = null; };
+    ws.onclose = () => {
+      setOnline(false);
+      socket.current = null;
+      // Pending JSON-RPC calls would otherwise never settle and their awaiting
+      // callers would hang forever.
+      for (const pendingRpc of rpc.current.values()) pendingRpc.reject(new Error("Codex app-server disconnected"));
+      rpc.current.clear();
+      if (activeTurnUserId.current || activeTurnId.current) {
+        setError("Codex app-server disconnected before the reply finished.");
+        finishTurn("error");
+      }
+    };
     ws.onerror = () => setError("Codex app-server is offline");
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => resolve();
       ws.onerror = () => reject(new Error("Codex app-server is offline"));
     });
+    // The handshake promise replaced onerror with its own reject; restore the
+    // reporting handler so errors after the socket opens still reach the user.
+    ws.onerror = () => setError("Codex app-server is offline");
     setOnline(true);
     await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
     ws.send(JSON.stringify({ method: "initialized" }));
@@ -3601,6 +3626,7 @@ function ConnectedChat({
     try {
       await sendRpc("turn/interrupt", { threadId: threadId.current, turnId: activeTurnId.current });
       setError("已请求取消当前回复。");
+      finishTurn("error");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not cancel the active turn");
     }
@@ -3682,16 +3708,19 @@ function ConnectedChat({
       for (const item of prepared) if (item.input) input.push(item.input);
       await connect();
       if (!threadId.current) throw new Error("No Codex thread");
-      const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
+      const done = new Promise<"completed" | "error">((resolve) => { turnDone.current = resolve; });
       const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
       const turn = (started.result?.turn || {}) as { id?: string };
       activeTurnId.current = turn.id || `turn-${userMessage.id}`;
       updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
-      const completion = await Promise.race([done.then(() => "completed" as const), new Promise<"listening">((resolve) => window.setTimeout(() => resolve("listening"), 120000))]);
+      const completion = await Promise.race([done, new Promise<"listening">((resolve) => window.setTimeout(() => resolve("listening"), 120000))]);
       if (completion === "listening") {
         setError("回复仍在服务器上运行，Vesper 会继续监听；也可手动取消。");
         return;
       }
+      // A failed turn already reported itself and cleared `busy` in finishTurn;
+      // keep the attachments so the message can be retried.
+      if (completion === "error") return;
       setPending([]);
     } catch (reason) {
       updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
@@ -5509,7 +5538,7 @@ function ConnectionModal({
         const subscription = serializeSubscription(result.subscription);
         const response = await fetch(apiUrl("/api/push"), {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: appHeaders(true),
           body: JSON.stringify({ action: "test", subscription }),
         });
         if (!response.ok) throw new Error("订阅已建立，但服务端测试推送失败");

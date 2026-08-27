@@ -14,6 +14,8 @@ type MusicTrack = {
   playable?: boolean;
 };
 
+const DEFAULT_API = "https://music-api.r-vera.com";
+
 function json(request: Request, value: unknown, status = 200) {
   return Response.json(value, { status, headers: corsHeaders(request, { "cache-control": "no-store" }) });
 }
@@ -32,25 +34,16 @@ async function writeDocument(key: string, value: unknown) {
     .bind(key, JSON.stringify(value), new Date().toISOString()).run();
 }
 
-async function neteaseApi(path: string, cookie: string, data?: Record<string, string>) {
-  const url = `https://music.163.com${path}`;
-  const headers: Record<string, string> = {
-    "Cookie": cookie,
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Referer": "https://music.163.com/",
-  };
-  const init: RequestInit = { headers };
-  if (data) {
-    headers["Content-Type"] = "application/x-www-form-urlencoded";
-    init.method = "POST";
-    init.body = new URLSearchParams(data).toString();
-  } else {
-    init.method = "GET";
-  }
-  const response = await fetch(url, init);
+async function neteaseProxy(baseUrl: string, path: string, params: Record<string, string>, cookie?: string) {
+  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" };
+  if (cookie) headers["cookie"] = cookie;
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers,
+    body: new URLSearchParams(params),
+  });
   const result = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok || (result.code !== undefined && Number(result.code) !== 200))
-    throw new Error(`网易云接口返回 ${result.code ?? response.status}`);
+  if (!response.ok || Number(result.code || 200) >= 400) throw new Error(`网易云接口返回 ${result.code || response.status}`);
   return result;
 }
 
@@ -72,46 +65,30 @@ export async function POST(request: Request) {
       musicU?: string;
       csrf?: string;
       uid?: string;
+      baseUrl?: string;
     };
     if (body.action !== "sync") throw new Error("未知同步操作");
-    if (!body.musicU) throw new Error("请填写 MUSIC_U");
     const playlistId = playlistIdFrom(String(body.playlistId || ""));
     if (!playlistId) throw new Error("请填写歌单 ID");
 
-    const cookie = `MUSIC_U=${body.musicU}${body.csrf ? `; __csrf=${body.csrf}` : ""}`;
+    const baseUrl = (body.baseUrl || DEFAULT_API).trim().replace(/\/$/, "");
+    const cookie = body.musicU ? `MUSIC_U=${body.musicU}${body.csrf ? `; __csrf=${body.csrf}` : ""}` : undefined;
 
-    const detail = await neteaseApi(`/api/v6/playlist/detail?id=${playlistId}`, cookie);
-    const playlist = (detail.playlist || {}) as {
-      tracks?: Array<{ id: number | string; name: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } }>;
-    };
-    const songs = playlist.tracks || [];
+    const detail = await neteaseProxy(baseUrl, "/playlist/track/all", { id: playlistId, limit: "500", offset: "0" }, cookie);
+    const songs = (detail.songs as Array<{ id: number | string; name: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } }> | undefined) || [];
     if (!songs.length) throw new Error("歌单中没有可同步歌曲");
 
-    const songIds = songs.map((s) => s.id);
-
-    const audioUrlMap = new Map<string, string>();
-    for (let offset = 0; offset < songIds.length; offset += 100) {
-      const batch = songIds.slice(offset, offset + 100);
-      const ids = batch.join(",");
-      try {
-        const urlResult = await neteaseApi(`/api/song/enhance/player/url/v1?ids=[${ids}]&level=standard&encodeType=mp3`, cookie);
-        for (const item of (urlResult.data as Array<{ id?: number | string; url?: string }> | undefined) || []) {
-          if (item.id && item.url) audioUrlMap.set(String(item.id), item.url);
-        }
-      } catch {
-        // fallback: try older endpoint
-        try {
-          const urlResult = await neteaseApi("/api/song/enhance/player/url", cookie, { ids: `[${ids}]`, br: "320000" });
-          for (const item of (urlResult.data as Array<{ id?: number | string; url?: string }> | undefined) || []) {
-            if (item.id && item.url) audioUrlMap.set(String(item.id), item.url);
-          }
-        } catch { /* some songs may not have playable URLs */ }
-      }
+    const urlMap = new Map<string, string>();
+    for (let offset = 0; offset < songs.length; offset += 100) {
+      const ids = songs.slice(offset, offset + 100).map((s) => s.id).join(",");
+      const urls = await neteaseProxy(baseUrl, "/song/url/v1", { id: ids, level: "standard" }, cookie);
+      for (const item of (urls.data as Array<{ id?: number | string; url?: string }> | undefined) || [])
+        if (item.id && item.url) urlMap.set(String(item.id), item.url);
     }
 
     const incoming: MusicTrack[] = songs.map((song) => {
       const neteaseId = String(song.id);
-      const audioUrl = audioUrlMap.get(neteaseId) || "";
+      const audioUrl = urlMap.get(neteaseId) || "";
       return {
         id: `netease-${neteaseId}`,
         neteaseId,
@@ -139,10 +116,11 @@ export async function POST(request: Request) {
     await writeDocument("music", merged);
     await writeDocument("musicQueue", queue);
     const syncedAt = new Date().toISOString();
+    const playable = incoming.filter((t) => t.playable).length;
     return json(request, {
       ok: true, tracks: merged, queue,
-      meta: { playlistId, musicU: body.musicU, ...(body.csrf ? { csrf: body.csrf } : {}), ...(body.uid ? { uid: body.uid } : {}), lastSyncAt: syncedAt },
-      summary: `同步完成：读取 ${incoming.length} 首，新增 ${Math.max(0, merged.length - existing.length)} 首；本地独有歌曲已保留`,
+      meta: { playlistId, ...(body.musicU ? { musicU: body.musicU } : {}), ...(body.csrf ? { csrf: body.csrf } : {}), ...(body.uid ? { uid: body.uid } : {}), lastSyncAt: syncedAt },
+      summary: `同步完成：${incoming.length} 首歌曲，${playable} 首可播放，新增 ${Math.max(0, merged.length - existing.length)} 首`,
     });
   } catch (reason) {
     return json(request, { error: reason instanceof Error ? reason.message : "网易云同步失败" }, 400);

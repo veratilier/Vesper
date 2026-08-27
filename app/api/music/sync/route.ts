@@ -32,10 +32,12 @@ async function writeDocument(key: string, value: unknown) {
     .bind(key, JSON.stringify(value), new Date().toISOString()).run();
 }
 
-async function neteaseRequest(baseUrl: string, path: string, params: Record<string, string>) {
+async function neteaseRequest(baseUrl: string, path: string, params: Record<string, string>, cookie?: string) {
+  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" };
+  if (cookie) headers["cookie"] = cookie;
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    headers,
     body: new URLSearchParams(params),
   });
   const result = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -59,21 +61,24 @@ export async function POST(request: Request) {
       action?: "sync";
       baseUrl?: string;
       playlistId?: string;
+      musicU?: string;
+      uid?: string;
       bidirectional?: string | boolean;
     };
     const baseUrl = (body.baseUrl || "https://music-api.r-vera.com").trim().replace(/\/$/, "");
     if (!/^https?:\/\//i.test(baseUrl)) throw new Error("网易云接口地址无效");
     if (body.bidirectional === true || body.bidirectional === "true") throw new Error("双向同步暂未启用；当前只执行保留本地歌曲的一向导入");
     if (body.action !== "sync") throw new Error("未知同步操作");
+    const cookie = body.musicU ? `MUSIC_U=${body.musicU}` : undefined;
     const playlistId = playlistIdFrom(String(body.playlistId || ""));
     if (!playlistId) throw new Error("请填写网易云歌单 ID");
-    const detail = await neteaseRequest(baseUrl, "/playlist/track/all", { id: playlistId, limit: "500", offset: "0" });
+    const detail = await neteaseRequest(baseUrl, "/playlist/track/all", { id: playlistId, limit: "500", offset: "0" }, cookie);
     const songs = (detail.songs as Array<{ id: number | string; name: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } }> | undefined) || [];
     if (!songs.length) throw new Error("歌单中没有可同步歌曲");
     const urlMap = new Map<string, string>();
     for (let offset = 0; offset < songs.length; offset += 100) {
       const ids = songs.slice(offset, offset + 100).map((song) => song.id).join(",");
-      const urls = await neteaseRequest(baseUrl, "/song/url/v1", { id: ids, level: "standard" });
+      const urls = await neteaseRequest(baseUrl, "/song/url/v1", { id: ids, level: "standard" }, cookie);
       for (const item of (urls.data as Array<{ id?: number | string; url?: string }> | undefined) || []) if (item.id && item.url) urlMap.set(String(item.id), item.url);
     }
     const incoming: MusicTrack[] = songs.map((song) => {
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
     await writeDocument("music", merged);
     await writeDocument("musicQueue", queue);
     const syncedAt = new Date().toISOString();
-    return json(request, { ok: true, tracks: merged, queue, meta: { baseUrl, playlistId, lastSyncAt: syncedAt }, summary: `同步完成：读取 ${incoming.length} 首，新增 ${Math.max(0, merged.length - existing.length)} 首；本地独有歌曲已保留` });
+    return json(request, { ok: true, tracks: merged, queue, meta: { baseUrl, playlistId, ...(body.musicU ? { musicU: body.musicU } : {}), ...(body.uid ? { uid: body.uid } : {}), lastSyncAt: syncedAt }, summary: `同步完成：读取 ${incoming.length} 首，新增 ${Math.max(0, merged.length - existing.length)} 首；本地独有歌曲已保留` });
   } catch (reason) {
     return json(request, { error: reason instanceof Error ? reason.message : "网易云同步失败" }, 400);
   }

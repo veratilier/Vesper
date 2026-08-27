@@ -5923,6 +5923,7 @@ function MusicPlayerUI({
       {together.status === "connected" ? <span className="together-state connected">已连接</span> : <button className="together-invite" onClick={onInvite}>{together.status === "invited" ? "已邀请" : "邀请一起听"}</button>}
     </section>
 
+
     {track ? <>
       <section className="cover-orbit" aria-label={`正在播放：${track.title}`}>
         <div className={state.playing ? "cover-stardust rotating" : "cover-stardust"}>
@@ -5963,13 +5964,15 @@ function MusicPlayerUI({
 
 function NeteaseSyncPanel({ meta, onSync }: { meta: Record<string, string>; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {
   const [playlistId, setPlaylistId] = useState(meta.playlistId || "");
+  const [musicU, setMusicU] = useState(meta.musicU || "");
+  const [uid, setUid] = useState(meta.uid || "");
   const [message, setMessage] = useState(meta.lastSyncAt ? `上次同步：${new Date(meta.lastSyncAt).toLocaleString()}` : "");
   const [syncing, setSyncing] = useState(false);
   const sync = async () => {
     if (!playlistId.trim()) { setMessage("请先粘贴网易云歌单 ID"); return; }
     setSyncing(true); setMessage("正在读取网易云歌单…");
     try {
-      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "sync", playlistId: playlistId.trim() }) });
+      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "sync", playlistId: playlistId.trim(), ...(musicU.trim() ? { musicU: musicU.trim() } : {}), ...(uid.trim() ? { uid: uid.trim() } : {}) }) });
       const result = await response.json() as { error?: string; tracks?: Track[]; queue?: Track[]; meta?: Record<string, string>; summary?: string };
       if (!response.ok) throw new Error(result.error || "网易云同步失败");
       const nextMeta = result.meta || { playlistId: playlistId.trim(), lastSyncAt: new Date().toISOString() };
@@ -5978,7 +5981,7 @@ function NeteaseSyncPanel({ meta, onSync }: { meta: Record<string, string>; onSy
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "同步失败"); }
     finally { setSyncing(false); }
   };
-  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>只需粘贴歌单 ID（也可粘贴包含 ID 的歌单链接）。Vesper 会读取公开歌单；没有可播放 URL 的版权歌曲会保留为不可播放状态。</p><label className="profile-field"><span>网易云歌单 ID</span><input inputMode="numeric" autoComplete="off" value={playlistId} placeholder="例如 123456789" onChange={(event) => setPlaylistId(event.target.value)} /></label><div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，不删除</b></div><div className="sync-buttons"><button className="save-profile" disabled={syncing || !playlistId.trim()} onClick={() => void sync()}>{syncing ? "同步中…" : "同步歌单"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
+  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>填写 MUSIC_U 和账号 ID 可同步私有歌单并获取版权歌曲播放地址。公开歌单只需歌单 ID。</p><label className="profile-field"><span>MUSIC_U</span><input autoComplete="off" value={musicU} placeholder="浏览器 Cookie 中的 MUSIC_U 值" onChange={(event) => setMusicU(event.target.value)} /></label><label className="profile-field"><span>网易云账号 ID</span><input inputMode="numeric" autoComplete="off" value={uid} placeholder="个人主页中的数字 ID" onChange={(event) => setUid(event.target.value)} /></label><label className="profile-field"><span>歌单 ID</span><input inputMode="numeric" autoComplete="off" value={playlistId} placeholder="例如 123456789（支持粘贴链接）" onChange={(event) => setPlaylistId(event.target.value)} /></label><div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，不删除</b></div><div className="sync-buttons"><button className="save-profile" disabled={syncing || !playlistId.trim()} onClick={() => void sync()}>{syncing ? "同步中…" : "同步歌单"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
 }
 
 function MemoryLibrary() {

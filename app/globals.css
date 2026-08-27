@@ -3628,6 +3628,7 @@ body {
   position: relative;
   isolation: isolate;
   overflow: hidden;
+  margin: 0 -20px calc(-26px - var(--safe-bottom));
   min-height: calc(100dvh - var(--safe-top) - 54px);
   padding: 8px 16px calc(28px + var(--safe-bottom));
   background:
@@ -3643,16 +3644,6 @@ body {
   background-image: radial-gradient(rgba(100, 131, 137, .16) .6px, transparent .7px);
   background-size: 7px 7px;
   mask-image: linear-gradient(to bottom, #000, transparent 78%);
-}
-.music-player-ui::after {
-  content: "";
-  position: fixed;
-  z-index: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: env(safe-area-inset-bottom, 0px);
-  background: linear-gradient(155deg, rgba(248, 251, 251, .96), rgba(232, 241, 242, .8));
 }
 .listening-room-top {
   display: flex;

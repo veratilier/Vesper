@@ -115,6 +115,7 @@ export async function POST(request: Request) {
     for (const track of incoming) if (!queue.some((item) => byKey(item) === byKey(track))) queue.push(track);
     await writeDocument("music", merged);
     await writeDocument("musicQueue", queue);
+    if (body.musicU) await writeDocument("musicAuth", { musicU: body.musicU, csrf: body.csrf || "" });
     const syncedAt = new Date().toISOString();
     const playable = incoming.filter((t) => t.playable).length;
     return json(request, {

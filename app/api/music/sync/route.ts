@@ -88,18 +88,30 @@ export async function POST(request: Request) {
     if (!songs.length) throw new Error("歌单中没有可同步歌曲");
 
     const songIds = songs.map((s) => s.id);
-    const urlMap = new Map<string, string>();
-    for (let offset = 0; offset < songIds.length; offset += 50) {
-      const batch = songIds.slice(offset, offset + 50);
-      const c = JSON.stringify(batch.map((id) => ({ id: Number(id) })));
-      const detailResult = await neteaseApi("/api/v3/song/detail", cookie, { c });
-      for (const s of (detailResult.songs as Array<{ id: number | string; al?: { picUrl?: string } }> | undefined) || []) {
-        if (s.al?.picUrl) urlMap.set(String(s.id), s.al.picUrl);
+
+    const audioUrlMap = new Map<string, string>();
+    for (let offset = 0; offset < songIds.length; offset += 100) {
+      const batch = songIds.slice(offset, offset + 100);
+      const ids = batch.join(",");
+      try {
+        const urlResult = await neteaseApi(`/api/song/enhance/player/url/v1?ids=[${ids}]&level=standard&encodeType=mp3`, cookie);
+        for (const item of (urlResult.data as Array<{ id?: number | string; url?: string }> | undefined) || []) {
+          if (item.id && item.url) audioUrlMap.set(String(item.id), item.url);
+        }
+      } catch {
+        // fallback: try older endpoint
+        try {
+          const urlResult = await neteaseApi("/api/song/enhance/player/url", cookie, { ids: `[${ids}]`, br: "320000" });
+          for (const item of (urlResult.data as Array<{ id?: number | string; url?: string }> | undefined) || []) {
+            if (item.id && item.url) audioUrlMap.set(String(item.id), item.url);
+          }
+        } catch { /* some songs may not have playable URLs */ }
       }
     }
 
     const incoming: MusicTrack[] = songs.map((song) => {
       const neteaseId = String(song.id);
+      const audioUrl = audioUrlMap.get(neteaseId) || "";
       return {
         id: `netease-${neteaseId}`,
         neteaseId,
@@ -107,9 +119,9 @@ export async function POST(request: Request) {
         artist: song.ar?.map((a) => a.name).filter(Boolean).join(" / ") || "未知歌手",
         album: song.al?.name || "",
         duration: song.dt ? `${Math.floor(song.dt / 60000)}:${String(Math.floor(song.dt / 1000) % 60).padStart(2, "0")}` : undefined,
-        cover: urlMap.get(neteaseId) || song.al?.picUrl || "",
-        url: `https://music.163.com/song/media/outer/url?id=${neteaseId}.mp3`,
-        playable: true,
+        cover: song.al?.picUrl || "",
+        url: audioUrl,
+        playable: Boolean(audioUrl),
       };
     });
 

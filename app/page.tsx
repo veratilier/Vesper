@@ -5919,7 +5919,7 @@ function MusicPlayerUI({
         <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
         <AvatarMark src={userAvatar} label={userName} kind="user" />
       </div>
-      <div className="together-copy"><small>PRIVATE LISTENING ROOM</small><p>{togetherCopy(together)}</p></div>
+      <div className="together-copy"><p>{togetherCopy(together)}</p></div>
       {together.status === "connected" ? <span className="together-state connected">已连接</span> : <button className="together-invite" onClick={onInvite}>{together.status === "invited" ? "已邀请" : "邀请一起听"}</button>}
     </section>
 

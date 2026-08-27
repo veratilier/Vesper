@@ -1050,7 +1050,7 @@ export default function Home() {
     <main className="stage" style={shellStyle}>
       <audio
         ref={globalPlayer}
-        src={currentTrack?.url ? apiUrl(`/api/music/proxy?url=${encodeURIComponent(currentTrack.url)}`) : undefined}
+        src={currentTrack?.neteaseId ? apiUrl(`/api/music/proxy?id=${currentTrack.neteaseId}`) : currentTrack?.url ? apiUrl(`/api/music/proxy?url=${encodeURIComponent(currentTrack.url)}`) : undefined}
         onTimeUpdate={(event) => setPlaybackTime(event.currentTarget.currentTime)}
         onLoadedMetadata={(event) => setPlaybackDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onError={() => {

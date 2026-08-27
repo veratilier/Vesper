@@ -3644,6 +3644,16 @@ body {
   background-size: 7px 7px;
   mask-image: linear-gradient(to bottom, #000, transparent 78%);
 }
+.music-player-ui::after {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: env(safe-area-inset-bottom, 0px);
+  background: linear-gradient(155deg, rgba(248, 251, 251, .96), rgba(232, 241, 242, .8));
+}
 .listening-room-top {
   display: flex;
   flex-direction: column;

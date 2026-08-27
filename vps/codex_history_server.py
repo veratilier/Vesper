@@ -49,6 +49,17 @@ CREATE INDEX IF NOT EXISTS messages_turn
   ON messages(vesper_conversation_id, turn_id);
 CREATE INDEX IF NOT EXISTS messages_created
   ON messages(vesper_conversation_id, created_at, id);
+CREATE TABLE IF NOT EXISTS message_tombstones (
+  vesper_conversation_id TEXT NOT NULL REFERENCES conversations(vesper_conversation_id),
+  stable_key TEXT NOT NULL,
+  thread_id TEXT,
+  item_id TEXT,
+  message_id TEXT NOT NULL,
+  deleted_at TEXT NOT NULL,
+  PRIMARY KEY (vesper_conversation_id, stable_key)
+);
+CREATE INDEX IF NOT EXISTS message_tombstones_lookup
+  ON message_tombstones(vesper_conversation_id, message_id, item_id);
 """
 
 
@@ -195,7 +206,15 @@ class Handler(BaseHTTPRequestHandler):
             row = connection.execute("SELECT * FROM conversations WHERE vesper_conversation_id = ?", (conversation_id,)).fetchone()
             messages = connection.execute("""SELECT * FROM messages WHERE vesper_conversation_id = ?
               ORDER BY created_at ASC, rowid ASC LIMIT 1000""", (conversation_id,)).fetchall()
-        self.send_json(200, {"conversation": conversation(row) if row else None, "messages": [message(item) for item in messages]})
+            tombstones = connection.execute("""SELECT thread_id, item_id, message_id, deleted_at
+              FROM message_tombstones WHERE vesper_conversation_id = ?""", (conversation_id,)).fetchall()
+        self.send_json(200, {
+            "conversation": conversation(row) if row else None,
+            "messages": [message(item) for item in messages],
+            "tombstones": [{"threadId": item["thread_id"], "itemId": item["item_id"],
+                            "messageId": item["message_id"], "deletedAt": item["deleted_at"]}
+                           for item in tombstones],
+        })
 
     def upsert_conversation(self, conversation_id: str) -> None:
         body = self.body()
@@ -250,6 +269,12 @@ class Handler(BaseHTTPRequestHandler):
                 updated_at = CASE WHEN excluded.updated_at > conversations.updated_at THEN excluded.updated_at ELSE conversations.updated_at END,
                 archived_at = NULL""",
               (conversation_id, title, created_at, conversation_updated_at, source))
+            deleted = connection.execute("""SELECT 1 FROM message_tombstones
+              WHERE vesper_conversation_id = ? AND (message_id = ? OR (? IS NOT NULL AND item_id = ?)) LIMIT 1""",
+              (conversation_id, message_id, item_id, item_id)).fetchone()
+            if deleted:
+                self.send_json(200, {"ok": True, "deleted": True})
+                return
             existing = connection.execute("""SELECT id FROM messages WHERE vesper_conversation_id = ?
               AND ((? IS NOT NULL AND item_id = ?) OR id = ?) LIMIT 1""",
               (conversation_id, item_id, item_id, message_id)).fetchone()
@@ -275,7 +300,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"ok": True, "archived": cursor.rowcount})
 
     def delete_message(self, conversation_id: str, message_id: str) -> None:
+        body = self.body()
         with db() as connection:
+            row = connection.execute(
+                "SELECT item_id, metadata_json FROM messages WHERE vesper_conversation_id = ? AND id = ?",
+                (conversation_id, message_id),
+            ).fetchone()
+            metadata = {}
+            if row:
+                try:
+                    metadata = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    metadata = {}
+            conversation_row = connection.execute(
+                "SELECT codex_thread_id FROM conversations WHERE vesper_conversation_id = ?", (conversation_id,)
+            ).fetchone()
+            item_id = str(body.get("itemId") or (row["item_id"] if row else "") or "").strip() or None
+            thread_id = str(body.get("threadId") or metadata.get("threadId") or
+                            (conversation_row["codex_thread_id"] if conversation_row else "") or "").strip() or None
+            stable_key = f"{thread_id or 'conversation'}:{item_id or message_id}"
+            connection.execute("""INSERT INTO message_tombstones
+              (vesper_conversation_id, stable_key, thread_id, item_id, message_id, deleted_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(vesper_conversation_id, stable_key) DO UPDATE SET deleted_at = excluded.deleted_at""",
+              (conversation_id, stable_key, thread_id, item_id, message_id, now()))
             cursor = connection.execute(
                 "DELETE FROM messages WHERE vesper_conversation_id = ? AND id = ?",
                 (conversation_id, message_id),
@@ -289,10 +337,7 @@ class Handler(BaseHTTPRequestHandler):
                     "UPDATE conversations SET updated_at = ? WHERE vesper_conversation_id = ?",
                     (latest or now(), conversation_id),
                 )
-        if not cursor.rowcount:
-            self.send_json(404, {"error": "Message not found"})
-            return
-        self.send_json(200, {"ok": True, "deleted": 1})
+        self.send_json(200, {"ok": True, "deleted": cursor.rowcount, "tombstoned": 1})
 
     do_GET = dispatch
     do_POST = dispatch

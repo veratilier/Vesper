@@ -2934,6 +2934,7 @@ type CodexInput =
   | { type: "image"; url: string }
   | { type: "audio"; url: string };
 type CodexPendingFile = { file: File; preview: string };
+type CodexMessageTombstone = { threadId?: string | null; itemId?: string | null; messageId: string; deletedAt?: string };
 
 const CODEX_DYNAMIC_TOOLS = [
   {
@@ -3017,6 +3018,12 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
     if (item.role === "agent" && item.metadata?.blockType && !item.content.trim()) return [];
     return [{ ...item, conversationId: item.conversationId || conversationId }];
   });
+}
+
+function messageIsTombstoned(item: BridgeChatMessage, tombstones: CodexMessageTombstone[]) {
+  return tombstones.some((deleted) =>
+    deleted.messageId === item.id ||
+    Boolean(deleted.itemId && item.metadata?.itemId && deleted.itemId === item.metadata.itemId));
 }
 
 function codexSocketUrl() {
@@ -3324,9 +3331,10 @@ function ConnectedChat({
   const fileInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
+  const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
 
   const save = (next: BridgeChatMessage[]) => {
-    const sanitized = normalizeCodexMessages(next, conversationId);
+    const sanitized = normalizeCodexMessages(next, conversationId).filter((item) => !messageIsTombstoned(item, tombstonesRef.current));
     messagesRef.current = sanitized;
     setMessages(sanitized);
     window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(sanitized));
@@ -3523,7 +3531,7 @@ function ConnectedChat({
       const timeSource = existing?.timeSource || existing?.metadata?.timeSource || (messageTime ? "message" : turnTime ? "turn" : threadTime ? "thread" : "unknown");
       return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
-    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored));
+    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageIsTombstoned(item, tombstonesRef.current))));
   };
   const connect = async () => {
     if (socket.current?.readyState === WebSocket.OPEN) return;
@@ -3557,9 +3565,9 @@ function ConnectedChat({
         hydrateThreadSnapshot(resumed);
         setResumeError("");
       } catch (reason) {
-        const detail = reason instanceof Error ? reason.message : "Unknown resume error";
-        setResumeError(`无法恢复原 Codex thread：${detail}`);
-        throw new Error(`原会话映射已保留。${detail}`);
+        logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
+        setResumeError("这段旧对话无法连接原 Codex 会话，但已保存的聊天记录仍可查看。");
+        throw new Error("原会话暂时无法继续，可新建替代会话。 ");
       }
     } else {
       const result = await sendRpc("thread/start", { dynamicTools, approvalPolicy: "on-request", summary: "concise" });
@@ -3629,8 +3637,9 @@ function ConnectedChat({
     if (!window.confirm("删除此消息？此操作无法撤销。")) return;
     const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(item.id)}`), {
       method: "DELETE",
-      headers: codexHistoryHeaders(),
+      headers: codexHistoryHeaders(true),
       cache: "no-store",
+      body: JSON.stringify({ messageId: item.id, itemId: item.metadata?.itemId || null, threadId: item.metadata?.threadId || threadId.current || null }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({})) as { error?: string };
@@ -3638,7 +3647,10 @@ function ConnectedChat({
       setError(detail);
       throw new Error(detail);
     }
-    save(messagesRef.current.filter((message) => message.id !== item.id));
+    const tombstone = { messageId: item.id, itemId: item.metadata?.itemId || null, threadId: item.metadata?.threadId || threadId.current || null, deletedAt: new Date().toISOString() };
+    tombstonesRef.current = [...tombstonesRef.current.filter((entry) => entry.messageId !== tombstone.messageId && (!tombstone.itemId || entry.itemId !== tombstone.itemId)), tombstone];
+    window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
+    save(messagesRef.current.filter((message) => !messageIsTombstoned(message, tombstonesRef.current)));
     setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
@@ -3716,11 +3728,15 @@ function ConnectedChat({
         const payload = await response.json() as {
           conversation?: { codexThreadId?: string | null } | null;
           messages?: BridgeChatMessage[];
+          tombstones?: CodexMessageTombstone[];
         };
         if (cancelled) return;
+        tombstonesRef.current = [...(payload.tombstones || []), ...readLocalValue<CodexMessageTombstone[]>(`vesper-codex-tombstones-${conversationId}`, [])]
+          .filter((item, index, all) => all.findIndex((candidate) => candidate.messageId === item.messageId && candidate.itemId === item.itemId) === index);
+        window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
         const remote = normalizeCodexMessages(payload.messages || [], conversationId);
         const cached = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId);
-        save(mergeCodexMessages(remote, cached));
+        save(mergeCodexMessages(remote, cached).filter((item) => !messageIsTombstoned(item, tombstonesRef.current)));
         threadId.current = payload.conversation?.codexThreadId || "";
       } catch {
         if (!cancelled) setHistoryWarning("历史暂未同步");
@@ -3812,7 +3828,7 @@ function ConnectedChat({
       <div className="chat-status-stack">
         <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
-        {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>新建替代会话</button></div>}
+        {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在恢复历史…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}

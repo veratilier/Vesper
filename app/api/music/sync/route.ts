@@ -15,7 +15,9 @@ type MusicTrack = {
 };
 
 function json(request: Request, value: unknown, status = 200) {
-  return Response.json(value, { status, headers: { ...corsHeaders(request), "cache-control": "no-store" } });
+  const headers = corsHeaders(request);
+  headers.set("cache-control", "no-store");
+  return Response.json(value, { status, headers });
 }
 
 export const OPTIONS = optionsResponse;

@@ -52,7 +52,6 @@ export const allowedDocumentKeys = new Set([
   "musicAnnotations",
   "musicFavorites",
   "magicBox",
-  "pet",
   "connections",
   "externalMemory",
   "favorites",

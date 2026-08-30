@@ -287,7 +287,6 @@ const iconPaths: Record<string, string[]> = {
   home: ["M15 21v-8H9v8", "M3 10 12 2l9 8v9H3z"],
   library: ["m16 6 4 14", "M12 6v14", "M8 8v12", "M4 4v16"],
   menu: ["M4 6h16", "M4 12h16", "M4 18h16"],
-  pet: ["M3 16a9 9 0 1 1 4 4l-5 2 1-6", "M8 12c2-3 6-3 8 0l-4 4z"],
   music: ["M12 18V3l7 3", "M12 18a4 4 0 1 1-4-4 4 4 0 0 1 4 4"],
   diary: [
     "M13 3H6a2 2 0 0 0-2 2v15h14v-7",
@@ -421,14 +420,6 @@ const vesperNavMarks: Record<string, string[]> = {
   calendar: [
     "M10 17.25 3.9 11.7C.35 8.45 2.25 3.25 6.25 3.25c1.65 0 2.95.8 3.75 2.1.8-1.3 2.1-2.1 3.75-2.1 4 0 5.9 5.2 2.35 8.45z",
   ],
-  pet: [
-    "M5 6.2h10a2 2 0 0 1 2 2v6.3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.2a2 2 0 0 1 2-2z",
-    "M10 6.2V3",
-    "M8.8 2.5h2.4",
-    "M6.75 10h.01M13.25 10h.01",
-    "M7.2 13.1h5.6",
-    "M1.5 11.3H3M17 11.3h1.5",
-  ],
   box: [
     "m10 2.4 7 3.9v7.4l-7 3.9-7-3.9V6.3z",
     "m3 6.3 7 4 7-4",
@@ -481,7 +472,6 @@ const navIconPaths: Record<string, string[]> = {
   note: ["M4 3.5h9l3 3v10H4z", "M13 3.5v3h3", "M7 10h6", "M7 13h4"],
   check: ["M15.5 8.5a5.5 5.5 0 1 1-2-3.9", "M10 8.5l2 2 4.5-5"],
   calendar: ["M10 17.2 4.5 12a4.4 4.4 0 0 1 6.2-6.2L10 7l-.7-1.2A4.4 4.4 0 0 1 15.5 12z"],
-  pet: ["M5 6.5h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z", "M10 6.5v-2", "M7 11h.01M13 11h.01", "M7 14h6"],
   box: ["m10 3 7 4v8l-7 4-7-4V7z", "m3 7 7 4 7-4", "M10 11v8"],
   music: ["M8 14V4l7-1.5v9.5", "M8 14a3 3 0 1 1-3-3h3z", "M15 12a3 3 0 1 1-3-3h3z"],
   library: ["M10 17a7 7 0 1 1 0-14", "M10 3v14", "M6 6.5h2M6 10h2M6 13.5h2"],
@@ -498,7 +488,6 @@ const nav = [
   { label: "便笺", english: "Notes", icon: "note" },
   { label: "提醒", english: "Reminders", icon: "check" },
   { label: "纪念日", english: "Dates", icon: "calendar" },
-  { label: "桌宠互动", english: "Companion", icon: "pet" },
   { label: "魔盒", english: "Cabinet", icon: "box" },
   { label: "音乐", english: "Music", icon: "music" },
   { label: "记忆库", english: "Memory", icon: "library" },
@@ -657,7 +646,8 @@ export default function Home() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
-  const [conversationId, setConversationId] = useState("main");
+  const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
+  const [showLaunchReveal, setShowLaunchReveal] = useState(true);
   const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
   const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: DEFAULT_APP_BACKGROUND });
@@ -1000,8 +990,24 @@ export default function Home() {
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
+    if (label === "聊天") setConversationId(latestLocalConversationId());
     if (label !== active) window.setTimeout(() => setActive(label), 290);
   };
+  useEffect(() => {
+    if (active !== "聊天") return;
+    let cancelled = false;
+    void resolveLatestConversationId().then((id) => {
+      if (!cancelled) setConversationId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
+  useEffect(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(() => setShowLaunchReveal(false), reduceMotion ? 1 : 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
   useEffect(() => {
     let live = true;
     let hasLocalProfile = false;
@@ -1213,8 +1219,6 @@ export default function Home() {
             <Todos />
           ) : active === "纪念日" ? (
             <Anniversaries />
-          ) : active === "桌宠互动" ? (
-            <PetPage />
           ) : active === "魔盒" ? (
             <MagicBox />
           ) : active === "音乐" ? (
@@ -1368,6 +1372,7 @@ export default function Home() {
           />
         )}
       </section>
+      {showLaunchReveal && <div className="launch-liquid-reveal" aria-hidden="true"><i /><b /><em /></div>}
     </main>
   );
 }
@@ -1807,8 +1812,48 @@ type ConversationSummary = {
   id: string;
   title: string;
   updatedAt: string;
+  createdAt?: string;
   messageCount: number;
 };
+
+function conversationUpdatedTimestamp(item: ConversationSummary) {
+  const timestamp = Date.parse(item.updatedAt || item.createdAt || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function mergeConversationSummaries(remote: ConversationSummary[], local: ConversationSummary[]) {
+  const byId = new Map<string, ConversationSummary>();
+  for (const item of [...remote, ...local]) {
+    if (!item?.id) continue;
+    const existing = byId.get(item.id);
+    if (!existing || conversationUpdatedTimestamp(item) > conversationUpdatedTimestamp(existing)) {
+      byId.set(item.id, item);
+    }
+  }
+  return [...byId.values()].sort((left, right) => conversationUpdatedTimestamp(right) - conversationUpdatedTimestamp(left));
+}
+
+function latestLocalConversationId() {
+  const conversations = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []);
+  return mergeConversationSummaries([], conversations)[0]?.id || "main";
+}
+
+async function resolveLatestConversationId() {
+  const local = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []);
+  try {
+    const response = await fetch(codexHistoryUrl("/conversations"), {
+      headers: codexHistoryHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("History is unavailable");
+    const payload = await response.json() as { conversations?: ConversationSummary[] };
+    const conversations = mergeConversationSummaries(payload.conversations || [], local);
+    window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(conversations.slice(0, 100)));
+    return conversations[0]?.id || "main";
+  } catch {
+    return mergeConversationSummaries([], local)[0]?.id || "main";
+  }
+}
 
 function rememberConversation(id: string, title = "新对话", messageCount?: number) {
   if (typeof window === "undefined") return;
@@ -5704,50 +5749,6 @@ function ConnectionModal({
   );
 }
 
-function PetPage() {
-  const [pet, setPet] = usePersistentDocument("pet", {
-    mood: 50,
-    energy: 50,
-    lastAction: "",
-  });
-  const act = (kind: "陪伴" | "喂食" | "休息") => {
-    setPet((current) => ({
-      mood: Math.min(100, current.mood + (kind === "陪伴" ? 12 : 5)),
-      energy: Math.min(
-        100,
-        Math.max(
-          0,
-          current.energy + (kind === "休息" ? 20 : kind === "喂食" ? 10 : -4),
-        ),
-      ),
-      lastAction: `${kind} · ${new Date().toLocaleString("zh-CN")}`,
-    }));
-  };
-  return (
-    <div className="page-body">
-      <PageIntro
-        eyebrow="COMPANION"
-        title="桌宠互动"
-        text="互动状态会真实保存。"
-      />
-      <section className="surface pet-tool">
-        <img src="/icon-192-20260823-v8.png" alt="Vesper 桌宠" />
-        <div>
-          <span>心情 {pet.mood}%</span>
-          <progress max="100" value={pet.mood} />
-          <span>精力 {pet.energy}%</span>
-          <progress max="100" value={pet.energy} />
-        </div>
-      </section>
-      <div className="pet-actions">
-        <button onClick={() => act("陪伴")}>陪伴</button>
-        <button onClick={() => act("喂食")}>喂食</button>
-        <button onClick={() => act("休息")}>休息</button>
-      </div>
-      {pet.lastAction && <p className="settings-foot">{pet.lastAction}</p>}
-    </div>
-  );
-}
 function MagicBox() {
   const [apps, setApps] = usePersistentDocument<BoxApp[]>("magicBox", []);
   const input = useRef<HTMLInputElement>(null);

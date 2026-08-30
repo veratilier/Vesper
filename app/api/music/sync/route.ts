@@ -118,19 +118,18 @@ export async function POST(request: Request) {
       if (index >= 0) merged[index] = { ...merged[index], ...track };
       else merged.push(track);
     }
-    // Keep the person's queue order and locally-added tracks, but refresh URLs for
-    // matching Netease tracks. Signed Netease URLs expire, so retaining the old
-    // queue object here would make a successful authenticated sync still unplayable.
-    const queue = existingQueue.length ? [...existingQueue] : [];
-    for (const track of incoming) {
-      const index = queue.findIndex((item) => byKey(item) === byKey(track));
-      if (index >= 0) queue[index] = { ...queue[index], ...track };
-      else queue.push(track);
-    }
+    // The selected playlist is the current listening queue. Preserve any local
+    // metadata for matching entries, but never keep the former queue order: the
+    // resulting queue follows the Netease playlist exactly and all signed URLs
+    // are refreshed in the same pass.
+    const queue = incoming.map((track) => {
+      const existingTrack = existingQueue.find((item) => byKey(item) === byKey(track));
+      return existingTrack ? { ...existingTrack, ...track } : track;
+    });
     await writeDocument("music", merged);
     await writeDocument("musicQueue", queue);
     const syncedAt = new Date().toISOString();
-    return json(request, { ok: true, tracks: merged, queue, meta: { baseUrl, uid, playlistId, lastSyncAt: syncedAt }, summary: `同步完成：读取 ${incoming.length} 首，已刷新可播放链接；本地独有歌曲已保留` });
+    return json(request, { ok: true, tracks: merged, queue, meta: { baseUrl, uid, playlistId, lastSyncAt: syncedAt }, summary: `同步完成：${incoming.length} 首已按歌单顺序更新到当前播放列表，并刷新可播放链接` });
   } catch (reason) {
     return json(request, { error: reason instanceof Error ? reason.message : "网易云同步失败" }, 400);
   }

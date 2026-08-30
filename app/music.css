@@ -71,8 +71,10 @@
   width: 43px;
   height: 43px;
   border: 1.5px solid rgba(var(--music-on-tint), .65);
+  color: #fff;
   box-shadow: 0 5px 17px rgba(0, 0, 0, .25);
 }
+.listening-avatars .avatar-mark * { color: #fff; }
 .listening-avatars .avatar-mark + .avatar-mark { margin-left: -7px; }
 .listening-avatars i { display: none; }
 
@@ -222,7 +224,7 @@
 .music-sync-modal .sync-strategy b { color: #f0f7f6; font-weight: 500; text-align: right; }
 .music-sync-modal .sync-buttons { margin-top: 14px; }
 .music-sync-modal .sync-buttons button { min-height: 44px; border: 1px solid rgba(255,255,255,.16); border-radius: 15px; background: rgba(255,255,255,.1); color: #f5faf9; font-size: 12px; }
-.music-sync-modal .sync-buttons .save-profile { background: rgb(var(--music-tint)); color: #071010; }
+.music-sync-modal .sync-buttons .save-profile { background: rgb(var(--music-tint)); color: #fff; }
 .music-sync-modal .connection-message { margin: 12px 2px 0; color: rgba(239,246,245,.79); font-size: 12px; line-height: 1.45; }
 
 .music-session-chat { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }

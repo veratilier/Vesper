@@ -47,6 +47,7 @@ export const allowedDocumentKeys = new Set([
   "music",
   "musicQueue",
   "musicControl",
+  "musicPlayback",
   "musicTogether",
   "musicAnnotations",
   "musicFavorites",

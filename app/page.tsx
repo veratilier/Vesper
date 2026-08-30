@@ -590,6 +590,7 @@ type FavoriteItem = {
   createdAt: string;
 };
 type MusicControl = { id: string; action: "play" | "pause" | "next" | "previous" | "play_track"; trackId?: string; replaceQueue?: boolean; processedAt?: string };
+type MusicPlaybackState = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
 type BoxApp = {
   id: string;
   name: string;
@@ -673,11 +674,13 @@ export default function Home() {
   const [queue, setQueue] = usePersistentDocument<Track[]>("musicQueue", []);
   const [favorites, setFavorites] = usePersistentDocument<FavoriteItem[]>("favorites", []);
   const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
+  const [, setMusicPlayback] = usePersistentDocument<MusicPlaybackState>("musicPlayback", {});
   const [musicTogether, setMusicTogether] = usePersistentDocument<MusicTogetherState>("musicTogether", {});
   const [musicSessionChat, setMusicSessionChat] = useState(false);
   const [playMode, setPlayMode] = useState<MusicPlayMode>(() => readLocalValue<MusicPlayMode>("vesper-music-play-mode", "order"));
   const [musicToast, setMusicToast] = useState("");
   const globalPlayer = useRef<HTMLAudioElement>(null);
+  const playbackTimeRef = useRef(0);
   const [storageReady, setStorageReady] = useState(false);
   const [environment, setEnvironment] =
     usePersistentDocument<EnvironmentSnapshot>("environment", {
@@ -737,6 +740,25 @@ export default function Home() {
     const startedAt = new Date().toISOString();
     setMusicTogether((current) => current.status === "connected" && !current.sessionStartedAt ? { ...current, sessionStartedAt: startedAt, updatedAt: startedAt } : current);
   }, [musicTogether.status, musicTogether.sessionStartedAt, setMusicTogether]);
+  useEffect(() => {
+    playbackTimeRef.current = playbackTime;
+  }, [playbackTime]);
+  useEffect(() => {
+    const publish = () => {
+      setMusicPlayback({
+        trackId: currentTrack?.id,
+        playing,
+        positionSeconds: Math.floor(playbackTimeRef.current),
+        durationSeconds: Math.floor(playbackDuration),
+        queueLength: activeTracks.length,
+        updatedAt: new Date().toISOString(),
+      });
+    };
+    publish();
+    if (!playing) return;
+    const timer = window.setInterval(publish, 10_000);
+    return () => window.clearInterval(timer);
+  }, [activeTracks.length, currentTrack?.id, playbackDuration, playing, setMusicPlayback]);
   useAutonomousWake(agentName);
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -2901,7 +2923,7 @@ function LegacyConnectedChat({
 }
 
 type CodexSocketMessage = {
-  id?: number;
+  id?: number | string;
   method?: string;
   params?: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -2938,8 +2960,10 @@ const CODEX_DYNAMIC_TOOLS = [
     description: "Create a Vesper note, reminder, anniversary, or agent journal entry.",
     inputSchema: { type: "object", additionalProperties: false, properties: { kind: { type: "string", enum: ["note", "reminder", "anniversary", "journal"] }, text: { type: "string" }, title: { type: "string" }, date: { type: "string" }, repeats: { type: "boolean" }, due: { type: "string" }, tag: { type: "string" } }, required: ["kind"] },
   },
-  { name: "music_search", description: "Search the Vesper music library by title, artist, album, or keyword. Read-only.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } }, required: ["query"] } },
+  { name: "music_get_status", description: "Read the current device playback state, including song, playing/paused state, position, duration and queue length. Use before answering what is currently playing.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
+  { name: "music_search", description: "Search the Vesper music library and current queue by title, artist, album, or keyword. Read-only.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } }, required: ["query"] } },
   { name: "music_play", description: "Play one uniquely identified Vesper song on the user's current device. Never claims success without a playable source.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } }, required: ["trackId"] } },
+  { name: "music_control", description: "Control the current player: play/resume, pause, next track, or previous track.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["play", "pause", "next", "previous"] } }, required: ["action"] } },
   { name: "music_queue_add", description: "Add one Vesper song to the shared playback queue, either next or at the end.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } }, required: ["trackId", "position"] } },
   { name: "music_send_card", description: "Return a structured Vesper song card for the chat timeline without starting playback.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, message: { type: "string" } }, required: ["trackId"] } },
   { name: "music_playlist_add", description: "Add a song to the persistent Vesper music playlist, separate from the temporary queue.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" } }, required: ["trackId"] } },
@@ -2949,6 +2973,7 @@ const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", 
 const CODEX_ASSISTANT_CONTENT_TYPES = new Set(["text", "outputText"]);
 const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "shellCall", "computerCall", "webSearchCall"]);
 const CODEX_REASONING_ITEM_TYPES = new Set(["reasoning", "reasoningSummary"]);
+const CODEX_DYNAMIC_TOOL_METHODS = new Set(["item/tool/call", "tool/call", "tools/call"]);
 
 function cleanReasoningSummary(value: unknown) {
   if (typeof value !== "string") return [] as string[];
@@ -3000,8 +3025,9 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
   return value.flatMap((raw) => {
     if (!raw || typeof raw !== "object") return [];
     const item = raw as BridgeChatMessage;
-    if (item.role === "agent" && item.metadata?.blockType && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
-    if (item.role === "agent" && item.metadata?.blockType && !item.content.trim()) return [];
+    const isMusicCard = item.metadata?.blockType === "musicCard";
+    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
+    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !item.content.trim()) return [];
     return [{ ...item, conversationId: item.conversationId || conversationId }];
   });
 }
@@ -3361,14 +3387,34 @@ function ConnectedChat({
     return payload.result;
   };
 
+  const dynamicToolCall = (params: Record<string, unknown>) => {
+    const nested = params.toolCall && typeof params.toolCall === "object" ? params.toolCall as Record<string, unknown> : {};
+    const rawArguments = params.arguments ?? params.input ?? nested.arguments ?? nested.input ?? {};
+    let argumentsValue: Record<string, unknown> = {};
+    if (rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)) argumentsValue = rawArguments as Record<string, unknown>;
+    if (typeof rawArguments === "string") {
+      try {
+        const parsed = JSON.parse(rawArguments) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) argumentsValue = parsed as Record<string, unknown>;
+      } catch {}
+    }
+    return {
+      name: String(params.tool ?? params.name ?? nested.tool ?? nested.name ?? ""),
+      itemId: String(params.itemId ?? params.callId ?? nested.itemId ?? nested.callId ?? nested.id ?? ""),
+      argumentsValue,
+    };
+  };
+
   const sendToolResult = async (message: CodexSocketMessage) => {
-    if (typeof message.id !== "number") return;
-    const params = message.params || {};
-    const name = String(params.tool || params.name || "");
-    const itemId = String(params.itemId || params.callId || "");
+    if (typeof message.id !== "number" && typeof message.id !== "string") return;
+    const { name, itemId, argumentsValue } = dynamicToolCall(message.params || {});
+    if (!name) {
+      socket.current?.send(JSON.stringify({ id: message.id, result: { success: false, error: "Dynamic tool name is missing" } }));
+      return;
+    }
     setTurnStatus("tool");
     try {
-      const result = await callServerTool(name, (params.arguments || params.input || {}) as Record<string, unknown>, itemId);
+      const result = await callServerTool(name, argumentsValue, itemId);
       if (result && typeof result === "object" && "musicCard" in result) {
         window.dispatchEvent(new CustomEvent("vesper-music-card", { detail: { conversationId, card: (result as { musicCard: MusicCardData }).musicCard } }));
       }
@@ -3394,8 +3440,8 @@ function ConnectedChat({
       else pendingRpc.resolve(message);
       return;
     }
-    // Generated bindings for the installed app-server identify this as the dynamic-tool request.
-    if (message.method === "item/tool/call") {
+    // App-server versions have used each of these request names for dynamic tools.
+    if (message.method && CODEX_DYNAMIC_TOOL_METHODS.has(message.method)) {
       void sendToolResult(message);
       return;
     }
@@ -3482,10 +3528,10 @@ function ConnectedChat({
       activeTurnUserId.current = "";
     }
     if (message.method === "turn/started" || message.method === "turn/inProgress") setTurnStatus("thinking");
-    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "item/tool/call", "currentTime/read"]);
+    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "currentTime/read", ...CODEX_DYNAMIC_TOOL_METHODS]);
     if (message.method && !knownMethods.has(message.method) && !message.method.includes("requestApproval")) {
       logCodexDiagnostic(message);
-      if (typeof message.id === "number") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
+      if (typeof message.id === "number" || typeof message.id === "string") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
     }
   };
   const hydrateThreadSnapshot = (response: CodexSocketMessage) => {

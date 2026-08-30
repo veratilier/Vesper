@@ -751,16 +751,16 @@ export default function Home() {
     playbackTimeRef.current = playbackTime;
   }, [playbackTime]);
   useEffect(() => {
-    if (!activeTracks.length) return;
+    // Resume is a one-time bootstrap action. Re-running it whenever the current
+    // track changes makes a manual next/previous action bounce back to the old
+    // song and can leave the audio element between two sources.
+    if (playbackResumeReady.current || !activeTracks.length) return;
     const savedIndex = musicResume.trackId
       ? activeTracks.findIndex((track) => track.id === musicResume.trackId || track.neteaseId === musicResume.trackId)
       : -1;
-    if (savedIndex >= 0 && currentTrack?.id !== activeTracks[savedIndex]?.id) {
-      setTrackIndex(savedIndex);
-      return;
-    }
+    if (savedIndex >= 0) setTrackIndex(savedIndex);
     playbackResumeReady.current = true;
-  }, [activeTracks, currentTrack?.id, musicResume.trackId]);
+  }, [activeTracks, musicResume.trackId]);
   useEffect(() => {
     if (!playbackResumeReady.current || !currentTrack?.id) return;
     setMusicResume((current) => current.trackId === currentTrack.id ? current : {

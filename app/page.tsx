@@ -647,7 +647,6 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
-  const [showLaunchReveal, setShowLaunchReveal] = useState(true);
   const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
   const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: DEFAULT_APP_BACKGROUND });
@@ -1003,11 +1002,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [active]);
-  useEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const timer = window.setTimeout(() => setShowLaunchReveal(false), reduceMotion ? 1 : 2500);
-    return () => window.clearTimeout(timer);
-  }, []);
   useEffect(() => {
     let live = true;
     let hasLocalProfile = false;
@@ -1372,7 +1366,6 @@ export default function Home() {
           />
         )}
       </section>
-      {showLaunchReveal && <div className="launch-liquid-reveal" aria-hidden="true"><i /><b /><em /></div>}
     </main>
   );
 }

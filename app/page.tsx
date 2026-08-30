@@ -690,7 +690,11 @@ export default function Home() {
       permission: "unknown",
     });
   const queueSeeded = readLocalValue<boolean>("vesper-music-queue-seeded", false);
-  const activeTracks = queueSeeded ? queue : tracks;
+  // `music` is the full library. `musicQueue` is the selected playlist that is
+  // currently being listened to. A fresh PWA install has no local queue marker,
+  // but it can still receive a non-empty queue from D1; never fall back to the
+  // full library in that case.
+  const activeTracks = queue.length > 0 || queueSeeded ? queue : tracks;
   const currentTrack = activeTracks[trackIndex];
   const showMusicToast = (message: string) => {
     setMusicToast(message);

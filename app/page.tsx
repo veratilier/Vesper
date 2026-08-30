@@ -5933,23 +5933,30 @@ function MusicPlayerUI({
 }
 
 function NeteaseSyncPanel({ meta, onSync }: { meta: Record<string, string>; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {
-  const [playlistId, setPlaylistId] = useState(meta.playlistId || "");
+  const [form, setForm] = useState({ uid: meta.uid || "", playlistId: meta.playlistId || "", cookie: "" });
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; trackCount?: number }>>([]);
   const [message, setMessage] = useState(meta.lastSyncAt ? `上次同步：${new Date(meta.lastSyncAt).toLocaleString()}` : "");
   const [syncing, setSyncing] = useState(false);
-  const sync = async () => {
-    if (!playlistId.trim()) { setMessage("请先粘贴网易云歌单 ID"); return; }
-    setSyncing(true); setMessage("正在读取网易云歌单…");
+  const request = async (action: "playlists" | "sync") => {
+    if (action === "playlists" && (!form.uid.trim() || !form.cookie.trim())) { setMessage("请填写网易云 UID 和 MUSIC_U"); return; }
+    if (action === "sync" && !form.playlistId.trim()) { setMessage("请先选择或粘贴网易云歌单 ID"); return; }
+    setSyncing(true); setMessage(action === "sync" ? "正在刷新网易云可播放链接…" : "正在读取账号歌单…");
     try {
-      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "sync", playlistId: playlistId.trim() }) });
-      const result = await response.json() as { error?: string; tracks?: Track[]; queue?: Track[]; meta?: Record<string, string>; summary?: string };
+      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action, ...form }) });
+      const result = await response.json() as { error?: string; playlists?: Array<{ id: string; name: string; trackCount?: number }>; tracks?: Track[]; queue?: Track[]; meta?: Record<string, string>; summary?: string };
       if (!response.ok) throw new Error(result.error || "网易云同步失败");
-      const nextMeta = result.meta || { playlistId: playlistId.trim(), lastSyncAt: new Date().toISOString() };
-      onSync(result.tracks || [], result.queue || [], nextMeta);
-      setMessage(result.summary || "同步完成");
+      if (action === "playlists") {
+        setPlaylists(result.playlists || []);
+        setMessage(`找到 ${result.playlists?.length || 0} 个歌单`);
+      } else {
+        const nextMeta = result.meta || { uid: form.uid.trim(), playlistId: form.playlistId.trim(), lastSyncAt: new Date().toISOString() };
+        onSync(result.tracks || [], result.queue || [], nextMeta);
+        setMessage(result.summary || "同步完成");
+      }
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "同步失败"); }
     finally { setSyncing(false); }
   };
-  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>只需粘贴歌单 ID（也可粘贴包含 ID 的歌单链接）。Vesper 会读取公开歌单；没有可播放 URL 的版权歌曲会保留为不可播放状态。</p><label className="profile-field"><span>网易云歌单 ID</span><input inputMode="numeric" autoComplete="off" value={playlistId} placeholder="例如 123456789" onChange={(event) => setPlaylistId(event.target.value)} /></label><div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，不删除</b></div><div className="sync-buttons"><button className="save-profile" disabled={syncing || !playlistId.trim()} onClick={() => void sync()}>{syncing ? "同步中…" : "同步歌单"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
+  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>填写网易云 UID 后，临时粘贴 <code>MUSIC_U</code> 读取你的账号歌单。凭证只随本次请求发送，不会写入浏览器或同步元数据。</p><label className="profile-field"><span>网易云 UID</span><input inputMode="numeric" autoComplete="off" value={form.uid} placeholder="例如 123456789" onChange={(event) => setForm({ ...form, uid: event.target.value })} /></label><label className="profile-field"><span>MUSIC_U</span><input type="password" autoComplete="off" value={form.cookie} placeholder="仅本次同步使用" onChange={(event) => setForm({ ...form, cookie: event.target.value })} /></label><label className="profile-field"><span>歌单 ID 或链接</span><input autoComplete="off" value={form.playlistId} placeholder="可直接粘贴网易云歌单 ID 或链接" onChange={(event) => setForm({ ...form, playlistId: event.target.value })} /></label>{playlists.length > 0 && <label className="profile-field"><span>从已读取的账号歌单选择</span><select value={playlists.some((playlist) => playlist.id === form.playlistId) ? form.playlistId : ""} onChange={(event) => setForm({ ...form, playlistId: event.target.value })}><option value="">选择歌单</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}{playlist.trackCount ? ` · ${playlist.trackCount} 首` : ""}</option>)}</select></label>}<div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，并刷新同名队列链接</b></div><div className="sync-buttons"><button className="reset-background" disabled={syncing || !form.uid.trim() || !form.cookie.trim()} onClick={() => void request("playlists")}>读取歌单</button><button className="save-profile" disabled={syncing || !form.playlistId.trim()} onClick={() => void request("sync")}>{syncing ? "同步中…" : "同步并刷新播放链接"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
 }
 
 function MemoryLibrary() {

@@ -174,12 +174,13 @@
 
 .music-queue-layer { position: fixed; z-index: 30; inset: 0; display: grid; align-items: end; }
 .music-queue-scrim { position: absolute; inset: 0; border: 0; background: rgba(2, 5, 6, .58); backdrop-filter: blur(4px); }
-.music-queue-sheet { position: relative; z-index: 1; width: 100%; max-height: min(75dvh, 670px); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid rgba(var(--music-on-tint), .12); border-radius: 28px 28px 0 0; background: rgba(22, 29, 30, .92); box-shadow: 0 -22px 55px rgba(0,0,0,.35); backdrop-filter: blur(26px) saturate(1.08); transition: transform .3s cubic-bezier(.2,1.08,.32,1); }
+.music-queue-sheet { position: relative; z-index: 1; width: 100%; max-height: min(75dvh, 670px); display: grid; grid-template-rows: auto minmax(0, 1fr); isolation: isolate; overflow: hidden; border: 1px solid rgba(var(--music-on-tint), .12); border-radius: 28px 28px 0 0; background: rgba(22, 29, 30, .92); box-shadow: 0 -22px 55px rgba(0,0,0,.35); backdrop-filter: blur(26px) saturate(1.08); transition: transform .3s cubic-bezier(.2,1.08,.32,1); }
 .music-queue-drag-handle { width: 44px; height: 22px; margin: 0 auto -2px; touch-action: none; }
 .music-queue-drag-handle::after { content: ""; display: block; width: 38px; height: 4px; margin: 10px auto 0; border-radius: 3px; background: rgba(var(--music-on-tint), .32); }
-.music-queue-sheet header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 20px 13px; border-bottom: 1px solid rgba(var(--music-on-tint), .1); }
-.music-queue-sheet header small { display: block; margin-bottom: 4px; color: rgba(var(--music-on-tint), .48); font: 10px/1 var(--font-geist-mono), monospace; letter-spacing: .08em; }
-.music-queue-sheet header h2 { margin: 0; color: rgb(var(--music-on-tint)); font-size: 17px; }
+.music-queue-sheet header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 71px; box-sizing: border-box; padding: 11px 16px 12px 20px; border-bottom: 1px solid rgba(var(--music-on-tint), .1); }
+.music-queue-sheet header > div:first-child { min-width: 0; display: grid; gap: 5px; }
+.music-queue-sheet header small { display: block; margin: 0; color: rgba(var(--music-on-tint), .48); font: 10px/1 var(--font-geist-mono), monospace; letter-spacing: .08em; }
+.music-queue-sheet header h2 { margin: 0; color: rgb(var(--music-on-tint)); font: 600 17px/1.15 var(--font-geist-sans), "PingFang SC", sans-serif; }
 .music-queue-sheet header > div:last-child { display: flex; align-items: center; gap: 4px; }
 .music-queue-sheet header button { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(var(--music-on-tint), .78); }
 .music-queue-sheet header button .ui-icon { width: 18px; height: 18px; }
@@ -199,6 +200,30 @@
 @keyframes music-eq { to { transform: scaleY(.55); } }
 .music-queue-remove { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(var(--music-on-tint), .45); }
 .music-queue-remove .ui-icon { width: 17px; height: 17px; }
+
+/* The sync form is a separate top-level surface; it never shares the queue's stacking context. */
+.music-sync-layer { position: fixed; z-index: 45; inset: 0; display: grid; place-items: end center; padding: 0 12px calc(12px + var(--safe-bottom)); }
+.music-sync-layer .modal-scrim { position: absolute; inset: 0; border: 0; background: rgba(2, 6, 7, .7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.music-sync-modal { position: relative; z-index: 1; width: min(100%, 480px); max-height: min(76dvh, 650px); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); box-sizing: border-box; overflow: hidden; padding: 17px 16px 15px; border: 1px solid rgba(255,255,255,.14); border-radius: 24px; background: rgba(21, 29, 30, .98); color: rgba(247,250,249,.94); box-shadow: 0 22px 60px rgba(0,0,0,.48); }
+.music-sync-modal .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
+.music-sync-modal .modal-head small { display: block; color: rgba(var(--music-tint), .9); font: 10px/1 var(--font-geist-mono), monospace; letter-spacing: .09em; }
+.music-sync-modal .modal-head h2 { margin: 6px 0 0; color: #f7fbfa; font: 600 21px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.music-sync-modal .modal-head button { width: 36px; height: 36px; display: grid; flex: 0 0 36px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.09); color: rgba(247,250,249,.78); }
+.music-sync-modal .modal-head .ui-icon { width: 18px; height: 18px; }
+.music-sync-modal .netease-sync-panel { height: auto; min-height: 0; overflow-y: auto; padding: 8px 2px calc(6px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+.music-sync-modal .sync-status-line { margin: 1px 0 13px; color: rgba(230,240,239,.77); font-size: 12px; }
+.music-sync-modal .netease-sync-panel > p:first-child { margin: 0 0 14px; color: rgba(231,240,239,.68); font-size: 12px; line-height: 1.55; }
+.music-sync-modal .profile-field { margin: 0 0 12px; }
+.music-sync-modal .profile-field span { margin: 0 2px 6px; color: rgba(231,240,239,.69); font-size: 11px; }
+.music-sync-modal .profile-field input,.music-sync-modal .profile-field select { width: 100%; min-height: 46px; box-sizing: border-box; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(255,255,255,.09); color: #f7fbfa; font: 14px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.music-sync-modal .profile-field input::placeholder { color: rgba(235,243,242,.42); }
+.music-sync-modal .profile-field select option { color: #192223; background: #f7fbfa; }
+.music-sync-modal .sync-strategy { align-items: flex-start; padding: 11px 12px; background: rgba(var(--music-tint), .16); color: rgba(234,242,241,.72); font-size: 11px; line-height: 1.45; }
+.music-sync-modal .sync-strategy b { color: #f0f7f6; font-weight: 500; text-align: right; }
+.music-sync-modal .sync-buttons { margin-top: 14px; }
+.music-sync-modal .sync-buttons button { min-height: 44px; border: 1px solid rgba(255,255,255,.16); border-radius: 15px; background: rgba(255,255,255,.1); color: #f5faf9; font-size: 12px; }
+.music-sync-modal .sync-buttons .save-profile { background: rgb(var(--music-tint)); color: #071010; }
+.music-sync-modal .connection-message { margin: 12px 2px 0; color: rgba(239,246,245,.79); font-size: 12px; line-height: 1.45; }
 
 .music-session-chat { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .music-session-chat .chat-stream { gap: 14px; }

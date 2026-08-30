@@ -1126,7 +1126,7 @@ export default function Home() {
             </button>
           )}
         </header>
-        <div className={`scroll-view view-enter${active === "音乐" ? " music-scroll-view" : ""}${historyOpen ? " history-host-shift" : ""}`} key={active}>
+        <div className={`scroll-view${active === "音乐" ? " music-scroll-view" : ""}${historyOpen ? " history-host-shift" : ""}`} key={active}>
           {active === "今日" ? (
             <Today
               track={currentTrack}

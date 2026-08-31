@@ -4469,11 +4469,49 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     return value;
   });
   const [testingId, setTestingId] = useState("");
-  const [editingId, setEditingId] = useState("");
+  const [editor, setEditor] = useState<ExternalMcpEntry | null>(null);
+  const [editorMessage, setEditorMessage] = useState("");
+  const configuredServers = servers.filter(
+    (server) => Boolean(server.name.trim() || server.url.trim()),
+  );
+  const closeEditor = () => {
+    setEditor(null);
+    setEditorMessage("");
+  };
+  const openEditor = (server: ExternalMcpEntry) => {
+    setEditor({ ...server });
+    setEditorMessage("");
+  };
   const add = () => {
-    const id = crypto.randomUUID();
-    setServers((current) => [...current, { id, name: "", url: "", token: "", enabled: true, authMode: "none" }]);
-    setEditingId(id);
+    setEditor({
+      id: crypto.randomUUID(),
+      name: "",
+      url: "",
+      token: "",
+      enabled: true,
+      authMode: "none",
+    });
+    setEditorMessage("");
+  };
+  const updateEditor = (patch: Partial<ExternalMcpEntry>) =>
+    setEditor((current) => (current ? { ...current, ...patch } : current));
+  const saveEditor = () => {
+    if (!editor) return;
+    const next = {
+      ...editor,
+      name: editor.name.trim(),
+      url: editor.url.trim(),
+    };
+    if (!next.name && !next.url) {
+      setEditorMessage("请填写名称或 MCP 服务地址");
+      return;
+    }
+    setServers((current) =>
+      current.some((server) => server.id === next.id)
+        ? current.map((server) => (server.id === next.id ? next : server))
+        : [...current, next],
+    );
+    closeEditor();
   };
   const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
     setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -4570,47 +4608,55 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     }
   };
   return (
-    <div className="modal-layer settings-subpage-layer">
+    <div className="modal-layer settings-subpage-layer mcp-settings-page">
       <button className="modal-scrim" onClick={onClose} />
-      <section className="connection-modal external-mcp-modal">
-        <div className="modal-head">
-          <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
-          <div><small>TOOL CONNECTIONS</small><h2>MCP 工具</h2></div>
-          <button onClick={add} aria-label="添加 MCP"><Icon name="plus" /></button>
-        </div>
-        <p>在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
-        <div className="mcp-server-list">
-          {!servers.length && <EmptyState text="还没有接入第三方 MCP。" />}
-          {servers.map((server) => (
-            <article className="mcp-server-card" key={server.id}>
-              <div className="mcp-server-summary">
-                <span className={server.enabled ? "mcp-live-dot" : "mcp-live-dot off"} />
-                <div><b>{server.name || "未命名 MCP"}</b><small>{server.url || "尚未填写地址"} · {server.authMode === "oauth" ? `OAuth ${server.oauthStatus === "authorized" ? "已授权" : "待授权"}` : "Bearer / 无授权"}</small></div>
-              </div>
-              <div className="mcp-card-actions">
-                <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中" : "测试"}</button>
-                {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>授权</button>}
-                <button onClick={() => setEditingId(server.id)}>编辑</button>
-                <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}>删除</button>
-              </div>
-            </article>
-          ))}
-        </div>
-        {message && <p className="connection-message">{message}</p>}
-      </section>
-      {editingId && (() => {
-        const server = servers.find((item) => item.id === editingId);
-        if (!server) return null;
-        return <div className="mcp-editor-layer"><button className="modal-scrim" onClick={() => setEditingId("")} /><section className="mcp-editor-modal">
-          <div className="modal-head"><div><small>MCP SERVER</small><h2>{server.name ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h2></div><button onClick={() => setEditingId("")}><Icon name="close" /></button></div>
-          <label className="profile-field"><span>名称</span><input value={server.name} onChange={(event) => update(server.id, { name: event.target.value })} /></label>
-          <label className="profile-field"><span>Streamable HTTP 地址</span><input value={server.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { url: event.target.value })} /></label>
-          <div className="mcp-auth-choice"><span>OAuth 授权</span><div><button className={(server.authMode || "none") === "none" ? "selected" : ""} onClick={() => update(server.id, { authMode: "none" })}>无</button><button className={server.authMode === "oauth" ? "selected" : ""} onClick={() => update(server.id, { authMode: "oauth" })}>有</button></div></div>
-          {server.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并直接跳转授权；通常无需手填授权地址。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={server.clientId || ""} onChange={(event) => update(server.id, { clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={server.token} onChange={(event) => update(server.id, { token: event.target.value })} /></label>}
-          <button className={server.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => update(server.id, { enabled: !server.enabled })}><span>{server.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
-          <div className="mcp-editor-actions"><button onClick={() => setEditingId("")}>取消</button><button className="save-profile" onClick={() => setEditingId("")}>保存</button></div>
-        </section></div>;
-      })()}
+      {editor ? (
+        <section className="connection-modal external-mcp-modal mcp-editor-modal">
+          <div className="modal-head">
+            <button className="settings-back" onClick={closeEditor} aria-label="返回"><Icon name="chevron" /></button>
+            <div><small>MCP SERVER</small><h2>{editor.name ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h2></div>
+            <span className="mcp-editor-head-spacer" aria-hidden="true" />
+          </div>
+          <div className="mcp-editor-scroll">
+            <label className="profile-field"><span>名称</span><input value={editor.name} onChange={(event) => updateEditor({ name: event.target.value })} /></label>
+            <label className="profile-field"><span>Streamable HTTP 地址</span><input value={editor.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => updateEditor({ url: event.target.value })} /></label>
+            <div className="mcp-auth-choice"><span>OAuth 授权</span><div><button className={(editor.authMode || "none") === "none" ? "selected" : ""} onClick={() => updateEditor({ authMode: "none" })}>无</button><button className={editor.authMode === "oauth" ? "selected" : ""} onClick={() => updateEditor({ authMode: "oauth" })}>有</button></div></div>
+            {editor.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并直接跳转授权；通常无需手填授权地址。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={editor.clientId || ""} onChange={(event) => updateEditor({ clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={editor.token} onChange={(event) => updateEditor({ token: event.target.value })} /></label>}
+            <button className={editor.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => updateEditor({ enabled: !editor.enabled })}><span>{editor.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
+            {editorMessage && <p className="connection-message">{editorMessage}</p>}
+          </div>
+          <div className="mcp-editor-actions"><button onClick={closeEditor}>取消</button><button className="save-profile" onClick={saveEditor}>保存</button></div>
+        </section>
+      ) : (
+        <section className="connection-modal external-mcp-modal">
+          <div className="modal-head">
+            <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
+            <div><small>TOOL CONNECTIONS</small><h2>MCP 工具</h2></div>
+            <button onClick={add} aria-label="添加 MCP"><Icon name="plus" /></button>
+          </div>
+          <div className="mcp-list-scroll">
+            <p className="mcp-list-intro">在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
+            <div className="mcp-server-list">
+              {!configuredServers.length && <EmptyState text="还没有接入第三方 MCP。" />}
+              {configuredServers.map((server) => (
+                <article className="mcp-server-card" key={server.id}>
+                  <div className="mcp-server-summary">
+                    <span className={server.enabled ? "mcp-live-dot" : "mcp-live-dot off"} />
+                    <div><b>{server.name || "未命名 MCP"}</b><small>{server.url || "尚未填写地址"} · {server.authMode === "oauth" ? `OAuth ${server.oauthStatus === "authorized" ? "已授权" : "待授权"}` : "Bearer / 无授权"}</small></div>
+                  </div>
+                  <div className="mcp-card-actions">
+                    <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中" : "测试"}</button>
+                    {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>授权</button>}
+                    <button onClick={() => openEditor(server)}>编辑</button>
+                    <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}>删除</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {message && <p className="connection-message">{message}</p>}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

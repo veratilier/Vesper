@@ -798,60 +798,6 @@ body {
   box-shadow: none;
 }
 
-.mcp-auth-choice,
-.mcp-auth-choice > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.mcp-auth-choice {
-  color: #667276;
-  font-size: 12px;
-}
-
-.mcp-auth-choice button,
-.mcp-oauth-action,
-.mcp-test-action {
-  border: 1px solid rgba(70, 88, 93, .14);
-  background: rgba(244, 247, 246, .9);
-  border-radius: 999px;
-  padding: 8px 13px;
-  color: #647175;
-}
-
-.mcp-auth-choice button.selected {
-  border-color: rgba(83, 111, 120, .36);
-  background: rgba(215, 227, 230, .72);
-  color: #34474d;
-}
-
-.mcp-oauth-fields {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(72, 91, 96, .1);
-  border-radius: 14px;
-  background: rgba(242, 246, 245, .72);
-}
-
-.mcp-oauth-action,
-.mcp-test-action {
-  width: 100%;
-  border-radius: 12px;
-  font-size: 12px;
-}
-
-.mcp-oauth-action {
-  background: #303b3e;
-  color: #fff;
-}
-
-.mcp-test-action:disabled {
-  opacity: .55;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .drawer,
   .scrim {
@@ -3491,14 +3437,6 @@ body {
 
 
 
-/* MCP editor mirrors the compact Vesper setup sheet. */
-.mcp-editor-modal { border-radius: 28px; padding: 24px 22px calc(20px + var(--safe-bottom)); background: rgba(248, 250, 249, .98); }
-.mcp-editor-modal .profile-field input { min-height: 54px; border-radius: 18px; background: rgba(255,255,255,.78); font-size: 15px; }
-.mcp-auth-choice { min-height: 52px; }
-.mcp-auth-choice button { min-width: 58px; min-height: 42px; border-radius: 22px; font-size: 15px; }
-.mcp-enable { font-size: 16px; }
-.mcp-editor-actions > button { min-height: 54px; border-radius: 19px; font-size: 15px; }
-
 /* Personal typography and soft-edged controls. */
 body,
 body button,
@@ -4965,47 +4903,6 @@ html {
 .connection-dot.mcp { background: #7c7691; }
 .connection-dot.cyberboss { background: #667d70; }
 
-.mcp-server-list {
-  display: grid;
-  gap: 12px;
-  margin: 18px 0;
-}
-
-.mcp-server-card {
-  display: grid;
-  gap: 10px;
-  padding: 15px;
-  border: 1px solid rgba(73, 88, 92, .12);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .7);
-}
-
-.mcp-server-head,
-.mcp-enable {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.mcp-server-head b {
-  font: 500 10px/1.2 ui-monospace, monospace;
-  letter-spacing: .12em;
-  color: #657377;
-}
-
-.mcp-server-head button,
-.mcp-enable {
-  border: 0;
-  background: transparent;
-}
-
-.mcp-server-head svg { width: 14px; height: 14px; }
-.mcp-enable { padding: 4px 0; color: #7d8687; }
-.mcp-enable i { width: 32px; height: 18px; padding: 2px; border-radius: 10px; background: #d9dddc; }
-.mcp-enable i u { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s ease; }
-.mcp-enable.on i { background: #9eafb1; }
-.mcp-enable.on i u { transform: translateX(14px); }
-
 @media (display-mode: standalone) {
   html,
   body,
@@ -5174,24 +5071,6 @@ body {
 .voice-test-panel > p { min-height: 48px; margin: 0; border-top: 1px solid rgba(74,87,89,.09); font-size: 9px; }
 .voice-test-panel button { min-height: 30px; padding: 0 10px; border: 1px solid rgba(74,87,89,.13); border-radius: 16px; background: #fff; font-size: 8px; }
 .voice-test-panel em { color: #7f898b; font-style: normal; font-size: 8px; }
-
-.external-mcp-modal > p { margin: 0 0 16px; color: #7d8789; font-size: 9px; line-height: 1.65; }
-.mcp-server-card { padding: 14px !important; display: grid; gap: 12px; }
-.mcp-server-summary { display: grid; grid-template-columns: 8px 1fr; gap: 9px; align-items: start; }
-.mcp-server-summary > div { min-width: 0; display: grid; gap: 4px; }
-.mcp-server-summary b { font-size: 11px; }
-.mcp-server-summary small { overflow: hidden; color: #899294; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.mcp-live-dot { width: 7px; height: 7px; margin-top: 3px; border-radius: 50%; background: #5d9979; box-shadow: 0 0 0 3px rgba(93,153,121,.09); }
-.mcp-live-dot.off { background: #a5abad; }
-.mcp-card-actions { display: flex; justify-content: flex-end; gap: 10px; }
-.mcp-card-actions button { border: 0; background: transparent; color: #6f8790; font-size: 8px; }
-.mcp-card-actions button:last-child { color: #a56d6d; }
-.mcp-editor-layer { position: absolute; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; }
-.mcp-editor-modal { position: relative; z-index: 1; width: min(100%, 420px); max-height: calc(100dvh - 50px); overflow-y: auto; padding: 22px; border-radius: 20px; background: #f9faf8; box-shadow: 0 25px 80px rgba(25,33,34,.24); }
-.mcp-editor-modal .profile-field { margin-bottom: 12px; }
-.mcp-editor-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 9px; margin-top: 16px; }
-.mcp-editor-actions > button { min-height: 42px; border: 1px solid rgba(72,84,86,.13); background: #fff; }
-.mcp-editor-actions .save-profile { margin: 0; background: #202526; color: #fff; }
 
 .external-memory-preview { max-height: 230px; overflow-y: auto; display: grid; gap: 7px; margin: 14px 0; }
 .external-memory-preview article { padding: 11px 12px; border: 1px solid rgba(74,87,89,.1); border-radius: 11px; background: rgba(255,255,255,.68); }

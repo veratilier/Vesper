@@ -219,19 +219,6 @@
 .music-sync-modal .sync-buttons .save-profile { background: rgb(var(--music-tint)); color: #fff; }
 .music-sync-modal .connection-message { margin: 12px 2px 0; color: rgba(239,246,245,.79); font-size: 12px; line-height: 1.45; }
 
-.music-session-chat { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
-.music-session-chat .chat-stream { gap: 14px; }
-.music-chat-now-playing { display: grid; grid-template-columns: 46px minmax(0, 1fr) 38px; align-items: center; gap: 9px; min-height: 62px; padding: 7px; border: 1px solid rgba(109, 142, 148, .18); border-radius: 17px; background: rgba(238, 247, 247, .86); box-shadow: 0 8px 22px rgba(66,100,106,.1); }
-.music-chat-cover { width: 46px; height: 46px; padding: 0; overflow: hidden; border: 0; border-radius: 11px; background: #dce9eb; }
-.music-chat-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.music-chat-cover span { display: grid; width: 100%; height: 100%; place-items: center; color: #63838a; font: 20px Georgia, serif; }
-.music-chat-copy { min-width: 0; display: grid; gap: 3px; padding: 0; border: 0; background: transparent; text-align: left; }
-.music-chat-copy small { color: #789197; font-size: 9px; }
-.music-chat-copy b,.music-chat-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.music-chat-copy b { color: #405b60; font-size: 12px; font-weight: 500; }
-.music-chat-copy span { color: #83979a; font-size: 10px; }
-.music-chat-toggle { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: #71969d; color: #fff; }
-.music-chat-toggle .ui-icon { width: 18px; height: 18px; }
 @media (max-height: 720px) {
   .listening-player-main { padding-top: calc(var(--safe-top) + 48px); }
   .listening-disc-stage { min-height: 230px; padding-bottom: 8px; }

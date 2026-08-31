@@ -667,7 +667,6 @@ export default function Home() {
   const [, setMusicPlayback] = usePersistentDocument<MusicPlaybackState>("musicPlayback", {});
   const [musicResume, setMusicResume] = useLocalDocument<MusicResumeState>("music-resume", {});
   const [musicTogether, setMusicTogether] = usePersistentDocument<MusicTogetherState>("musicTogether", {});
-  const [musicSessionChat, setMusicSessionChat] = useState(false);
   const [playMode, setPlayMode] = useState<MusicPlayMode>(() => readLocalValue<MusicPlayMode>("vesper-music-play-mode", "order"));
   const [musicToast, setMusicToast] = useState("");
   const globalPlayer = useRef<HTMLAudioElement>(null);
@@ -1202,8 +1201,7 @@ export default function Home() {
                 onNextMusic={() => {
                   if (activeTracks.length) setTrackIndex((index) => (index + 1) % activeTracks.length);
                 }}
-                onOpenMusic={() => { setMusicSessionChat(true); setActive("音乐"); }}
-                showMusicSessionCard={musicSessionChat}
+                onOpenMusic={() => setActive("音乐")}
               />
           ) : active === "日记" ? (
             <Diary />
@@ -3369,7 +3367,6 @@ function ConnectedChat({
   onToggleMusic,
   onNextMusic,
   onOpenMusic,
-  showMusicSessionCard = false,
 }: {
   conversationId: string;
   onSelectConversation: (id: string) => void;
@@ -3385,7 +3382,6 @@ function ConnectedChat({
   onToggleMusic: () => void;
   onNextMusic: () => void;
   onOpenMusic: () => void;
-  showMusicSessionCard?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<BridgeChatMessage[]>(() => normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId));
@@ -3927,14 +3923,13 @@ function ConnectedChat({
   }, [focusMessageId, messages.length]);
   const liveStatusStamp = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   return (
-    <div className={`page-body chat-page codex-chat${showMusicSessionCard ? " music-session-chat" : ""}`}>
+    <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
         <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">
-        {showMusicSessionCard && currentTrack && <div className="music-chat-now-playing"><button className="music-chat-cover" aria-label="回到播放器" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}</button><button className="music-chat-copy" onClick={onOpenMusic}><small>一起听 · 正在播放</small><b>{currentTrack.title}</b><span>{currentTrack.artist || "未知歌手"}</span></button><button className="music-chat-toggle" aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button></div>}
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在准备对话…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
         {messages.map((item, index) => {
           const timestamp = visibleMessageTimestamp(item.createdAt);
@@ -3948,7 +3943,7 @@ function ConnectedChat({
         {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div></div>)}
         <div ref={streamEnd} />
       </div>
-      {currentTrack && !showMusicSessionCard && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}
+      {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />

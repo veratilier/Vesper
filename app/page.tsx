@@ -1111,11 +1111,11 @@ export default function Home() {
           className={`${active === "聊天" ? "app-header chat-mode" : active === "音乐" ? "app-header music-mode" : "app-header"}${historyOpen ? " history-host-shift" : ""}`}
         >
           <button
-            className={active === "音乐" ? "icon-button music-back-button" : "icon-button"}
-            aria-label={active === "音乐" ? "返回今日" : "打开目录"}
-            onClick={() => active === "音乐" ? setActive("今日") : setDrawerOpen(true)}
+            className="icon-button"
+            aria-label="打开目录"
+            onClick={() => setDrawerOpen(true)}
           >
-            <Icon name={active === "音乐" ? "chevron" : "menu"} />
+            <Icon name="menu" />
           </button>
           {active === "今日" ? (
             <div className="wordmark">
@@ -1239,7 +1239,6 @@ export default function Home() {
               agentAvatar={agentAvatar}
               together={musicTogether}
               onInvite={() => setMusicTogether((current) => current.status === "connected" ? current : { ...current, status: "invited", inviteRequestedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })}
-              onOpenChat={() => { setMusicSessionChat(true); setActive("聊天"); }}
               onRemoveQueueItem={(index) => {
                 const nextQueue = activeTracks.filter((_, itemIndex) => itemIndex !== index);
                 window.localStorage.setItem("vesper-music-queue-seeded", "true");
@@ -3955,7 +3954,6 @@ function ConnectedChat({
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
         <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
-      {showMusicSessionCard && <MusicSessionSwitcher active="chat" onOpenPlayer={onOpenMusic} />}
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
     </div>
   );
@@ -5905,14 +5903,10 @@ function togetherTimeLabel(state: MusicTogetherState, totalSeconds: number) {
   return "尚未开始一起听";
 }
 
-function MusicSessionSwitcher({ active, onOpenPlayer, onOpenChat }: { active: "player" | "chat"; onOpenPlayer: () => void; onOpenChat?: () => void }) {
-  return <nav className={`music-session-switcher ${active === "chat" ? "chat-active" : "player-active"}`} aria-label="一起听视图切换"><span className="music-session-indicator" aria-hidden="true" /><button className={active === "player" ? "active" : ""} onClick={onOpenPlayer}><Icon name="music" /><span>播放器</span></button><button className={active === "chat" ? "active" : ""} onClick={onOpenChat}><Icon name="chat" /><span>聊天</span></button></nav>;
-}
-
 function MusicPlayerUI({
   queue, onQueue, selected, onTracks, playMode, onCycleMode, toast, adapter,
   userName, agentName, userAvatar, agentAvatar, together, onInvite,
-  onOpenChat, onRemoveQueueItem,
+  onRemoveQueueItem,
 }: {
   queue: Track[];
   onQueue: (value: Track[]) => void;
@@ -5928,7 +5922,6 @@ function MusicPlayerUI({
   agentAvatar: string;
   together: MusicTogetherState;
   onInvite: () => void;
-  onOpenChat: () => void;
   onRemoveQueueItem: (index: number) => void;
 }) {
   const track = queue[selected];
@@ -5982,7 +5975,6 @@ function MusicPlayerUI({
         <section className="listening-controls"><button className="listening-mode" aria-label={modeLabels[playMode]} title={modeLabels[playMode]} onClick={onCycleMode}><Icon name={modeIcons[playMode]} /></button><button aria-label="上一首" onClick={adapter.previous}><Icon name="back" /></button><button className="listening-play" aria-label={state.playing ? "暂停" : "播放"} onClick={adapter.toggle}><Icon name={state.playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={adapter.next}><Icon name="forward" /></button><button className="listening-queue-button" aria-label="打开播放队列" onClick={() => setQueueOpen(true)}><Icon name="queue" /><em>{queue.length}</em></button></section>
       </> : <section className="listening-empty"><Icon name="music" /><h2>还没有播放队列</h2><p>在歌单队列中同步网易云歌单后，就能从这里播放。</p><button onClick={() => setQueueOpen(true)}>打开歌单队列</button></section>}
     </section>
-    <MusicSessionSwitcher active="player" onOpenPlayer={() => undefined} onOpenChat={onOpenChat} />
     {toast && <div className="music-toast" role="status">{toast}</div>}
     {queueOpen && <div className="music-queue-layer"><button className="music-queue-scrim" aria-label="关闭播放队列" onClick={() => setQueueOpen(false)} /><section className="music-queue-sheet" style={{ transform: `translateY(${queueDragY}px)` }}><div className="music-queue-drag-handle" onTouchStart={(event) => { queueDragStart.current = event.touches[0]?.clientY ?? null; }} onTouchMove={(event) => { const start = queueDragStart.current; const current = event.touches[0]?.clientY; if (start != null && current != null && current > start) setQueueDragY(Math.min(240, current - start)); }} onTouchEnd={() => { if (queueDragY > 88) setQueueOpen(false); setQueueDragY(0); queueDragStart.current = null; }} /><header><div><small>正在播放队列</small><h2>{queue.length} 首歌曲</h2></div><div><button className="queue-sync-action" onClick={() => { setQueueOpen(false); setSyncOpen(true); }}>同步歌单</button><button aria-label="关闭播放队列" onClick={() => setQueueOpen(false)}><Icon name="close" /></button></div></header><div className="music-queue-list" ref={queueListRef}>{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="music-queue-track" onClick={() => { adapter.select(index); setQueueOpen(false); }}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "--:--"}</time>{selected === index && <i className="music-queue-eq" aria-label="正在播放" />}</button><button className="music-queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div></section></div>}
     {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="返回播放队列" onClick={() => { setSyncOpen(false); setQueueOpen(true); }} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="返回播放队列" onClick={() => { setSyncOpen(false); setQueueOpen(true); }}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); setQueueOpen(true); }} /></section></div>}

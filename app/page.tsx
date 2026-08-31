@@ -488,7 +488,6 @@ const nav = [
   { label: "便笺", english: "Notes", icon: "note" },
   { label: "提醒", english: "Reminders", icon: "check" },
   { label: "纪念日", english: "Dates", icon: "calendar" },
-  { label: "魔盒", english: "Cabinet", icon: "box" },
   { label: "音乐", english: "Music", icon: "music" },
   { label: "记忆库", english: "Memory", icon: "library" },
   { label: "设置", english: "Settings", icon: "settings" },
@@ -581,13 +580,6 @@ type FavoriteItem = {
 type MusicControl = { id: string; action: "play" | "pause" | "next" | "previous" | "play_track"; trackId?: string; replaceQueue?: boolean; processedAt?: string };
 type MusicPlaybackState = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
 type MusicResumeState = Pick<MusicPlaybackState, "trackId" | "positionSeconds" | "updatedAt">;
-type BoxApp = {
-  id: string;
-  name: string;
-  description: string;
-  url?: string;
-  kind: string;
-};
 type ConnectionSettings = Record<string, Record<string, string>>;
 type ChatAttachment = {
   key: string;
@@ -1190,8 +1182,6 @@ export default function Home() {
                 onSelectConversation={setConversationId}
               agentName={agentName}
               userName={userName}
-              agentAvatar={agentAvatar}
-                userAvatar={userAvatar}
                 favorites={favorites}
                 setFavorites={setFavorites}
                 focusMessageId={focusMessageId}
@@ -1211,8 +1201,6 @@ export default function Home() {
             <Todos />
           ) : active === "纪念日" ? (
             <Anniversaries />
-          ) : active === "魔盒" ? (
-            <MagicBox />
           ) : active === "音乐" ? (
             <MusicPlayerUI
               queue={activeTracks}
@@ -3258,8 +3246,6 @@ function CodexChatMessage({
   item,
   agentName,
   userName,
-  agentAvatar,
-  userAvatar,
   onEdit,
   onThought,
   onCopy,
@@ -3273,8 +3259,6 @@ function CodexChatMessage({
   item: BridgeChatMessage;
   agentName: string;
   userName: string;
-  agentAvatar: string;
-  userAvatar: string;
   onEdit: (item: BridgeChatMessage) => void;
   onThought: (item: BridgeChatMessage) => void;
   onCopy: (item: BridgeChatMessage) => void;
@@ -3305,12 +3289,10 @@ function CodexChatMessage({
         )
       )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
-        {assistant && <AvatarMark src={agentAvatar} label={agentName} kind="agent" />}
         <div>
           {item.content && <p>{item.content}</p>}
           {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} />}
         </div>
-        {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
       <div className="message-actions">
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
@@ -3357,8 +3339,6 @@ function ConnectedChat({
   onSelectConversation,
   agentName,
   userName,
-  agentAvatar,
-  userAvatar,
   favorites,
   setFavorites,
   focusMessageId,
@@ -3372,8 +3352,6 @@ function ConnectedChat({
   onSelectConversation: (id: string) => void;
   agentName: string;
   userName: string;
-  agentAvatar: string;
-  userAvatar: string;
   favorites: FavoriteItem[];
   setFavorites: Dispatch<SetStateAction<FavoriteItem[]>>;
   focusMessageId?: string;
@@ -3937,10 +3915,10 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
         })}
         {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
-        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div></div>)}
+        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div><p>{text}</p></div></div></div>)}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}
@@ -5735,89 +5713,6 @@ function ConnectionModal({
   );
 }
 
-function MagicBox() {
-  const [apps, setApps] = usePersistentDocument<BoxApp[]>("magicBox", []);
-  const input = useRef<HTMLInputElement>(null);
-  const importApp = async (file?: File) => {
-    if (!file) return;
-    try {
-      const raw = JSON.parse(await file.text()) as Partial<BoxApp>;
-      if (!raw.name) throw new Error();
-      setApps((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          name: String(raw.name),
-          description: String(raw.description || ""),
-          url: raw.url ? String(raw.url) : undefined,
-          kind: String(raw.kind || "扩展"),
-        },
-      ]);
-    } catch {
-      window.alert("扩展文件格式无效");
-    }
-    if (input.current) input.current.value = "";
-  };
-  return (
-    <div className="page-body magic-page">
-      <PageIntro
-        eyebrow="VESPER BOX"
-        title="魔盒"
-        text="导入并打开自己的应用或游戏扩展。"
-      />
-      <div className="magic-actions">
-        <span>{apps.length} 个扩展</span>
-        <button className="import-app" onClick={() => input.current?.click()}>
-          <Icon name="upload" />
-          导入
-        </button>
-        <input
-          ref={input}
-          hidden
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void importApp(event.target.files?.[0])}
-        />
-      </div>
-      {!apps.length ? (
-        <EmptyState text="还没有扩展。导入包含 name、description、url、kind 的 JSON 文件。" />
-      ) : (
-        <div className="app-grid">
-          {apps.map((app, index) => (
-            <article className="app-tile" key={app.id}>
-              <span className="app-art light">
-                <i>{String(index + 1).padStart(2, "0")}</i>
-              </span>
-              <b>{app.name}</b>
-              <small>{app.description || "无说明"}</small>
-              <em>{app.kind}</em>
-              <div className="tile-actions">
-                {app.url && (
-                  <button
-                    onClick={() =>
-                      window.open(app.url, "_blank", "noopener,noreferrer")
-                    }
-                  >
-                    打开
-                  </button>
-                )}
-                <button
-                  onClick={() =>
-                    setApps((current) =>
-                      current.filter((entry) => entry.id !== app.id),
-                    )
-                  }
-                >
-                  删除
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 function formatPlaybackTime(value: number) {
   if (!Number.isFinite(value) || value < 0) return "0:00";
   return `${Math.floor(value / 60)}:${String(Math.floor(value) % 60).padStart(2, "0")}`;

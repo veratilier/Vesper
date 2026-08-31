@@ -10,28 +10,63 @@ export type MusicSyncTrack = {
   playable?: boolean;
 };
 
-export type NeteasePlaylist = { id: string; name: string; trackCount?: number };
+// This is the UI-facing subset of the MIT-licensed netease-music-mcp tool set.
+// It stays transport-neutral so the same Vesper screen can later point at the
+// MCP server directly without changing its presentation or playback state.
+export type MusicLibraryAction =
+  | "search"
+  | "playlists"
+  | "playlist"
+  | "recommendations"
+  | "personal-fm"
+  | "recent-plays"
+  | "play-history"
+  | "liked-songs"
+  | "lyrics"
+  | "resolve"
+  | "playlist-add"
+  | "playlist-remove";
 
-export type MusicSyncResult = {
+export type MusicLibraryPlaylist = {
+  id: string;
+  name: string;
+  trackCount?: number;
+  cover?: string;
+  description?: string;
+  creator?: string;
+};
+
+export type MusicLibraryResult = {
   error?: string;
-  playlists?: NeteasePlaylist[];
   tracks?: MusicSyncTrack[];
-  queue?: MusicSyncTrack[];
-  meta?: Record<string, string>;
+  playlists?: MusicLibraryPlaylist[];
+  title?: string;
+  subtitle?: string;
+  lyrics?: string;
+  translation?: string;
   summary?: string;
 };
 
-export async function requestNeteaseSync(
+export async function requestNeteaseLibrary(
   endpoint: string,
   headers: HeadersInit,
-  payload: { action: "playlists" | "sync"; uid: string; playlistId: string; cookie: string },
-): Promise<MusicSyncResult> {
+  payload: {
+    action: MusicLibraryAction;
+    uid?: string;
+    cookie?: string;
+    query?: string;
+    playlistId?: string;
+    songIds?: string[];
+    tracks?: MusicSyncTrack[];
+    limit?: number;
+  },
+): Promise<MusicLibraryResult> {
   const response = await fetch(endpoint, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
   });
-  const result = await response.json().catch(() => ({})) as MusicSyncResult;
-  if (!response.ok) throw new Error(result.error || "网易云同步失败");
+  const result = await response.json().catch(() => ({})) as MusicLibraryResult;
+  if (!response.ok) throw new Error(result.error || "网易云音乐服务暂时不可用");
   return result;
 }

@@ -11,7 +11,7 @@ import {
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
 import { mergeCodexMessages } from "./codex-message-merge";
-import { requestNeteaseSync, type MusicSyncResult } from "@/lib/music-service";
+import { requestNeteaseLibrary, type MusicLibraryResult } from "@/lib/music-service";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
   const add = () =>
@@ -565,6 +565,7 @@ type MusicCardData = {
   message?: string;
   source?: string;
 };
+type MusicPlaylistIntent = Pick<MusicCardData, "trackId" | "title" | "artist" | "album" | "cover" | "duration" | "url" | "playable" | "source">;
 type FavoriteItem = {
   id: string;
   folderId: string;
@@ -627,6 +628,16 @@ function readLocalValue<T>(key: string, fallback: T): T {
   }
 }
 
+function mergeMusicTracks(current: Track[], incoming: Track[]) {
+  const next = [...current];
+  for (const track of incoming) {
+    const index = next.findIndex((item) => item.id === track.id || (item.neteaseId && item.neteaseId === track.neteaseId));
+    if (index >= 0) next[index] = { ...next[index], ...track };
+    else next.push(track);
+  }
+  return next;
+}
+
 export default function Home() {
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -658,9 +669,11 @@ export default function Home() {
   const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
   const [, setMusicPlayback] = usePersistentDocument<MusicPlaybackState>("musicPlayback", {});
   const [musicResume, setMusicResume] = useLocalDocument<MusicResumeState>("music-resume", {});
+  const [savedMusicCookie] = useLocalDocument("netease-music-u", "");
   const [musicTogether, setMusicTogether] = usePersistentDocument<MusicTogetherState>("musicTogether", {});
   const [playMode, setPlayMode] = useState<MusicPlayMode>(() => readLocalValue<MusicPlayMode>("vesper-music-play-mode", "order"));
   const [musicToast, setMusicToast] = useState("");
+  const [musicPlaylistIntent, setMusicPlaylistIntent] = useState<MusicPlaylistIntent | null>(null);
   const globalPlayer = useRef<HTMLAudioElement>(null);
   const playbackTimeRef = useRef(0);
   const playbackResumeReady = useRef(false);
@@ -680,6 +693,49 @@ export default function Home() {
     setMusicToast(message);
     window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
   };
+  useEffect(() => {
+    const resolveCard = (event: Event) => {
+      const card = (event as CustomEvent<{ card?: MusicCardData }>).detail?.card;
+      const neteaseId = card?.trackId?.replace(/^netease-/, "");
+      if (!card || card.source !== "netease" || !neteaseId) return;
+      const existing = tracks.find((track) => track.id === card.trackId || track.neteaseId === neteaseId);
+      if (existing?.url && savedMusicCookie) return;
+      void requestNeteaseLibrary(apiUrl("/api/music/library"), appHeaders(true), {
+        action: "resolve",
+        songIds: [neteaseId],
+        cookie: savedMusicCookie,
+        tracks: [{
+          id: card.trackId,
+          neteaseId,
+          title: card.title,
+          artist: card.artist,
+          album: card.album,
+          cover: card.cover,
+          duration: card.duration,
+          url: card.url || "",
+          playable: card.playable,
+        }],
+      }).then((result) => {
+        if (!result.tracks?.length) return;
+        setTracks((current) => mergeMusicTracks(current, result.tracks as Track[]));
+      }).catch(() => {});
+    };
+    window.addEventListener("vesper-music-card", resolveCard);
+    return () => window.removeEventListener("vesper-music-card", resolveCard);
+  }, [savedMusicCookie, setTracks, tracks]);
+  useEffect(() => {
+    const refreshLibrary = () => {
+      void fetch(apiUrl("/api/state?key=music"), { cache: "no-store", headers: appHeaders() })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((result: { value?: Track[] | null }) => {
+          if (!Array.isArray(result.value)) return;
+          window.dispatchEvent(new CustomEvent("vesper-document-change", { detail: { key: "music", value: result.value } }));
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("vesper-music-library-refresh", refreshLibrary);
+    return () => window.removeEventListener("vesper-music-library-refresh", refreshLibrary);
+  }, []);
   const playerAdapter: PlayerAdapter = {
     play: () => {
       if (!currentTrack?.url || currentTrack.playable === false) return showMusicToast("当前歌曲没有可播放音频");
@@ -1192,6 +1248,10 @@ export default function Home() {
                   if (activeTracks.length) setTrackIndex((index) => (index + 1) % activeTracks.length);
                 }}
                 onOpenMusic={() => setActive("音乐")}
+                onAddMusicToPlaylist={(card) => {
+                  setMusicPlaylistIntent(card);
+                  setActive("音乐");
+                }}
               />
           ) : active === "日记" ? (
             <Diary />
@@ -1214,7 +1274,11 @@ export default function Home() {
                 if (retainedIndex < 0) setPlaying(false);
               }}
               selected={trackIndex}
-              onTracks={setTracks}
+              onTracks={(incoming) => setTracks((current) => {
+                return mergeMusicTracks(current, incoming);
+              })}
+              playlistIntent={musicPlaylistIntent}
+              onPlaylistIntentConsumed={() => setMusicPlaylistIntent(null)}
               playMode={playMode}
               onCycleMode={cyclePlayMode}
               toast={musicToast}
@@ -3017,6 +3081,7 @@ const CODEX_DYNAMIC_TOOLS = [
   },
   { name: "music_get_status", description: "Read the current device playback state, including song, playing/paused state, position, duration and queue length. Use before answering what is currently playing.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
   { name: "music_search", description: "Search the Vesper music library and current queue by title, artist, album, or keyword. Read-only.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } }, required: ["query"] } },
+  { name: "music_netease_search", description: "Search the public NetEase Music catalog, save returned songs to Vesper music, then use music_send_card, music_queue_add, or music_play with an exact trackId. This does not edit a NetEase playlist.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 10 } }, required: ["query"] } },
   { name: "music_play", description: "Play one uniquely identified Vesper song on the user's current device. Never claims success without a playable source.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } }, required: ["trackId"] } },
   { name: "music_control", description: "Control the current player: play/resume, pause, next track, or previous track.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["play", "pause", "next", "previous"] } }, required: ["action"] } },
   { name: "music_queue_add", description: "Add one Vesper song to the shared playback queue, either next or at the end.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } }, required: ["trackId", "position"] } },
@@ -3255,6 +3320,7 @@ function CodexChatMessage({
   onPlayMusic,
   onQueueMusic,
   onOpenMusic,
+  onAddMusicToPlaylist,
 }: {
   item: BridgeChatMessage;
   agentName: string;
@@ -3268,6 +3334,7 @@ function CodexChatMessage({
   onPlayMusic: (trackId: string) => void;
   onQueueMusic: (trackId: string) => void;
   onOpenMusic: () => void;
+  onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const assistant = item.role === "agent";
   const timestamp = visibleMessageTimestamp(item.createdAt);
@@ -3291,7 +3358,7 @@ function CodexChatMessage({
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
         <div>
           {item.content && <p>{item.content}</p>}
-          {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} />}
+          {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
         </div>
       </div>
       <div className="message-actions">
@@ -3311,11 +3378,13 @@ function MusicMessageCard({
   onPlay,
   onQueue,
   onOpen,
+  onAddToPlaylist,
 }: {
   card: MusicCardData;
   onPlay: (trackId: string) => void;
   onQueue: (trackId: string) => void;
   onOpen: () => void;
+  onAddToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   return (
     <article className="music-message-card">
@@ -3327,6 +3396,7 @@ function MusicMessageCard({
         <div className="music-card-actions">
           <button disabled={!card.playable} onClick={() => onPlay(card.trackId)}><Icon name="play" /> 播放</button>
           <button onClick={() => onQueue(card.trackId)}><Icon name="plus" /> 队列</button>
+          {card.source === "netease" && <button onClick={() => onAddToPlaylist(card)}><Icon name="library" /> 歌单</button>}
           <button onClick={onOpen}><Icon name="music" /> 播放器</button>
         </div>
       </div>
@@ -3347,6 +3417,7 @@ function ConnectedChat({
   onToggleMusic,
   onNextMusic,
   onOpenMusic,
+  onAddMusicToPlaylist,
 }: {
   conversationId: string;
   onSelectConversation: (id: string) => void;
@@ -3360,6 +3431,7 @@ function ConnectedChat({
   onToggleMusic: () => void;
   onNextMusic: () => void;
   onOpenMusic: () => void;
+  onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<BridgeChatMessage[]>(() => normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId));
@@ -3460,6 +3532,9 @@ function ConnectedChat({
       const result = await callServerTool(name, argumentsValue, itemId);
       if (result && typeof result === "object" && "musicCard" in result) {
         window.dispatchEvent(new CustomEvent("vesper-music-card", { detail: { conversationId, card: (result as { musicCard: MusicCardData }).musicCard } }));
+      }
+      if (result && typeof result === "object" && (result as { musicLibraryRefresh?: unknown }).musicLibraryRefresh === true) {
+        window.dispatchEvent(new CustomEvent("vesper-music-library-refresh"));
       }
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true } }));
     } catch (reason) {
@@ -3915,7 +3990,7 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} /></div>;
         })}
         {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
         {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div><p>{text}</p></div></div></div>)}
@@ -5842,7 +5917,7 @@ function togetherTimeLabel(state: MusicTogetherState, totalSeconds: number) {
 function MusicPlayerUI({
   queue, onQueue, selected, onTracks, playMode, onCycleMode, toast, adapter,
   userName, agentName, userAvatar, agentAvatar, together, onInvite,
-  onRemoveQueueItem,
+  onRemoveQueueItem, playlistIntent, onPlaylistIntentConsumed,
 }: {
   queue: Track[];
   onQueue: (value: Track[]) => void;
@@ -5859,14 +5934,16 @@ function MusicPlayerUI({
   together: MusicTogetherState;
   onInvite: () => void;
   onRemoveQueueItem: (index: number) => void;
+  playlistIntent: MusicPlaylistIntent | null;
+  onPlaylistIntentConsumed: () => void;
 }) {
   const track = queue[selected];
   const state = adapter.getState();
   const [queueOpen, setQueueOpen] = useState(false);
   const [queueDragY, setQueueDragY] = useState(0);
   const [scrubValue, setScrubValue] = useState<number | null>(null);
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [neteaseMeta, setNeteaseMeta] = useLocalDocument<Record<string, string>>("music-connection-meta", {});
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [pendingPlaylistTrack, setPendingPlaylistTrack] = useState<MusicPlaylistIntent | null>(null);
   const queueDragStart = useRef<number | null>(null);
   const queueListRef = useRef<HTMLDivElement>(null);
   const tint = useCoverTint(track?.cover);
@@ -5890,12 +5967,19 @@ function MusicPlayerUI({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [queueOpen, selected, queue.length]);
+  useEffect(() => {
+    if (!playlistIntent) return;
+    setPendingPlaylistTrack(playlistIntent);
+    setLibraryOpen(true);
+    onPlaylistIntentConsumed();
+  }, [onPlaylistIntentConsumed, playlistIntent]);
   const commitSeek = () => {
     if (scrubValue != null) adapter.seek(scrubValue);
     setScrubValue(null);
   };
   return <div className="page-body listening-player" style={roomStyle}>
     <section className="listening-player-main">
+      <div className="listening-library-bar"><button onClick={() => setLibraryOpen(true)}><Icon name="library" /><span>我的音乐</span></button></div>
       <button className="listening-together" onClick={together.status === "connected" ? undefined : onInvite} aria-label={together.status === "connected" ? `${agentName} 与 ${userName} 正在一起听` : "邀请一起听"}>
         <span className="listening-avatars"><AvatarMark src={userAvatar} label={userName} kind="user" /><i /><AvatarMark src={agentAvatar} label={agentName} kind="agent" /></span>
         <span>{togetherTimeLabel(together, totalTogetherSeconds)}</span>
@@ -5909,45 +5993,184 @@ function MusicPlayerUI({
         <section className="listening-track-copy"><h2>{track.title}</h2><p>{track.artist || "未知歌手"}{track.album ? ` · ${track.album}` : ""}</p></section>
         <section className="listening-progress" aria-label="播放进度"><input aria-label="播放进度" type="range" min="0" max={Math.max(state.duration, 1)} step="0.1" disabled={!canSeek} value={Math.min(displayedTime, Math.max(state.duration, 1))} onChange={(event) => setScrubValue(Number(event.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} /><div><span>{canSeek ? formatPlaybackTime(displayedTime) : "--:--"}</span><span>{canSeek ? formatPlaybackTime(state.duration) : "--:--"}</span></div></section>
         <section className="listening-controls"><button className="listening-mode" aria-label={modeLabels[playMode]} title={modeLabels[playMode]} onClick={onCycleMode}><Icon name={modeIcons[playMode]} /></button><button aria-label="上一首" onClick={adapter.previous}><Icon name="back" /></button><button className="listening-play" aria-label={state.playing ? "暂停" : "播放"} onClick={adapter.toggle}><Icon name={state.playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={adapter.next}><Icon name="forward" /></button><button className="listening-queue-button" aria-label="打开播放队列" onClick={() => setQueueOpen(true)}><Icon name="queue" /><em>{queue.length}</em></button></section>
-      </> : <section className="listening-empty"><Icon name="music" /><h2>还没有播放队列</h2><p>在歌单队列中同步网易云歌单后，就能从这里播放。</p><button onClick={() => setQueueOpen(true)}>打开歌单队列</button></section>}
+      </> : <section className="listening-empty"><Icon name="music" /><h2>还没有播放队列</h2><p>在我的音乐中连接网易云账号，选择歌单或搜索歌曲后即可播放。</p><button onClick={() => setLibraryOpen(true)}>打开我的音乐</button></section>}
     </section>
     {toast && <div className="music-toast" role="status">{toast}</div>}
-    {queueOpen && <div className="music-queue-layer"><button className="music-queue-scrim" aria-label="关闭播放队列" onClick={() => setQueueOpen(false)} /><section className="music-queue-sheet" style={{ transform: `translateY(${queueDragY}px)` }}><div className="music-queue-drag-handle" onTouchStart={(event) => { queueDragStart.current = event.touches[0]?.clientY ?? null; }} onTouchMove={(event) => { const start = queueDragStart.current; const current = event.touches[0]?.clientY; if (start != null && current != null && current > start) setQueueDragY(Math.min(240, current - start)); }} onTouchEnd={() => { if (queueDragY > 88) setQueueOpen(false); setQueueDragY(0); queueDragStart.current = null; }} /><header><div><small>正在播放队列</small><h2>{queue.length} 首歌曲</h2></div><div><button className="queue-sync-action" onClick={() => { setQueueOpen(false); setSyncOpen(true); }}>同步歌单</button><button aria-label="关闭播放队列" onClick={() => setQueueOpen(false)}><Icon name="close" /></button></div></header><div className="music-queue-list" ref={queueListRef}>{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="music-queue-track" onClick={() => { adapter.select(index); setQueueOpen(false); }}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "--:--"}</time>{selected === index && <i className="music-queue-eq" aria-label="正在播放" />}</button><button className="music-queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div></section></div>}
-    {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="返回播放队列" onClick={() => { setSyncOpen(false); setQueueOpen(true); }} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="返回播放队列" onClick={() => { setSyncOpen(false); setQueueOpen(true); }}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); setQueueOpen(true); }} /></section></div>}
+    {queueOpen && <div className="music-queue-layer"><button className="music-queue-scrim" aria-label="关闭播放队列" onClick={() => setQueueOpen(false)} /><section className="music-queue-sheet" style={{ transform: `translateY(${queueDragY}px)` }}><div className="music-queue-drag-handle" onTouchStart={(event) => { queueDragStart.current = event.touches[0]?.clientY ?? null; }} onTouchMove={(event) => { const start = queueDragStart.current; const current = event.touches[0]?.clientY; if (start != null && current != null && current > start) setQueueDragY(Math.min(240, current - start)); }} onTouchEnd={() => { if (queueDragY > 88) setQueueOpen(false); setQueueDragY(0); queueDragStart.current = null; }} /><header><div><small>正在播放队列</small><h2>{queue.length} 首歌曲</h2></div><div><button className="queue-sync-action" onClick={() => { setQueueOpen(false); setLibraryOpen(true); }}>我的音乐</button><button aria-label="关闭播放队列" onClick={() => setQueueOpen(false)}><Icon name="close" /></button></div></header><div className="music-queue-list" ref={queueListRef}>{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="music-queue-track" onClick={() => { adapter.select(index); setQueueOpen(false); }}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "--:--"}</time>{selected === index && <i className="music-queue-eq" aria-label="正在播放" />}</button><button className="music-queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div></section></div>}
+    {libraryOpen && <NeteaseMusicLibrary onClose={() => { setLibraryOpen(false); setPendingPlaylistTrack(null); }} queue={queue} onQueue={onQueue} onTracks={onTracks} pendingPlaylistTrack={pendingPlaylistTrack} onPendingPlaylistTrackHandled={() => setPendingPlaylistTrack(null)} />}
   </div>;
 }
 
-function NeteaseSyncPanel({ meta, onSync }: { meta: Record<string, string>; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {
+function NeteaseMusicLibrary({
+  onClose,
+  queue,
+  onQueue,
+  onTracks,
+  pendingPlaylistTrack,
+  onPendingPlaylistTrackHandled,
+}: {
+  onClose: () => void;
+  queue: Track[];
+  onQueue: (value: Track[]) => void;
+  onTracks: (value: Track[]) => void;
+  pendingPlaylistTrack: MusicPlaylistIntent | null;
+  onPendingPlaylistTrackHandled: () => void;
+}) {
+  const [meta, setMeta] = useLocalDocument<Record<string, string>>("music-connection-meta", {});
   const [savedMusicCookie, setSavedMusicCookie] = useLocalDocument("netease-music-u", "");
-  const [form, setForm] = useState({ uid: meta.uid || "", playlistId: meta.playlistId || "", cookie: savedMusicCookie });
-  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; trackCount?: number }>>([]);
-  const [message, setMessage] = useState(meta.lastSyncAt ? `上次同步：${new Date(meta.lastSyncAt).toLocaleString()}` : "");
-  const [syncing, setSyncing] = useState(false);
-  const hasSelectedPlaylist = playlists.length
-    ? playlists.some((playlist) => playlist.id === form.playlistId)
-    : Boolean(form.playlistId.trim());
-  const request = async (action: "playlists" | "sync") => {
-    if (action === "playlists" && (!form.uid.trim() || !form.cookie.trim())) { setMessage("请填写网易云 UID 和 MUSIC_U"); return; }
-    if (action === "sync" && !hasSelectedPlaylist) { setMessage("请先从账号歌单中选择一个歌单"); return; }
-    if (form.cookie.trim()) setSavedMusicCookie(form.cookie.trim());
-    setSyncing(true); setMessage(action === "sync" ? "正在刷新网易云可播放链接…" : "正在读取账号歌单…");
+  const [account, setAccount] = useState({ uid: meta.uid || "", cookie: savedMusicCookie });
+  const [tab, setTab] = useState<"mine" | "discover">("mine");
+  const [accountOpen, setAccountOpen] = useState(!meta.uid || !savedMusicCookie);
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; trackCount?: number; cover?: string; description?: string }>>([]);
+  const [collection, setCollection] = useState<MusicLibraryResult | null>(null);
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
+  const [activeNeteasePlaylistId, setActiveNeteasePlaylistId] = useState("");
+  const isConnected = Boolean(account.uid.trim() && account.cookie.trim());
+
+  const invoke = async (
+    action: Parameters<typeof requestNeteaseLibrary>[2]["action"],
+    payload: Omit<Parameters<typeof requestNeteaseLibrary>[2], "action" | "uid" | "cookie"> = {},
+  ) => {
+    setBusy(true);
+    setMessage("");
     try {
-      const result = await requestNeteaseSync(apiUrl("/api/music/sync"), appHeaders(true), { action, ...form }) as MusicSyncResult;
-      if (action === "playlists") {
-        setPlaylists(result.playlists || []);
-        setMessage(`找到 ${result.playlists?.length || 0} 个歌单`);
-      } else {
-        const nextMeta = result.meta || { uid: form.uid.trim(), playlistId: form.playlistId.trim(), lastSyncAt: new Date().toISOString() };
-        onSync(result.tracks || [], result.queue || [], nextMeta);
-        setMessage(result.summary || "同步完成");
-      }
+      const result = await requestNeteaseLibrary(apiUrl("/api/music/library"), appHeaders(true), {
+        action,
+        uid: account.uid.trim(),
+        cookie: account.cookie.trim(),
+        ...payload,
+      });
+      return result;
     } catch (reason) {
-      const detail = reason instanceof Error ? reason.message : "同步失败";
-      setMessage(/^(load failed|failed to fetch|networkerror)$/i.test(detail.trim()) ? "无法连接音乐同步服务，请检查网络或重新打开 Vesper。" : detail);
+      const detail = reason instanceof Error ? reason.message : "网易云音乐服务暂时不可用";
+      const normalized = detail.trim();
+      setMessage(
+        /^(load failed|failed to fetch|networkerror)$/i.test(normalized)
+          ? "暂时无法连接音乐服务，请稍后重试。"
+          : normalized === "Device not paired"
+            ? "请先在 Vesper 设置中连接这台设备，再使用网易云音乐。"
+            : detail,
+      );
+      return null;
+    } finally {
+      setBusy(false);
     }
-    finally { setSyncing(false); }
   };
-  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>填写网易云 UID 后，保存到本机浏览器的 <code>MUSIC_U</code> 会用于重新读取歌单；它不会写入 Vesper 云端或同步元数据。</p><label className="profile-field"><span>网易云 UID</span><input inputMode="numeric" autoComplete="off" value={form.uid} placeholder="例如 123456789" onChange={(event) => setForm({ ...form, uid: event.target.value })} /></label><label className="profile-field"><span>MUSIC_U</span><input type="password" autoComplete="off" value={form.cookie} placeholder="保存在此设备浏览器" onChange={(event) => { const cookie = event.target.value; setForm({ ...form, cookie }); setSavedMusicCookie(cookie); }} /></label>{playlists.length > 0 && <label className="profile-field"><span>从已读取的账号歌单选择</span><select value={playlists.some((playlist) => playlist.id === form.playlistId) ? form.playlistId : ""} onChange={(event) => setForm({ ...form, playlistId: event.target.value })}><option value="">选择歌单</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.name}{playlist.trackCount ? ` · ${playlist.trackCount} 首` : ""}</option>)}</select></label>}<p className="settings-hint">读取账号歌单后，在列表中选择要同步的歌单。</p><div className="sync-strategy"><span>同步策略</span><b>所选歌单将按原顺序更新当前播放列表，并刷新歌曲链接</b></div><div className="sync-buttons"><button className="reset-background" disabled={syncing || !form.uid.trim() || !form.cookie.trim()} onClick={() => void request("playlists")}>读取歌单</button><button className="save-profile" disabled={syncing || !hasSelectedPlaylist} onClick={() => void request("sync")}>{syncing ? "同步中…" : "同步到当前播放列表"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
+
+  const connect = async () => {
+    if (!isConnected) {
+      setMessage("请填写网易云 UID 和 MUSIC_U");
+      return;
+    }
+    setSavedMusicCookie(account.cookie.trim());
+    setMeta((current) => ({ ...current, uid: account.uid.trim() }));
+    const result = await invoke("playlists");
+    if (!result) return;
+    setPlaylists(result.playlists || []);
+    setAccountOpen(false);
+    setMessage(result.summary || "已连接网易云音乐");
+  };
+
+  const showCollection = async (
+    action: Parameters<typeof requestNeteaseLibrary>[2]["action"],
+    payload: Omit<Parameters<typeof requestNeteaseLibrary>[2], "action" | "uid" | "cookie"> = {},
+  ) => {
+    const result = await invoke(action, payload);
+    if (result) {
+      setCollection(result);
+      setActiveNeteasePlaylistId(action === "playlist" ? String((payload as { playlistId?: string }).playlistId || "") : "");
+    }
+  };
+
+  const searchSongs = async () => {
+    const query = search.trim();
+    if (!query) {
+      setMessage("请输入歌名、歌手或专辑");
+      return;
+    }
+    setTab("discover");
+    await showCollection("search", { query, limit: 30 });
+  };
+
+  const prepareTracks = async (tracks: Track[], replaceQueue = false, autoplay = false) => {
+    const songIds = tracks.map((track) => track.neteaseId || track.id.replace(/^netease-/, "")).filter(Boolean);
+    if (!songIds.length) return;
+    const result = await invoke("resolve", { songIds, tracks });
+    const resolved = (result?.tracks || []) as Track[];
+    if (!resolved.length) return;
+    onTracks(resolved);
+    const seen = new Set<string>();
+    const nextQueue = (replaceQueue ? resolved : [...queue, ...resolved]).filter((track) => {
+      const key = track.neteaseId || track.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    onQueue(nextQueue);
+    if (autoplay) {
+      const trackId = resolved[0]?.id;
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } })), 140);
+    }
+    setMessage(result?.summary || `已加入 ${resolved.length} 首歌曲`);
+  };
+
+  const updateRemotePlaylist = async (action: "playlist-add" | "playlist-remove", playlistId: string, track: MusicPlaylistIntent | Track) => {
+    if (!isConnected) {
+      setMessage("请先连接网易云账号");
+      return;
+    }
+    const neteaseId = track.neteaseId || track.id.replace(/^netease-/, "");
+    const target = playlists.find((playlist) => playlist.id === playlistId);
+    const verb = action === "playlist-add" ? "加入" : "移除";
+    if (!window.confirm(`确定将《${track.title}》${verb}${target?.name || "这个网易云歌单"}吗？`)) return;
+    const result = await invoke(action, { playlistId, songIds: [neteaseId] });
+    if (!result) return;
+    setMessage(result.summary || `已${verb}歌单`);
+    if (action === "playlist-add") {
+      setPlaylistPickerOpen(false);
+      onPendingPlaylistTrackHandled();
+    } else {
+      setCollection((current) => current ? { ...current, tracks: (current.tracks || []).filter((item) => (item.neteaseId || item.id.replace(/^netease-/, "")) !== neteaseId) } : current);
+    }
+  };
+
+  const contentTracks = (collection?.tracks || []) as Track[];
+  return <div className="netease-library-layer" role="dialog" aria-modal="true" aria-label="网易云音乐">
+    <section className="netease-library-sheet">
+      <header className="netease-library-head">
+        <button onClick={onClose} aria-label="关闭我的音乐"><Icon name="chevron" /></button>
+        <div><small>NETEASE MUSIC</small><h2>网易云音乐</h2></div>
+        <button className={busy ? "is-busy" : ""} disabled={busy} onClick={() => { if (tab === "mine") void connect(); else void searchSongs(); }} aria-label="刷新"><Icon name="repeat" /></button>
+      </header>
+      <nav className="netease-library-tabs" aria-label="音乐分类">
+        <button className={tab === "mine" ? "active" : ""} onClick={() => { setTab("mine"); setCollection(null); }}>我的</button>
+        <button className={tab === "discover" ? "active" : ""} onClick={() => { setTab("discover"); setCollection(null); }}>发现</button>
+      </nav>
+      <main className="netease-library-content">
+        {collection ? <section className="netease-collection">
+          <div className="netease-collection-head"><button onClick={() => setCollection(null)} aria-label="返回"><Icon name="chevron" /></button><div><small>{collection.subtitle || "网易云音乐"}</small><h3>{collection.title || "歌曲"}</h3></div><button disabled={busy || !contentTracks.length} onClick={() => void prepareTracks(contentTracks, true, true)}>播放全部</button></div>
+          {contentTracks.length ? <div className="netease-track-list">{contentTracks.map((track, index) => <article className={activeNeteasePlaylistId ? "is-remote-playlist" : ""} key={`${track.id}-${index}`}><button className="netease-track-main" onClick={() => void prepareTracks([track], false, true)}>{track.cover ? <img src={track.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{track.title}</b><small>{track.artist}{track.album ? ` · ${track.album}` : ""}</small></div><time>{track.duration || "--:--"}</time></button><button className="netease-track-more" onClick={() => void prepareTracks([track])} aria-label={`加入 ${track.title} 到播放队列`}><Icon name="plus" /></button>{activeNeteasePlaylistId && <button className="netease-track-remove" onClick={() => void updateRemotePlaylist("playlist-remove", activeNeteasePlaylistId, track)} aria-label={`从网易云歌单移除 ${track.title}`}><Icon name="trash" /></button>}</article>)}</div> : <div className="netease-library-empty"><Icon name="music" /><p>这里还没有可展示的歌曲。</p></div>}
+          {collection.lyrics && <pre className="netease-lyrics">{collection.lyrics}</pre>}
+        </section> : tab === "mine" ? <>
+          <section className={accountOpen ? "netease-account-card open" : "netease-account-card"}>
+            <button className="netease-account-toggle" onClick={() => setAccountOpen((value) => !value)}><span><i className={isConnected ? "connected" : ""} />{isConnected ? "网易云账号已连接" : "连接网易云账号"}</span><Icon name="chevron" /></button>
+            {accountOpen && <div className="netease-account-fields"><label><span>网易云 UID</span><input inputMode="numeric" autoComplete="off" value={account.uid} placeholder="例如 123456789" onChange={(event) => setAccount({ ...account, uid: event.target.value })} /></label><label><span>MUSIC_U</span><input type="password" autoComplete="off" value={account.cookie} placeholder="仅保存在此设备" onChange={(event) => setAccount({ ...account, cookie: event.target.value })} /></label><button disabled={busy} onClick={() => void connect()}>{busy ? "连接中…" : "连接并读取歌单"}</button></div>}
+          </section>
+          {pendingPlaylistTrack && <section className="netease-pending-playlist"><div><small>FROM CHAT</small><b>{pendingPlaylistTrack.title}</b><span>{pendingPlaylistTrack.artist || "未知歌手"}</span></div>{!isConnected ? <button onClick={() => setAccountOpen(true)}>先连接账号</button> : !playlists.length ? <button disabled={busy} onClick={() => void connect()}>读取歌单</button> : <button onClick={() => setPlaylistPickerOpen((value) => !value)}>加入歌单</button>}{playlistPickerOpen && <div className="netease-playlist-picker">{playlists.map((playlist) => <button key={playlist.id} disabled={busy} onClick={() => void updateRemotePlaylist("playlist-add", playlist.id, pendingPlaylistTrack)}><span>{playlist.name}</span><small>{playlist.trackCount || 0} 首</small></button>)}</div>}<button className="netease-pending-dismiss" onClick={onPendingPlaylistTrackHandled}>取消</button></section>}
+          <section className="netease-shortcuts"><button disabled={busy || !isConnected} onClick={() => void showCollection("recommendations")}><Icon name="sparkles" /><span>每日推荐</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("personal-fm")}><Icon name="music" /><span>私人 FM</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("recent-plays")}><Icon name="repeat" /><span>最近播放</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("liked-songs")}><Icon name="heart" /><span>我喜欢的</span></button></section>
+          <section className="netease-playlists"><div className="netease-section-heading"><div><small>MY PLAYLISTS</small><h3>我的歌单</h3></div><button disabled={busy || !isConnected} onClick={() => void connect()}>刷新</button></div>{playlists.length ? <div className="netease-playlist-list">{playlists.map((playlist) => <button key={playlist.id} onClick={() => void showCollection("playlist", { playlistId: playlist.id })}>{playlist.cover ? <img src={playlist.cover} alt="" /> : <span><Icon name="music" /></span>}<div><b>{playlist.name}</b><small>{playlist.trackCount || 0} 首歌曲{playlist.description ? ` · ${playlist.description}` : ""}</small></div><Icon name="chevron" /></button>)}</div> : <div className="netease-library-empty"><Icon name="library" /><p>{isConnected ? "点击刷新读取你的歌单。" : "连接账号后查看你的歌单、红心和播放记录。"}</p></div>}</section>
+        </> : <>
+          <form className="netease-search" onSubmit={(event) => { event.preventDefault(); void searchSongs(); }}><Icon name="search" /><input value={search} placeholder="搜索歌曲、歌手或专辑" onChange={(event) => setSearch(event.target.value)} /><button disabled={busy} type="submit">搜索</button></form>
+          <section className="netease-discover-intro"><small>DISCOVER</small><h3>听见此刻想听的歌</h3><p>搜索任意歌曲，或连接账号后查看每日推荐、私人 FM 和本周常听。</p></section>
+          <section className="netease-discover-actions"><button disabled={busy || !isConnected} onClick={() => void showCollection("recommendations")}><b>每日推荐</b><span>今天的 30 首专属歌曲</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("play-history")}><b>本周常听</b><span>回到最近循环的旋律</span></button></section>
+        </>}
+        {message && <p className="netease-library-message" role="status">{message}</p>}
+      </main>
+    </section>
+  </div>;
 }
 
 function MemoryLibrary() {

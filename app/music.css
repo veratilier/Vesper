@@ -195,29 +195,126 @@
 .music-queue-remove { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(var(--music-on-tint), .45); }
 .music-queue-remove .ui-icon { width: 17px; height: 17px; }
 
-/* The sync form is a separate top-level surface; it never shares the queue's stacking context. */
-.music-sync-layer { position: fixed; z-index: 45; inset: 0; display: grid; place-items: end center; padding: 0 12px calc(12px + var(--safe-bottom)); }
-.music-sync-layer .modal-scrim { position: absolute; inset: 0; border: 0; background: rgba(2, 6, 7, .7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-.music-sync-modal { position: relative; z-index: 1; width: min(100%, 480px); max-height: min(76dvh, 650px); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); box-sizing: border-box; overflow: hidden; padding: 17px 16px 15px; border: 1px solid rgba(255,255,255,.14); border-radius: 24px; background: rgba(21, 29, 30, .98); color: rgba(247,250,249,.94); box-shadow: 0 22px 60px rgba(0,0,0,.48); }
-.music-sync-modal .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
-.music-sync-modal .modal-head small { display: block; color: rgba(var(--music-tint), .9); font: 10px/1 var(--font-geist-mono), monospace; letter-spacing: .09em; }
-.music-sync-modal .modal-head h2 { margin: 6px 0 0; color: #f7fbfa; font: 600 21px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
-.music-sync-modal .modal-head button { width: 36px; height: 36px; display: grid; flex: 0 0 36px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.09); color: rgba(247,250,249,.78); }
-.music-sync-modal .modal-head .ui-icon { width: 18px; height: 18px; }
-.music-sync-modal .netease-sync-panel { height: auto; min-height: 0; overflow-y: auto; padding: 8px 2px calc(6px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
-.music-sync-modal .sync-status-line { margin: 1px 0 13px; color: rgba(230,240,239,.77); font-size: 12px; }
-.music-sync-modal .netease-sync-panel > p:first-child { margin: 0 0 14px; color: rgba(231,240,239,.68); font-size: 12px; line-height: 1.55; }
-.music-sync-modal .profile-field { margin: 0 0 12px; }
-.music-sync-modal .profile-field span { margin: 0 2px 6px; color: rgba(231,240,239,.69); font-size: 11px; }
-.music-sync-modal .profile-field input,.music-sync-modal .profile-field select { width: 100%; min-height: 46px; box-sizing: border-box; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(255,255,255,.09); color: #f7fbfa; font: 14px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
-.music-sync-modal .profile-field input::placeholder { color: rgba(235,243,242,.42); }
-.music-sync-modal .profile-field select option { color: #192223; background: #f7fbfa; }
-.music-sync-modal .sync-strategy { align-items: flex-start; padding: 11px 12px; background: rgba(var(--music-tint), .16); color: rgba(234,242,241,.72); font-size: 11px; line-height: 1.45; }
-.music-sync-modal .sync-strategy b { color: #f0f7f6; font-weight: 500; text-align: right; }
-.music-sync-modal .sync-buttons { margin-top: 14px; }
-.music-sync-modal .sync-buttons button { min-height: 44px; border: 1px solid rgba(255,255,255,.16); border-radius: 15px; background: rgba(255,255,255,.1); color: #f5faf9; font-size: 12px; }
-.music-sync-modal .sync-buttons .save-profile { background: rgb(var(--music-tint)); color: #fff; }
-.music-sync-modal .connection-message { margin: 12px 2px 0; color: rgba(239,246,245,.79); font-size: 12px; line-height: 1.45; }
+/* Local NetEase-style library. It is a viewport-level sheet, deliberately
+   separated from both the player and queue stacking contexts. */
+.listening-library-bar { display: flex; justify-content: flex-end; min-height: 34px; padding: 0 2px; }
+.listening-library-bar button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border: 1px solid rgba(var(--music-on-tint), .14); border-radius: 17px; background: rgba(5, 9, 10, .19); color: rgba(var(--music-on-tint), .78); font: 500 11px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.listening-library-bar .ui-icon { width: 15px; height: 15px; stroke-width: 1.55; }
+
+.netease-library-layer { position: fixed; z-index: 70; inset: 0; isolation: isolate; color: #f7fbfa; background: #111819; }
+.netease-library-layer::before { content: ""; position: absolute; z-index: -1; inset: 0; opacity: .72; background: radial-gradient(circle at 50% -12%, rgba(var(--music-tint), .43), transparent 38%), radial-gradient(circle at 92% 40%, rgba(var(--music-tint), .16), transparent 38%), linear-gradient(165deg, #151f20, #0d1213 68%); }
+.netease-library-sheet { height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto auto minmax(0, 1fr); padding: calc(var(--safe-top) + 8px) 16px 0; }
+.netease-library-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; align-items: center; min-height: 60px; }
+.netease-library-head > button { width: 42px; height: 42px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.075); color: rgba(255,255,255,.9); }
+.netease-library-head > button:first-child .ui-icon { transform: rotate(180deg); }
+.netease-library-head > button:last-child .ui-icon { width: 19px; height: 19px; }
+.netease-library-head > button.is-busy .ui-icon { animation: netease-library-spin .75s linear infinite; }
+.netease-library-head > button:disabled { opacity: .55; }
+.netease-library-head > div { min-width: 0; text-align: center; }
+.netease-library-head small,.netease-section-heading small,.netease-collection-head small,.netease-discover-intro small { display: block; color: rgba(230,242,240,.49); font: 600 9px/1.25 var(--font-geist-mono), ui-monospace, monospace; letter-spacing: .14em; }
+.netease-library-head h2 { margin: 4px 0 0; color: #fff; font: 650 19px/1.1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-library-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 11px 0 8px; padding: 4px; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; background: rgba(6, 10, 11, .27); }
+.netease-library-tabs button { min-height: 36px; border: 0; border-radius: 11px; background: transparent; color: rgba(246,250,249,.57); font: 600 13px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-library-tabs button.active { background: rgba(var(--music-tint), .72); color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,.18); }
+.netease-library-content { min-height: 0; overflow-y: auto; padding: 9px 0 calc(24px + var(--safe-bottom)); overscroll-behavior: contain; scrollbar-width: none; }
+.netease-library-content::-webkit-scrollbar { display: none; }
+
+.netease-account-card { overflow: hidden; border: 1px solid rgba(255,255,255,.11); border-radius: 19px; background: linear-gradient(135deg, rgba(var(--music-tint), .21), rgba(255,255,255,.045)); box-shadow: 0 15px 34px rgba(0,0,0,.13); }
+.netease-account-toggle { width: 100%; min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border: 0; background: transparent; color: #f8fbfa; text-align: left; font: 600 14px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-account-toggle > span { display: inline-flex; align-items: center; gap: 9px; }
+.netease-account-toggle i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.38); box-shadow: 0 0 0 4px rgba(255,255,255,.07); }
+.netease-account-toggle i.connected { background: rgb(var(--music-tint)); box-shadow: 0 0 0 4px rgba(var(--music-tint), .17); }
+.netease-account-toggle .ui-icon { width: 17px; height: 17px; color: rgba(255,255,255,.65); transform: rotate(90deg); transition: transform .2s ease; }
+.netease-account-card.open .netease-account-toggle .ui-icon { transform: rotate(-90deg); }
+.netease-account-fields { display: grid; gap: 11px; padding: 0 16px 16px; }
+.netease-account-fields label { display: grid; gap: 6px; }
+.netease-account-fields label span { color: rgba(241,248,247,.62); font: 500 11px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-account-fields input { width: 100%; min-height: 46px; box-sizing: border-box; padding: 0 13px; border: 1px solid rgba(255,255,255,.14); border-radius: 13px; outline: none; background: rgba(0,0,0,.18); color: #fff; font: 15px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-account-fields input::placeholder { color: rgba(255,255,255,.36); }
+.netease-account-fields input:focus { border-color: rgba(var(--music-tint), .82); box-shadow: 0 0 0 3px rgba(var(--music-tint), .18); }
+.netease-account-fields > button,.netease-collection-head > button:last-child { min-height: 43px; padding: 0 15px; border: 0; border-radius: 14px; background: rgb(var(--music-tint)); color: #fff; font: 600 13px/1 var(--font-geist-sans), "PingFang SC", sans-serif; box-shadow: 0 8px 18px rgba(var(--music-tint), .22); }
+.netease-account-fields > button:disabled,.netease-shortcuts button:disabled,.netease-section-heading button:disabled,.netease-collection-head > button:disabled,.netease-search button:disabled { opacity: .38; }
+
+.netease-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.netease-shortcuts button { min-height: 69px; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 8px; padding: 0 13px; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; background: rgba(255,255,255,.055); color: rgba(248,251,250,.93); text-align: left; font: 600 12px/1.15 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-shortcuts .ui-icon { width: 19px; height: 19px; color: rgb(var(--music-tint)); stroke-width: 1.55; }
+.netease-pending-playlist { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 9px; margin: 14px 0 3px; padding: 13px; border: 1px solid rgba(var(--music-tint), .48); border-radius: 16px; background: rgba(var(--music-tint), .15); }
+.netease-pending-playlist > div:first-child { min-width: 0; display: grid; gap: 4px; }
+.netease-pending-playlist small { color: rgba(240,248,247,.54); font: 600 9px/1.2 var(--font-geist-mono), ui-monospace, monospace; letter-spacing: .1em; }
+.netease-pending-playlist b,.netease-pending-playlist span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netease-pending-playlist b { color: #fff; font: 600 13px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-pending-playlist span { color: rgba(244,250,249,.62); font: 11px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-pending-playlist > button { min-height: 35px; padding: 0 10px; border: 0; border-radius: 11px; background: rgb(var(--music-tint)); color: #fff; font: 600 11px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-pending-playlist > button:disabled { opacity: .48; }
+.netease-pending-playlist > .netease-pending-dismiss { padding: 0 4px; background: transparent; color: rgba(248,251,250,.58); }
+.netease-playlist-picker { grid-column: 1 / -1; display: grid; gap: 4px; max-height: 187px; overflow-y: auto; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.1); }
+.netease-playlist-picker button { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px; border: 0; border-radius: 10px; background: rgba(0,0,0,.2); color: #fff; text-align: left; }
+.netease-playlist-picker button span { font: 500 12px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-playlist-picker button small { color: rgba(245,250,249,.52); font: 10px/1 var(--font-geist-sans), "PingFang SC", sans-serif; letter-spacing: 0; }
+.netease-playlists { margin-top: 24px; }
+.netease-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 0 3px 10px; }
+.netease-section-heading h3,.netease-collection-head h3,.netease-discover-intro h3 { margin: 4px 0 0; color: #fff; font: 650 21px/1.15 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-section-heading button { min-height: 31px; padding: 0 8px; border: 0; background: transparent; color: rgba(var(--music-tint), 1); font: 600 12px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-playlist-list { display: grid; }
+.netease-playlist-list > button { width: 100%; min-height: 76px; display: grid; grid-template-columns: 57px minmax(0, 1fr) 18px; align-items: center; gap: 12px; padding: 9px 4px; border: 0; border-bottom: 1px solid rgba(255,255,255,.08); background: transparent; color: #fff; text-align: left; }
+.netease-playlist-list img,.netease-playlist-list > button > span { width: 57px; height: 57px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; background: rgba(var(--music-tint), .36); object-fit: cover; }
+.netease-playlist-list > button > span .ui-icon { width: 22px; height: 22px; }
+.netease-playlist-list > button > div { min-width: 0; }
+.netease-playlist-list b,.netease-playlist-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netease-playlist-list b { font: 600 14px/1.3 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-playlist-list small { margin-top: 5px; color: rgba(240,247,246,.5); font: 11px/1.25 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-playlist-list > button > .ui-icon { width: 16px; height: 16px; color: rgba(255,255,255,.47); }
+
+.netease-search { display: grid; grid-template-columns: 21px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 49px; padding: 0 5px 0 15px; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; background: rgba(5,9,10,.26); color: rgba(255,255,255,.55); }
+.netease-search .ui-icon { width: 18px; height: 18px; }
+.netease-search input { min-width: 0; height: 44px; padding: 0; border: 0; outline: none; background: transparent; color: #fff; font: 15px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-search input::placeholder { color: rgba(255,255,255,.4); }
+.netease-search button { min-height: 39px; padding: 0 14px; border: 0; border-radius: 12px; background: rgba(var(--music-tint), .76); color: #fff; font: 600 12px/1 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-discover-intro { margin: 30px 4px 20px; }
+.netease-discover-intro h3 { font-size: 28px; }
+.netease-discover-intro p { max-width: 290px; margin: 10px 0 0; color: rgba(241,248,247,.58); font: 13px/1.6 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-discover-actions { display: grid; gap: 11px; }
+.netease-discover-actions button { min-height: 82px; display: grid; align-content: center; gap: 7px; padding: 0 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 17px; background: linear-gradient(105deg, rgba(var(--music-tint), .29), rgba(255,255,255,.045)); color: #fff; text-align: left; }
+.netease-discover-actions b { font: 650 15px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-discover-actions span { color: rgba(246,251,250,.62); font: 12px/1.2 var(--font-geist-sans), "PingFang SC", sans-serif; }
+
+.netease-collection { min-height: 100%; }
+.netease-collection-head { min-height: 64px; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-bottom: 5px; }
+.netease-collection-head > button:first-child { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.07); color: #fff; }
+.netease-collection-head > button:first-child .ui-icon { width: 17px; height: 17px; transform: rotate(180deg); }
+.netease-collection-head > div { min-width: 0; }
+.netease-collection-head h3 { overflow: hidden; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }
+.netease-collection-head > button:last-child { min-height: 37px; padding: 0 12px; border-radius: 12px; font-size: 11px; }
+.netease-track-list { display: grid; }
+.netease-track-list article { min-height: 72px; display: grid; grid-template-columns: minmax(0, 1fr) 42px; align-items: center; gap: 4px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.netease-track-list article.is-remote-playlist { grid-template-columns: minmax(0, 1fr) 42px 42px; }
+.netease-track-main { width: 100%; min-width: 0; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 9px 2px; border: 0; background: transparent; color: #fff; text-align: left; }
+.netease-track-main img,.netease-track-main > span { width: 48px; height: 48px; display: grid; place-items: center; overflow: hidden; border-radius: 11px; background: rgba(var(--music-tint), .33); object-fit: cover; color: rgba(255,255,255,.8); font: 15px/1 Georgia, serif; }
+.netease-track-main > div { min-width: 0; }
+.netease-track-main b,.netease-track-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netease-track-main b { font: 600 14px/1.3 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-track-main small,.netease-track-main time { color: rgba(244,250,249,.53); font: 11px/1.3 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-track-main small { margin-top: 4px; }
+.netease-track-main time { margin-left: 3px; white-space: nowrap; }
+.netease-track-more { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: rgba(255,255,255,.07); color: rgba(255,255,255,.82); }
+.netease-track-more .ui-icon { width: 18px; height: 18px; stroke-width: 1.6; }
+.netease-track-remove { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(245,163,158,.9); }
+.netease-track-remove .ui-icon { width: 17px; height: 17px; stroke-width: 1.45; }
+.netease-library-empty { min-height: 175px; display: grid; align-content: center; justify-items: center; gap: 12px; padding: 0 24px; color: rgba(244,250,249,.55); text-align: center; }
+.netease-library-empty .ui-icon { width: 28px; height: 28px; color: rgba(var(--music-tint), .9); }
+.netease-library-empty p { margin: 0; font: 13px/1.55 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-lyrics { margin: 20px 2px; padding: 16px; overflow: auto; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(0,0,0,.18); color: rgba(248,251,250,.75); white-space: pre-wrap; font: 12px/1.8 var(--font-geist-sans), "PingFang SC", sans-serif; }
+.netease-library-message { position: sticky; bottom: 8px; width: fit-content; max-width: calc(100% - 20px); margin: 16px auto 0; padding: 10px 13px; border: 1px solid rgba(255,255,255,.11); border-radius: 13px; background: rgba(11,16,17,.84); box-shadow: 0 12px 26px rgba(0,0,0,.18); color: rgba(248,251,250,.86); font: 12px/1.45 var(--font-geist-sans), "PingFang SC", sans-serif; backdrop-filter: blur(16px); }
+@keyframes netease-library-spin { to { transform: rotate(360deg); } }
+
+@media (max-height: 720px) {
+  .netease-library-sheet { padding-top: calc(var(--safe-top) + 2px); }
+  .netease-library-head { min-height: 53px; }
+  .netease-library-tabs { margin: 4px 0; }
+  .netease-library-content { padding-top: 5px; }
+  .netease-shortcuts button { min-height: 61px; }
+  .netease-discover-intro { margin: 19px 4px 13px; }
+}
 
 @media (max-height: 720px) {
   .listening-player-main { padding-top: calc(var(--safe-top) + 48px); }

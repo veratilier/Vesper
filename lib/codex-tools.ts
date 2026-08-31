@@ -4,6 +4,7 @@ import { ensureSchema, getDb } from "@/lib/db";
 type ToolInput = Record<string, unknown>;
 type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
 type MusicPlayback = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
+type NeteaseSourceSong = { id?: string | number; name?: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } };
 
 const sectionToKey: Record<string, string> = {
   today: "todos",
@@ -75,6 +76,16 @@ export const codexToolDefinitions = [
       type: "object",
       additionalProperties: false,
       properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "music_netease_search",
+    description: "Search the public NetEase Music catalog, save the returned songs to Vesper music, then use music_send_card, music_queue_add, or music_play with an exact trackId. This does not edit a NetEase playlist.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 10 } },
       required: ["query"],
     },
   },
@@ -163,6 +174,45 @@ async function readMusicLibrary() {
     return true;
   });
 }
+function musicDuration(milliseconds?: number) {
+  if (!milliseconds) return "";
+  return `${Math.floor(milliseconds / 60_000)}:${String(Math.floor(milliseconds / 1_000) % 60).padStart(2, "0")}`;
+}
+function neteaseTrack(song: NeteaseSourceSong, url = ""): MusicTrack {
+  const neteaseId = String(song.id || "");
+  return {
+    id: `netease-${neteaseId}`,
+    neteaseId,
+    title: song.name || "未命名歌曲",
+    artist: song.ar?.map((artist) => artist.name).filter(Boolean).join(" / ") || "未知歌手",
+    album: song.al?.name || "",
+    duration: musicDuration(song.dt),
+    cover: song.al?.picUrl?.replace(/^http:\/\//i, "https://") || "",
+    url,
+    playable: Boolean(url),
+  };
+}
+async function neteaseRequest(path: string, params: Record<string, string>) {
+  const response = await fetch(`https://music-api.r-vera.com${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams(params),
+  });
+  const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok || Number(result.code || 200) >= 400) throw new Error("网易云搜索暂时不可用");
+  return result;
+}
+async function mergeMusicLibrary(incoming: MusicTrack[]) {
+  const library = await readMusicTracks("music");
+  const merged = [...library];
+  for (const track of incoming) {
+    const index = merged.findIndex((item) => item.id === track.id || (item.neteaseId && item.neteaseId === track.neteaseId));
+    if (index >= 0) merged[index] = { ...merged[index], ...track };
+    else merged.push(track);
+  }
+  await writeDocument("music", merged);
+  return incoming;
+}
 function publicTrack(track?: MusicTrack) {
   if (!track) return null;
   return { trackId: track.id, title: track.title, artist: track.artist, album: track.album || "", cover: track.cover || "", duration: track.duration || "", playable: Boolean(track.url && track.playable !== false), source: track.neteaseId ? "netease" : "vesper" };
@@ -250,6 +300,33 @@ export async function executeCodexTool(name: string, input: ToolInput) {
     if (!query) return { matches: [] };
     const matches = (await readMusicLibrary()).filter((track) => JSON.stringify(track).toLowerCase().includes(query)).slice(0, limit).map((track) => publicTrack(track));
     return { matches };
+  }
+  if (name === "music_netease_search") {
+    const query = String(input.query || "").trim();
+    const limit = Math.min(10, Math.max(1, Number(input.limit || 6)));
+    if (!query) throw new Error("请输入要搜索的歌名、歌手或专辑");
+    const search = await neteaseRequest("/cloudsearch", { keywords: query, limit: String(limit), type: "1" });
+    const songs = ((search.result as { songs?: NeteaseSourceSong[] } | undefined)?.songs || []).slice(0, limit);
+    const ids = songs.map((song) => String(song.id || "")).filter(Boolean);
+    const urls = new Map<string, string>();
+    if (ids.length) {
+      try {
+        const source = await neteaseRequest("/song/url/v1", { id: ids.join(","), level: "standard" });
+        for (const item of ((source.data as Array<{ id?: string | number; url?: string }> | undefined) || [])) {
+          if (item.id && item.url) urls.set(String(item.id), item.url.replace(/^http:\/\//i, "https://"));
+        }
+      } catch {
+        // Search remains useful when a temporary signed URL cannot be returned.
+      }
+    }
+    const imported = await mergeMusicLibrary(songs.map((song) => neteaseTrack(song, urls.get(String(song.id)) || "")));
+    return {
+      query,
+      imported: imported.length,
+      matches: imported.map((track) => publicTrack(track)),
+      musicLibraryRefresh: true,
+      note: "歌曲已加入 Vesper 音乐库；若该设备已连接网易云账号，聊天中的歌曲卡片会使用本机 MUSIC_U 刷新可播放链接。",
+    };
   }
   if (name === "music_play") {
     const trackId = String(input.trackId || "");

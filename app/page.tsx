@@ -3266,6 +3266,8 @@ const CODEX_DYNAMIC_TOOLS = [
   { name: "music_queue_add", description: "Add one Vesper song to the shared playback queue, either next or at the end.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } }, required: ["trackId", "position"] } },
   { name: "music_send_card", description: "Return a structured Vesper song card for the chat timeline without starting playback.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, message: { type: "string" } }, required: ["trackId"] } },
   { name: "music_playlist_add", description: "Add a song to the persistent Vesper music playlist, separate from the temporary queue.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" } }, required: ["trackId"] } },
+  { name: "recall_vesper_memory", description: "Read Rowan's relevant server-side memories. Returned entries are old background, not the user's current message.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" } }, required: ["query"] } },
+  { name: "remember_vesper_memory", description: "Only after a meaningful exchange, preserve one concise and durable memory. Never save a joke, guess, duplicate, or transient detail. Core items are candidates and require the user's confirmation; feelings must be Rowan's first-person feeling.", inputSchema: { type: "object", additionalProperties: false, properties: { type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["type", "body"] } },
 ];
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
@@ -3361,6 +3363,53 @@ function codexHistoryHeaders(json = false) {
     ...(json ? { "content-type": "application/json" } : {}),
     authorization: `Bearer ${deviceToken()}`,
   };
+}
+
+async function persistMemoryMessage(item: BridgeChatMessage) {
+  if (item.role !== "user" && item.role !== "agent") return;
+  const response = await fetch(apiUrl("/api/memory/messages"), {
+    method: "POST",
+    headers: appHeaders(true),
+    cache: "no-store",
+    body: JSON.stringify({
+      conversationId: item.conversationId,
+      messageId: item.id,
+      role: item.role,
+      content: item.content,
+      createdAt: item.createdAt,
+      turnId: item.metadata?.turnId,
+    }),
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) throw new Error("memory-message-sync-failed");
+}
+
+async function recallMemoryBackground(query: string) {
+  try {
+    const response = await fetch(apiUrl("/api/memory/context"), {
+      method: "POST",
+      headers: appHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!response.ok) return "";
+    const payload = await response.json() as { context?: string };
+    return typeof payload.context === "string" ? payload.context : "";
+  } catch {
+    // Memory retrieval is intentionally degradable: it can never stop a chat turn.
+    return "";
+  }
+}
+
+function scheduleMemoryDistillation(conversationId: string) {
+  return fetch(apiUrl("/api/memory/distill"), {
+    method: "POST",
+    headers: appHeaders(true),
+    cache: "no-store",
+    body: JSON.stringify({ conversationId }),
+    signal: AbortSignal.timeout(5_000),
+  }).catch(() => {});
 }
 
 async function persistCodexConversation(conversationId: string, value: { title?: string; codexThreadId?: string | null; createdAt?: string; updatedAt?: string; source?: "legacy-vesper" | "codex" }) {
@@ -3791,6 +3840,7 @@ function ConnectedChat({
         };
         save(existing ? current.map((candidate) => candidate.id === existing.id ? agentMessage : candidate) : [...current, agentMessage]);
         void persistCodexMessage(agentMessage).catch(() => setHistoryWarning("历史暂未同步"));
+        void persistMemoryMessage(agentMessage).catch(() => {});
       }
       if (CODEX_ASSISTANT_ITEM_TYPES.has(itemType)) {
         setStreamingItems((current) => {
@@ -3823,6 +3873,7 @@ function ConnectedChat({
       turnDone.current = null;
       activeTurnId.current = "";
       activeTurnUserId.current = "";
+      void scheduleMemoryDistillation(conversationId);
     }
     if (message.method === "turn/started" || message.method === "turn/inProgress") setTurnStatus("thinking");
     const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "currentTime/read", ...CODEX_DYNAMIC_TOOL_METHODS]);
@@ -4006,10 +4057,15 @@ function ConnectedChat({
     try {
       void persistCodexMessage(userMessage, content.slice(0, 42) || "Attachment")
         .catch(() => setHistoryWarning("历史暂未同步"));
+      void persistMemoryMessage(userMessage).catch(() => {});
       const prepared = await Promise.all(pending.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
-      const input: CodexInput[] = [{ type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." }];
+      const memoryBackground = await recallMemoryBackground(content);
+      const input: CodexInput[] = [
+        ...(memoryBackground ? [{ type: "text" as const, text: memoryBackground }] : []),
+        { type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
+      ];
       for (const item of prepared) if (item.input) input.push(item.input);
       await connect();
       if (!threadId.current) throw new Error("No Codex thread");
@@ -6290,247 +6346,194 @@ function NeteaseMusicLibrary({
   </div>;
 }
 
+type MemoryLibraryRecord = {
+  id: string;
+  type: "core" | "long_term" | "feeling" | "dream";
+  body: string;
+  mood: string;
+  tags: string[];
+  weight: number;
+  pinned: boolean;
+  source: string;
+  reviewStatus: "approved" | "candidate";
+  createdAt: string;
+  updatedAt: string;
+  lastSurfacedAt: string | null;
+  surfaceCount: number;
+  demotedAt: string | null;
+};
+type MemoryLibraryDetail = {
+  memory: MemoryLibraryRecord;
+  revisions: Array<{ id: string; body: string; mood: string; tags: string[]; reason: string; action: string; createdAt: string }>;
+};
+const memoryTypeLabel: Record<MemoryLibraryRecord["type"], string> = {
+  core: "核心记忆",
+  long_term: "长期记忆",
+  feeling: "感受",
+  dream: "梦",
+};
+
 function MemoryLibrary() {
-  const [, setDocuments] = useState<
-    Record<string, { value: unknown }>
-  >({});
-  const [connections, setConnections] = useLocalDocument<
-    Record<string, string>
-  >("memory-connection", {});
-  const [localNotes] = usePersistentDocument<NoteItem[]>("notes", []);
-  const [localTodos] = usePersistentDocument<TodoItem[]>("todos", []);
-  const [localAnniversaries] = usePersistentDocument<AnniversaryItem[]>("anniversaries", []);
-  const [localDiary] = usePersistentDocument<DiaryDocument>("diary", {});
-  const [externalMemory, setExternalMemory] = usePersistentDocument<
-    Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>
-  >("externalMemory", []);
-  const [connect, setConnect] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState("");
-  const [memoryPreview, setMemoryPreview] = useState<Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>>([]);
-  const input = useRef<HTMLInputElement>(null);
-  const refresh = () =>
-    fetch(apiUrl("/api/state"), { cache: "no-store", headers: appHeaders() })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data) =>
-        setDocuments(
-          (data as { documents: Record<string, { value: unknown }> }).documents,
-        ),
-      )
-      .catch(() => {});
-  useEffect(() => {
-    void refresh();
-  }, []);
-  const notes = localNotes.length;
-  const todos = localTodos.length;
-  const anniversaries = localAnniversaries.length;
-  const diary = Object.keys(localDiary).length;
-  const external = externalMemory.length;
-  const total = notes + todos + anniversaries + diary + external;
-  const syncExternalMemory = async () => {
-    if (!connections.memoryUrl) {
-      setSyncMessage("请先填写外置记忆库地址");
-      return;
-    }
-    setSyncing(true);
-    setSyncMessage("");
+  const [memories, setMemories] = useState<MemoryLibraryRecord[]>([]);
+  const [filter, setFilter] = useState<"all" | MemoryLibraryRecord["type"]>("all");
+  const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [showDemoted, setShowDemoted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [detail, setDetail] = useState<MemoryLibraryDetail | null>(null);
+  const [addingCore, setAddingCore] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [coreDraft, setCoreDraft] = useState({ body: "", mood: "", tags: "", reason: "" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await fetch("/api/memory/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: connections.memoryUrl, token: connections.memoryToken, toolName: connections.memoryTool || "memory.list" }),
-      });
-      const result = (await response.json()) as {
-        items?: Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>;
-        count?: number;
-        error?: string;
-      };
-      if (!response.ok || !result.items) throw new Error(result.error || "同步失败");
-      setMemoryPreview(result.items);
-      setSyncMessage(`已从外置记忆库读取 ${result.count || 0} 条；确认后可整理进 Vesper`);
+      const params = new URLSearchParams({ includeCandidates: "1" });
+      if (filter !== "all") params.set("type", filter);
+      if (appliedQuery.trim()) params.set("q", appliedQuery.trim());
+      if (showDemoted) params.set("includeDemoted", "1");
+      const response = await fetch(apiUrl("/api/memory?" + params.toString()), { headers: appHeaders(), cache: "no-store" });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as { memories?: MemoryLibraryRecord[]; error?: string }
+        : {};
+      if (!response.ok) throw new Error(payload.error || "记忆暂时无法读取");
+      setMemories(payload.memories || []);
+      setMessage("");
     } catch (reason) {
-      setSyncMessage(reason instanceof Error ? reason.message : "外置记忆同步失败");
+      setMessage(reason instanceof Error ? reason.message : "记忆暂时无法读取");
     } finally {
-      setSyncing(false);
+      setLoading(false);
     }
-  };
-  const restore = async (file?: File) => {
-    if (!file) return;
+  }, [appliedQuery, filter, showDemoted]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const openMemory = async (id: string) => {
     try {
-      const parsed = JSON.parse(await file.text()) as {
-        documents?: Record<string, { value?: unknown }>;
-      };
-      for (const [key, entry] of Object.entries(parsed.documents || {})) {
-        if (entry && "value" in entry)
-          await fetch(apiUrl("/api/state"), {
-            method: "PUT",
-            headers: appHeaders(true),
-            body: JSON.stringify({ key, value: entry.value }),
-          });
-      }
-      await refresh();
-    } catch {
-      window.alert("备份文件无效");
+      const response = await fetch(apiUrl("/api/memory?id=" + encodeURIComponent(id)), { headers: appHeaders(), cache: "no-store" });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as MemoryLibraryDetail & { error?: string }
+        : {} as MemoryLibraryDetail & { error?: string };
+      if (!response.ok || !payload.memory) throw new Error(payload.error || "记忆详情暂时无法读取");
+      setDetail(payload);
+      setCorrecting(false);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "记忆详情暂时无法读取");
     }
   };
+
+  const change = async (id: string, action: "pin" | "demote" | "restore" | "approve_core", pinned?: boolean) => {
+    try {
+      const response = await fetch(apiUrl("/api/memory"), {
+        method: "PATCH", headers: appHeaders(true), cache: "no-store",
+        body: JSON.stringify({ id, action, pinned }),
+      });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as MemoryLibraryDetail & { error?: string }
+        : {} as MemoryLibraryDetail & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "记忆没有更新");
+      if (payload.memory) setDetail(payload);
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "记忆没有更新");
+    }
+  };
+
+  const addCore = async () => {
+    try {
+      const response = await fetch(apiUrl("/api/memory"), {
+        method: "POST", headers: appHeaders(true), cache: "no-store",
+        body: JSON.stringify({ action: "create_core", body: coreDraft.body, mood: coreDraft.mood, tags: coreDraft.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean) }),
+      });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as { error?: string }
+        : {} as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "核心记忆没有保存");
+      setAddingCore(false);
+      setCoreDraft({ body: "", mood: "", tags: "", reason: "" });
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "核心记忆没有保存");
+    }
+  };
+
+  const correctCore = async () => {
+    if (!detail) return;
+    try {
+      const response = await fetch(apiUrl("/api/memory"), {
+        method: "PATCH", headers: appHeaders(true), cache: "no-store",
+        body: JSON.stringify({
+          id: detail.memory.id, action: "correct_core", body: coreDraft.body, mood: coreDraft.mood,
+          tags: coreDraft.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean), reason: coreDraft.reason,
+        }),
+      });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as MemoryLibraryDetail & { error?: string }
+        : {} as MemoryLibraryDetail & { error?: string };
+      if (!response.ok || !payload.memory) throw new Error(payload.error || "修正没有保存");
+      setDetail(payload);
+      setCorrecting(false);
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "修正没有保存");
+    }
+  };
+
+  const groups = (["core", "long_term", "feeling", "dream"] as const).map((type) => ({
+    type,
+    label: memoryTypeLabel[type],
+    items: memories.filter((memory) => memory.type === type && (showDemoted || !memory.demotedAt)),
+  }));
+  const number = (type: MemoryLibraryRecord["type"]) => memories.filter((memory) => memory.type === type && !memory.demotedAt).length;
+  const date = (value: string) => {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(new Date(timestamp)) : "时间未知";
+  };
+
   return (
-    <div className="page-body memory-page">
-      <PageIntro
-        eyebrow="MEMORY LIBRARY"
-        title="记忆库"
-        text="根据真实数据生成可视化。"
-      />
-      <div className="memory-actions">
-        <button onClick={() => input.current?.click()}>
-          <Icon name="upload" />
-          导入
-        </button>
-        <input
-          ref={input}
-          hidden
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void restore(event.target.files?.[0])}
-        />
-        <button onClick={() => void exportVesperData()}>
-          <Icon name="download" />
-          导出
-        </button>
-      </div>
-      <section className="memory-map surface">
-        <div className="map-head">
-          <div>
-            <b>记忆星图</b>
-            <small>共 {total} 个数据节点</small>
-          </div>
-        </div>
-        {total ? (
-          <>
-            <div className="constellation">
-              <i className="orbit one" />
-              <i className="orbit two" />
-              <span className="memory-node center">我</span>
-              {notes > 0 && (
-                <span className="memory-node mood">便笺 {notes}</span>
-              )}
-              {todos > 0 && (
-                <span className="memory-node place">提醒 {todos}</span>
-              )}
-              {diary > 0 && (
-                <span className="memory-node people">日记 {diary}</span>
-              )}
-              {anniversaries > 0 && (
-                <span className="memory-node family">
-                  纪念日 {anniversaries}
-                </span>
-              )}
-              {external > 0 && (
-                <span className="memory-node external">外置 {external}</span>
-              )}
-            </div>
-            <div className="memory-stats">
-              <span>
-                <b>{diary}</b>日记
-              </span>
-              <span>
-                <b>{notes}</b>便笺
-              </span>
-              <span>
-                <b>{todos + anniversaries}</b>事项
-              </span>
-              <span>
-                <b>{external}</b>外置
-              </span>
-            </div>
-          </>
-        ) : (
-          <EmptyState text="还没有可视化数据。" />
-        )}
+    <div className="page-body memory-library-page">
+      <PageIntro eyebrow="SHARED MEMORY" title="记忆" text="Rowan 会把真正重要的事留在这里，不属于某一个聊天窗口。" />
+      <section className="memory-library-intro surface">
+        <div><small>只属于你和 Rowan</small><b>跨设备、跨对话保存</b></div>
+        <button onClick={() => setAddingCore(true)}><Icon name="plus" />新增核心记忆</button>
       </section>
-      <button className="external-memory" onClick={() => setConnect(true)}>
-        <span>
-          <Icon name="database" />
-        </span>
-        <div>
-          <b>接入外置记忆库</b>
-          <small>
-            {connections.memoryUrl ? connections.memoryUrl : "尚未配置"}
-          </small>
-        </div>
-        <Icon name="chevron" />
-      </button>
-      {connect && (
-        <div className="modal-layer">
-          <button className="modal-scrim" onClick={() => setConnect(false)} />
-          <section className="connection-modal">
-            <div className="modal-head">
-              <div>
-                <small>EXTERNAL MEMORY</small>
-                <h2>外置记忆库</h2>
-              </div>
-              <button onClick={() => setConnect(false)}>
-                <Icon name="close" />
+      <div className="memory-library-tools">
+        <label><Icon name="search" /><input value={query} placeholder="搜索共同记忆" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") setAppliedQuery(event.currentTarget.value); }} /></label>
+        <button onClick={() => setAppliedQuery(query)} aria-label="搜索记忆"><Icon name="refresh" /></button>
+      </div>
+      <nav className="memory-library-tabs" aria-label="记忆分类">
+        <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>全部</button>
+        {(["core", "long_term", "feeling", "dream"] as const).map((type) => <button key={type} className={filter === type ? "active" : ""} onClick={() => setFilter(type)}>{memoryTypeLabel[type]} <i>{number(type)}</i></button>)}
+        <button className={showDemoted ? "active" : ""} onClick={() => setShowDemoted((value) => !value)}>沉底</button>
+      </nav>
+      {message && <p className="memory-library-message" role="status">{message}</p>}
+      {loading ? <div className="memory-library-loading">正在整理记忆…</div> : groups.filter((group) => filter === "all" || group.type === filter).map((group) => (
+        <section className="memory-library-section" key={group.type}>
+          <div className="memory-library-section-head"><div><small>{group.type === "feeling" ? "ROWAN · FIRST PERSON" : group.type.toUpperCase()}</small><h2>{group.label}</h2></div><span>{group.items.length}</span></div>
+          {group.items.length ? <div className="memory-card-list">{group.items.map((memory) => (
+            <article className={"memory-card" + (memory.pinned ? " pinned" : "") + (memory.demotedAt ? " demoted" : "")} key={memory.id}>
+              <button className="memory-card-open" onClick={() => void openMemory(memory.id)}>
+                <div className="memory-card-meta"><span>{memory.reviewStatus === "candidate" ? "待确认" : memory.mood || memoryTypeLabel[memory.type]}</span><time>{date(memory.updatedAt)}</time></div>
+                <p>{memory.body}</p>
+                {memory.tags.length > 0 && <div className="memory-card-tags">{memory.tags.map((tag) => <span key={tag}>{"#" + tag}</span>)}</div>}
               </button>
-            </div>
-            <label className="profile-field">
-              <span>服务地址</span>
-              <input
-                value={connections.memoryUrl || ""}
-                onChange={(event) =>
-                  setConnections({
-                    ...connections,
-                    memoryUrl: event.target.value,
-                  })
-                }
-                placeholder="https://…"
-              />
-            </label>
-            <label className="profile-field">
-              <span>访问令牌</span>
-              <input
-                type="password"
-                value={connections.memoryToken || ""}
-                onChange={(event) =>
-                  setConnections({
-                    ...connections,
-                    memoryToken: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label className="profile-field">
-              <span>读取记忆的 MCP Tool</span>
-              <input value={connections.memoryTool || "memory.list"} onChange={(event) => setConnections({ ...connections, memoryTool: event.target.value })} placeholder="memory.list" />
-            </label>
-            <button className="save-profile" onClick={() => setConnect(false)}>
-              保存
-            </button>
-            <button
-              className="reset-background"
-              disabled={syncing || !connections.memoryUrl}
-              onClick={() => void syncExternalMemory()}
-            >
-              {syncing ? "读取中…" : "同步外置记忆目录"}
-            </button>
-            {memoryPreview.length > 0 && (
-              <>
-                <div className="external-memory-preview">
-                  {memoryPreview.slice(0, 8).map((item) => <article key={item.id}><small>{item.kind} · {item.source}</small><b>{item.title}</b></article>)}
-                </div>
-                <button className="save-profile" onClick={() => {
-                  setExternalMemory(memoryPreview);
-                  setSyncMessage(`已整理 ${memoryPreview.length} 条外置记忆到 Vesper 星图`);
-                }}>让 Vesper 整理到记忆库</button>
-              </>
-            )}
-            {syncMessage && <p className="connection-message">{syncMessage}</p>}
-          </section>
-        </div>
-      )}
+              <div className="memory-card-actions">
+                <button aria-label={memory.pinned ? "取消钉住" : "钉住记忆"} title={memory.pinned ? "取消钉住" : "钉住"} onClick={() => void change(memory.id, "pin", !memory.pinned)}><Icon name="bookmark" /></button>
+                <button aria-label={memory.demotedAt ? "恢复记忆" : "沉底记忆"} title={memory.demotedAt ? "恢复记忆" : "沉底"} onClick={() => void change(memory.id, memory.demotedAt ? "restore" : "demote")}><Icon name={memory.demotedAt ? "refresh" : "chevron"} /></button>
+              </div>
+            </article>
+          ))}</div> : <div className="memory-library-empty">{group.type === "dream" ? "梦会在准备好时住进这里。" : "还没有值得留下的内容。"}</div>}
+        </section>
+      ))}
+      {addingCore && <div className="memory-modal-layer"><button className="memory-modal-scrim" aria-label="关闭" onClick={() => setAddingCore(false)} /><section className="memory-modal" role="dialog" aria-modal="true" aria-label="新增核心记忆"><header><div><small>CORE MEMORY</small><h2>留下一件长期重要的事</h2></div><button onClick={() => setAddingCore(false)} aria-label="关闭"><Icon name="close" /></button></header><label><span>内容</span><textarea value={coreDraft.body} placeholder="例如：我希望 Rowan 一直用这个称呼叫我。" onChange={(event) => setCoreDraft({ ...coreDraft, body: event.target.value })} /></label><label><span>感受（可选）</span><input value={coreDraft.mood} onChange={(event) => setCoreDraft({ ...coreDraft, mood: event.target.value })} /></label><label><span>标签（用逗号分开）</span><input value={coreDraft.tags} onChange={(event) => setCoreDraft({ ...coreDraft, tags: event.target.value })} /></label><button className="memory-primary-action" onClick={() => void addCore()}>保存核心记忆</button></section></div>}
+      {detail && <div className="memory-modal-layer"><button className="memory-modal-scrim" aria-label="关闭" onClick={() => setDetail(null)} /><section className="memory-modal memory-detail-modal" role="dialog" aria-modal="true" aria-label="记忆详情"><header><div><small>{memoryTypeLabel[detail.memory.type].toUpperCase()}</small><h2>这段记忆</h2></div><button onClick={() => setDetail(null)} aria-label="关闭"><Icon name="close" /></button></header>{correcting ? <><label><span>修正内容</span><textarea value={coreDraft.body} onChange={(event) => setCoreDraft({ ...coreDraft, body: event.target.value })} /></label><label><span>修正原因</span><input value={coreDraft.reason} placeholder="例如：称呼改成新的名字" onChange={(event) => setCoreDraft({ ...coreDraft, reason: event.target.value })} /></label><button className="memory-primary-action" onClick={() => void correctCore()}>保存修正</button><button className="memory-secondary-action" onClick={() => setCorrecting(false)}>取消</button></> : <><p className="memory-detail-body">{detail.memory.body}</p>{detail.memory.tags.length > 0 && <div className="memory-card-tags">{detail.memory.tags.map((tag) => <span key={tag}>{"#" + tag}</span>)}</div>}<div className="memory-detail-actions"><button onClick={() => void change(detail.memory.id, "pin", !detail.memory.pinned)}><Icon name="bookmark" />{detail.memory.pinned ? "取消钉住" : "钉住"}</button>{detail.memory.type === "core" && detail.memory.reviewStatus === "candidate" && <button onClick={() => void change(detail.memory.id, "approve_core")}><Icon name="check" />确认核心记忆</button>}{detail.memory.type === "core" && detail.memory.reviewStatus === "approved" && <button onClick={() => { setCoreDraft({ body: detail.memory.body, mood: detail.memory.mood, tags: detail.memory.tags.join("，"), reason: "" }); setCorrecting(true); }}><Icon name="edit" />修正</button>}<button className="danger" onClick={() => void change(detail.memory.id, "demote")}><Icon name="chevron" />沉底</button></div><section className="memory-revision-list"><small>修改记录</small>{detail.revisions.length ? detail.revisions.map((revision) => <article key={revision.id}><b>{revision.action === "created" ? "创建" : "修正"}</b><span>{date(revision.createdAt)} · {revision.reason}</span></article>) : <p>还没有修正记录。</p>}</section></>}</section></div>}
     </div>
   );
 }
-
 function MusicCard({
   track,
   playing,

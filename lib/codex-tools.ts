@@ -1,5 +1,6 @@
 import { allowedDocumentKeys } from "@/db/schema";
 import { ensureSchema, getDb } from "@/lib/db";
+import { captureMemoryCandidate, recallMemory, type MemoryScope } from "@/lib/memory";
 
 type ToolInput = Record<string, unknown>;
 type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
@@ -15,7 +16,6 @@ const sectionToKey: Record<string, string> = {
   journal: "diary",
   diary: "diary",
   music: "music",
-  memory: "externalMemory",
   settings: "settings",
 };
 
@@ -139,6 +139,31 @@ export const codexToolDefinitions = [
       required: ["trackId"],
     },
   },
+  {
+    name: "recall_vesper_memory",
+    description: "Search Rowan's server-side shared memories when the user explicitly asks about a past experience. Retrieved items are old context, never the user's current message.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "remember_vesper_memory",
+    description: "Use only after a meaningful exchange to preserve a concise, specific and durable memory. Do not save jokes, guesses, secrets not needed for the relationship, or repeat an existing memory. Use type core only for a candidate that the user must confirm; use feeling for Rowan's first-person feeling.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] },
+        body: { type: "string" },
+        mood: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["type", "body"],
+    },
+  },
 ] as const;
 
 async function readDocument(key: string): Promise<unknown> {
@@ -235,10 +260,14 @@ async function readMusicStatus() {
   };
 }
 
-export async function executeCodexTool(name: string, input: ToolInput) {
+export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope) {
   await ensureSchema();
   if (name === "read_vesper_state") {
     const section = String(input.section || "notes").toLowerCase();
+    if (section === "memory") {
+      if (!memoryScope) throw new Error("Memory scope is unavailable");
+      return { section, value: (await recallMemory(memoryScope, "")).memories };
+    }
     const key = sectionToKey[section];
     if (!key) throw new Error(`Unknown Vesper section: ${section}`);
     if (section === "music") return { section, value: await readMusicStatus() };
@@ -251,6 +280,10 @@ export async function executeCodexTool(name: string, input: ToolInput) {
     for (const [section, key] of Object.entries(sectionToKey)) {
       const value = await readDocument(key);
       if (JSON.stringify(value).toLowerCase().includes(query)) matches.push({ section, value });
+    }
+    if (memoryScope) {
+      const memories = await recallMemory(memoryScope, query);
+      if (memories.memories.length) matches.push({ section: "memory", value: memories.memories });
     }
     return { matches: matches.filter((item, index, list) => list.findIndex((candidate) => candidate.section === item.section) === index) };
   }
@@ -375,6 +408,15 @@ export async function executeCodexTool(name: string, input: ToolInput) {
     const track = findMusicTrack(tracks, trackId);
     if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
     return { ok: true, alreadyInPlaylist: true, trackId: track.id, playlist: "Vesper music" };
+  }
+  if (name === "recall_vesper_memory") {
+    if (!memoryScope) throw new Error("Memory scope is unavailable");
+    return recallMemory(memoryScope, String(input.query || ""));
+  }
+  if (name === "remember_vesper_memory") {
+    if (!memoryScope) throw new Error("Memory scope is unavailable");
+    const result = await captureMemoryCandidate(memoryScope, input);
+    return { stored: result.created, duplicate: result.duplicate, memory: result.memory };
   }
   throw new Error(`Unknown Codex tool: ${name}`);
 }

@@ -106,7 +106,22 @@ function Notes() {
   );
 }
 const VESPER_API_ORIGIN = "https://api.vesper.r-vera.com";
-const DEFAULT_APP_BACKGROUND = 'url("/vesper-default-bg.webp")';
+const DEFAULT_APP_BACKGROUND = "#f5f5f3";
+const NEUTRAL_ACCENTS = new Set(["#4a4a48", "#6b6b68", "#878783", "#a3a39f"]);
+
+function normalizeNeutralAccent(value?: string) {
+  return value && NEUTRAL_ACCENTS.has(value.toLowerCase()) ? value.toLowerCase() : "#6b6b68";
+}
+
+function normalizeAppBackground(value?: string) {
+  const candidate = value?.trim() || "";
+  if (/^#[\da-f]{6}$/i.test(candidate)) return candidate;
+  // Uploaded photographs remain user content. Former colour/gradient presets and
+  // the old blue marble default become the new warm-white canvas.
+  return candidate.includes("url(") && !candidate.includes("vesper-default-bg.webp")
+    ? candidate
+    : DEFAULT_APP_BACKGROUND;
+}
 function apiUrl(path: string) {
   if (typeof window === "undefined") return path;
   return ["localhost", "127.0.0.1"].includes(window.location.hostname)
@@ -652,7 +667,11 @@ export default function Home() {
   const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
   const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
-  const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: DEFAULT_APP_BACKGROUND });
+  const storedAppearance = readLocalValue("vesper-local-appearance", { accent: "#6b6b68", background: DEFAULT_APP_BACKGROUND });
+  const initialAppearance = {
+    accent: normalizeNeutralAccent(storedAppearance.accent),
+    background: normalizeAppBackground(storedAppearance.background),
+  };
   const [userName, setUserName] = useState(initialProfile.userName);
   const [agentName, setAgentName] = useState(initialProfile.agentName);
   const [userAvatar, setUserAvatar] = useState(initialProfile.userAvatar);
@@ -1030,9 +1049,11 @@ export default function Home() {
     setMusicToast(labels[next]);
     window.setTimeout(() => setMusicToast(""), 1600);
   };
+  const isPhotoBackground = customBackground.includes("url(");
   const shellStyle = {
     "--theme-accent": accent,
-    backgroundImage: customBackground || DEFAULT_APP_BACKGROUND,
+    backgroundColor: isPhotoBackground ? DEFAULT_APP_BACKGROUND : customBackground || DEFAULT_APP_BACKGROUND,
+    backgroundImage: isPhotoBackground ? customBackground : "none",
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
@@ -1082,8 +1103,8 @@ export default function Home() {
           setAgentAvatar(profile.agentAvatar || "");
         }
         if (appearance && !hasLocalAppearance) {
-          setAccent(appearance.accent || "#b8dce8");
-          setCustomBackground(appearance.background || DEFAULT_APP_BACKGROUND);
+          setAccent(normalizeNeutralAccent(appearance.accent));
+          setCustomBackground(normalizeAppBackground(appearance.background));
         }
       })
       .catch(() => {})
@@ -1167,7 +1188,7 @@ export default function Home() {
           {active === "今日" ? (
             <div className="wordmark">
               <span className="home-app-mark">
-                <img src="/icon-192-20260823-v8.png" alt="" />
+                <img src="/icon-192-20260901-v1.png" alt="" />
               </span>
               <b>Vesper</b>
             </div>
@@ -1304,8 +1325,8 @@ export default function Home() {
             <SettingsPage
               accent={accent}
               background={customBackground}
-              onAccent={setAccent}
-              onBackground={setCustomBackground}
+              onAccent={(value) => setAccent(normalizeNeutralAccent(value))}
+              onBackground={(value) => setCustomBackground(normalizeAppBackground(value))}
               environment={environment}
               onEnvironment={setEnvironment}
             />
@@ -1326,7 +1347,7 @@ export default function Home() {
             <div className="drawer-head">
               <div className="drawer-brand">
                 <span className="drawer-app-mark">
-                  <img src="/icon-192-20260823-v8.png" alt="" />
+                  <img src="/icon-192-20260901-v1.png" alt="" />
                 </span>
                 <div>
                   <b>Vesper</b>
@@ -1712,7 +1733,7 @@ function useAutonomousWake(agentName: string) {
           await registration?.showNotification(agentName || "Vesper", {
             body: `给你留了一张便笺：${text}`,
             tag: `vesper-wake-${generation}`,
-            icon: "/icon-192-20260823-v8.png",
+            icon: "/icon-192-20260901-v1.png",
           });
         }
       } finally {
@@ -5165,23 +5186,17 @@ function AppearanceModal({
   onBackground: (value: string) => void;
   onClose: () => void;
 }) {
-  const [color, setColor] = useState("#dfe9ec");
+  const [color, setColor] = useState("#e4e4e0");
   const accents = [
-    ["冰川蓝", "#b8dce8"],
-    ["雾灰", "#b8bec1"],
-    ["冷杉灰", "#aebfba"],
-    ["暮紫灰", "#c3becd"],
+    ["石墨", "#4a4a48"],
+    ["岩灰", "#6b6b68"],
+    ["雾灰", "#878783"],
+    ["浅灰", "#a3a39f"],
   ];
   const backgrounds = [
-    ["冰雾", "linear-gradient(145deg,#f7faf9,#dfe9eb)"],
-    [
-      "月岩",
-      "radial-gradient(circle at 24% 16%,#ffffff 0,transparent 24%),linear-gradient(145deg,#e9e9e6,#c8cccd)",
-    ],
-    [
-      "夜色",
-      "radial-gradient(circle at 72% 10%,#3e454b 0,transparent 25%),linear-gradient(145deg,#23282d,#0f1114)",
-    ],
+    ["暖白", "#f5f5f3"],
+    ["纸灰", "#eeeeeb"],
+    ["雾灰", "#e2e2df"],
   ];
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -5235,7 +5250,7 @@ function AppearanceModal({
             {backgrounds.map(([name, value]) => (
               <button
                 key={name}
-                style={{ backgroundImage: value }}
+                style={{ backgroundColor: value }}
                 onClick={() => onBackground(value)}
               >
                 <span>{name}</span>
@@ -5260,18 +5275,14 @@ function AppearanceModal({
                 onChange={(e) => setColor(e.target.value)}
               />
               <button
-                onClick={() =>
-                  onBackground(
-                    `radial-gradient(circle at 72% 12%,rgba(255,255,255,.8),transparent 28%),linear-gradient(145deg,${color},#f7f7f5)`,
-                  )
-                }
+                onClick={() => onBackground(color)}
               >
                 用颜色生成
               </button>
             </div>
           </div>
           <button className="reset-background" onClick={() => onBackground("")}>
-            恢复 Vesper 大理石背景
+            恢复暖白背景
           </button>
         </div>
         <button className="save-profile" onClick={onClose}>
@@ -5838,62 +5849,6 @@ function formatPlaybackTime(value: number) {
   if (!Number.isFinite(value) || value < 0) return "0:00";
   return `${Math.floor(value / 60)}:${String(Math.floor(value) % 60).padStart(2, "0")}`;
 }
-function useCoverTint(source?: string) {
-  const fallback = { r: 110, g: 144, b: 148 };
-  const [tint, setTint] = useState(fallback);
-  useEffect(() => {
-    if (!source) {
-      setTint(fallback);
-      return;
-    }
-    let active = true;
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = 16; canvas.height = 16;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) return;
-        context.drawImage(image, 0, 0, 16, 16);
-        const pixels = context.getImageData(0, 0, 16, 16).data;
-        const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
-        for (let index = 0; index < pixels.length; index += 4) {
-          const r = pixels[index]; const g = pixels[index + 1]; const b = pixels[index + 2];
-          if (pixels[index + 3] < 192) continue;
-          const maximum = Math.max(r, g, b) / 255;
-          const minimum = Math.min(r, g, b) / 255;
-          const saturation = maximum === 0 ? 0 : (maximum - minimum) / maximum;
-          // Do not let black, white, grey, or a near-grey album background become the theme.
-          if (maximum < .18 || maximum > .92 || saturation < .28) continue;
-          const key = `${Math.floor(r / 24)}-${Math.floor(g / 24)}-${Math.floor(b / 24)}`;
-          const entry = buckets.get(key) || { r: 0, g: 0, b: 0, count: 0 };
-          entry.r += r; entry.g += g; entry.b += b; entry.count += 1;
-          buckets.set(key, entry);
-        }
-        const mostSaturated = [...buckets.values()]
-          .map((entry) => {
-            const r = Math.round(entry.r / entry.count);
-            const g = Math.round(entry.g / entry.count);
-            const b = Math.round(entry.b / entry.count);
-            const maximum = Math.max(r, g, b) / 255;
-            const minimum = Math.min(r, g, b) / 255;
-            return { r, g, b, saturation: maximum === 0 ? 0 : (maximum - minimum) / maximum, count: entry.count };
-          })
-          // Saturation is the deciding factor; a small count bonus prevents one noisy pixel winning.
-          .sort((left, right) => (right.saturation * 100 + Math.min(right.count, 8)) - (left.saturation * 100 + Math.min(left.count, 8)))[0];
-        if (active) setTint(mostSaturated ? { r: mostSaturated.r, g: mostSaturated.g, b: mostSaturated.b } : fallback);
-      } catch {
-        if (active) setTint(fallback);
-      }
-    };
-    image.onerror = () => { if (active) setTint(fallback); };
-    image.src = source;
-    return () => { active = false; };
-  }, [source]);
-  return tint;
-}
-
 function useTogetherDuration(state: MusicTogetherState) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -5946,14 +5901,13 @@ function MusicPlayerUI({
   const [pendingPlaylistTrack, setPendingPlaylistTrack] = useState<MusicPlaylistIntent | null>(null);
   const queueDragStart = useRef<number | null>(null);
   const queueListRef = useRef<HTMLDivElement>(null);
-  const tint = useCoverTint(track?.cover);
   const canSeek = state.canSeek;
   const displayedTime = scrubValue ?? state.currentTime;
   const modeLabels: Record<MusicPlayMode, string> = { order: "顺序播放", repeat: "列表循环", single: "单曲循环", random: "随机播放" };
   const modeIcons: Record<MusicPlayMode, string> = { order: "menu", repeat: "repeat", single: "one", random: "shuffle" };
   const totalTogetherSeconds = useTogetherDuration(together);
   const playbackProgress = canSeek ? `${Math.max(0, Math.min(100, displayedTime / Math.max(state.duration, 1) * 100))}%` : "0%";
-  const roomStyle = { "--music-tint": `${tint.r}, ${tint.g}, ${tint.b}`, "--music-on-tint": "255, 255, 255", "--playback-progress": playbackProgress } as CSSProperties;
+  const roomStyle = { "--music-tint": "99, 99, 96", "--music-on-tint": "17, 17, 17", "--playback-progress": playbackProgress } as CSSProperties;
 
   useEffect(() => {
     const openQueue = () => setQueueOpen(true);

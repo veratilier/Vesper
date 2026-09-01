@@ -4,6 +4,7 @@ import "./globals.css";
 import "./chat.css";
 import "./music.css";
 import "./settings.css";
+import "./theme.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,7 +25,7 @@ const pinyonScript = Pinyon_Script({
 export const metadata: Metadata = {
   title: "Vesper — 私人生活角落",
   description: "天气、便笺、纪念日、提醒与音乐，在晚风般安静的空间里相遇。",
-  manifest: "/manifest.webmanifest?v=9",
+  manifest: "/manifest.webmanifest?v=10",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -33,14 +34,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/favicon-20260823-v8.png",
+        url: "/favicon-20260901-v1.png",
         sizes: "64x64",
         type: "image/png",
       },
     ],
     apple: [
       {
-        url: "/apple-touch-icon-20260823-v8.png",
+        url: "/apple-touch-icon-20260901-v1.png",
         sizes: "180x180",
         type: "image/png",
       },
@@ -52,7 +53,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#f0f2ef",
+  themeColor: "#f5f5f3",
 };
 
 export default function RootLayout({

@@ -11,7 +11,7 @@
   min-height: 100%;
   box-sizing: border-box;
   overflow: hidden;
-  color: #344146;
+  color: var(--ui-ink);
 }
 
 .settings-page.detail-active .external-mcp-modal > .modal-head {
@@ -38,7 +38,7 @@
 .mcp-list-intro {
   max-width: 38rem;
   margin: 0 0 18px;
-  color: #66777b;
+  color: var(--ui-ink-secondary);
   font-size: 13px;
   line-height: 1.65;
   text-align: left;
@@ -54,9 +54,9 @@
   display: grid;
   gap: 14px;
   padding: 16px;
-  border: 1px solid rgba(73, 88, 92, 0.14);
+  border: 1px solid var(--ui-line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--ui-surface);
 }
 
 .mcp-server-summary {
@@ -73,14 +73,14 @@
 }
 
 .mcp-server-summary b {
-  color: #2f3b3f;
+  color: var(--ui-ink);
   font-size: 16px;
   font-weight: 600;
 }
 
 .mcp-server-summary small {
   overflow: hidden;
-  color: #758488;
+  color: var(--ui-muted);
   font-size: 12px;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -92,13 +92,13 @@
   height: 8px;
   margin-top: 5px;
   border-radius: 50%;
-  background: #5d9979;
-  box-shadow: 0 0 0 4px rgba(93, 153, 121, 0.1);
+  background: var(--ui-ink-secondary);
+  box-shadow: none;
 }
 
 .mcp-live-dot.off {
-  background: #a5abad;
-  box-shadow: 0 0 0 4px rgba(165, 171, 173, 0.1);
+  background: var(--ui-line-strong);
+  box-shadow: none;
 }
 
 .mcp-card-actions {
@@ -111,16 +111,16 @@
   min-width: 48px;
   min-height: 36px;
   padding: 0 10px;
-  border: 1px solid rgba(73, 94, 99, 0.13);
+  border: 1px solid var(--ui-line);
   border-radius: 10px;
-  background: rgba(248, 251, 250, 0.9);
-  color: #59737b;
+  background: var(--ui-surface);
+  color: var(--ui-ink-secondary);
   font-size: 13px;
 }
 
 .mcp-card-actions button:last-child {
-  border-color: rgba(160, 95, 95, 0.18);
-  color: #a16060;
+  border-color: var(--ui-line-strong);
+  color: var(--ui-danger);
 }
 
 .mcp-card-actions button:disabled {
@@ -146,7 +146,7 @@
 
 .mcp-editor-modal .profile-field span {
   margin: 0 4px 7px;
-  color: #68777b;
+  color: var(--ui-ink-secondary);
   font-size: 13px;
 }
 
@@ -154,10 +154,10 @@
   box-sizing: border-box;
   min-height: 52px;
   height: 52px;
-  border: 1px solid rgba(73, 88, 92, 0.18);
+  border: 1px solid var(--ui-line);
   border-radius: 15px;
-  background: rgba(255, 255, 255, 0.86);
-  color: #2e393d;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
   font-size: 16px;
 }
 
@@ -171,7 +171,7 @@
   min-height: 54px;
   justify-content: space-between;
   gap: 12px;
-  color: #4a5c61;
+  color: var(--ui-ink-secondary);
   font-size: 16px;
 }
 
@@ -182,22 +182,22 @@
 .mcp-auth-choice button {
   min-width: 58px;
   min-height: 42px;
-  border: 1px solid rgba(73, 88, 92, 0.15);
+  border: 1px solid var(--ui-line);
   border-radius: 21px;
-  background: rgba(245, 248, 248, 0.9);
-  color: #5e6e73;
+  background: var(--ui-surface);
+  color: var(--ui-ink-secondary);
   font-size: 15px;
 }
 
 .mcp-auth-choice button.selected {
-  border-color: rgba(83, 111, 120, 0.36);
-  background: rgba(215, 227, 230, 0.84);
-  color: #34474d;
+  border-color: var(--ui-line-strong);
+  background: var(--ui-surface-strong);
+  color: var(--ui-ink);
 }
 
 .mcp-editor-modal .settings-hint {
   margin: -4px 2px 0;
-  color: #758488;
+  color: var(--ui-muted);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -210,7 +210,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #536469;
+  color: var(--ui-ink-secondary);
   font-size: 16px;
   text-align: left;
 }
@@ -221,7 +221,7 @@
   box-sizing: border-box;
   padding: 3px;
   border-radius: 12px;
-  background: #d6dddd;
+  background: var(--ui-surface-strong);
 }
 
 .mcp-enable i u {
@@ -229,12 +229,12 @@
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--ui-surface);
   transition: transform 0.2s ease;
 }
 
 .mcp-enable.on i {
-  background: #91abb0;
+  background: var(--ui-ink-secondary);
 }
 
 .mcp-enable.on i u {
@@ -243,7 +243,7 @@
 
 .mcp-editor-modal .connection-message {
   margin: 0 2px;
-  color: #9a6262;
+  color: var(--ui-danger);
   font-size: 13px;
   line-height: 1.45;
   text-align: left;
@@ -255,15 +255,15 @@
   grid-template-columns: 1fr 1.35fr;
   gap: 10px;
   padding-top: 12px;
-  border-top: 1px solid rgba(73, 88, 92, 0.1);
+  border-top: 1px solid var(--ui-line);
 }
 
 .mcp-editor-actions > button {
   min-height: 50px;
-  border: 1px solid rgba(72, 84, 86, 0.16);
+  border: 1px solid var(--ui-line);
   border-radius: 15px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #344146;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
   font-size: 16px;
 }
 
@@ -272,13 +272,13 @@
   height: auto;
   margin: 0;
   border: 0;
-  background: #202526;
-  color: #fff;
+  background: var(--ui-inverse);
+  color: var(--ui-on-inverse);
 }
 
 .external-mcp-modal .connection-message {
   margin: 0 2px 14px;
-  color: #55746c;
+  color: var(--ui-ink-secondary);
   font-size: 13px;
   line-height: 1.45;
   text-align: left;

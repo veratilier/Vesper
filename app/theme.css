@@ -1,0 +1,193 @@
+/* Vesper neutral visual system. Keep app content (photos, avatars and covers)
+   untouched; these tokens are for product chrome only. */
+:root {
+  --ui-canvas: #f5f5f3;
+  --ui-surface: #fcfcfa;
+  --ui-surface-muted: #efefec;
+  --ui-surface-strong: #e4e4e0;
+  --ui-ink: #111111;
+  --ui-ink-secondary: #555553;
+  --ui-muted: #7b7b77;
+  --ui-line: #dadad6;
+  --ui-line-strong: #bebeba;
+  --ui-inverse: #191919;
+  --ui-on-inverse: #ffffff;
+  --ui-danger: #555552;
+
+  --ink: var(--ui-ink);
+  --soft: var(--ui-muted);
+  --line: var(--ui-line);
+  --sage: var(--ui-ink-secondary);
+  --paper: var(--ui-canvas);
+}
+
+html,
+body,
+.stage,
+.app-shell,
+.scroll-view,
+.page-body,
+.settings-page {
+  background-color: var(--ui-canvas) !important;
+  color: var(--ui-ink);
+}
+
+.stage {
+  background-image: none !important;
+}
+
+.app-shell {
+  background-image: none;
+  box-shadow: none !important;
+}
+
+.app-header {
+  background: var(--ui-canvas) !important;
+  color: var(--ui-ink);
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-header .icon-button,
+.app-header .avatar-button,
+.app-header .chat-header-actions button {
+  color: var(--ui-ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell :is(.surface, .note-card, .todo-item, .setting-row, .settings-group .surface,
+  .connection-modal, .history-modal, .profile-modal, .functional-settings-modal,
+  .appearance-modal, .thought-sheet, .history-drawer, .drawer, .voice-call-modal,
+  .music-sync-modal) {
+  border-color: var(--ui-line) !important;
+  background-color: var(--ui-surface) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-shell :is(.modal-scrim, .scrim, .thought-scrim, .history-layer .modal-scrim) {
+  background: rgba(17, 17, 17, .24) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.app-shell :is(.surface, .note-card, .todo-item, .setting-row, .settings-group,
+  .settings-group h2, .page-name, .wordmark b, .modal-head h2, .drawer-head,
+  .drawer .nav-row, .placeholder, .chat-empty, .connection-modal, .history-drawer,
+  .profile-modal, .functional-settings-modal, .appearance-modal) {
+  color: var(--ui-ink);
+}
+
+.app-shell :is(.settings-hint, .setting-row small, .settings-group small, .modal-head small,
+  .drawer small, .placeholder p, .chat-empty span, .history-group h3, .connection-message,
+  .profile-modal small, .appearance-title small) {
+  color: var(--ui-muted) !important;
+}
+
+.drawer,
+.history-drawer {
+  background-image: none !important;
+}
+
+.drawer .nav-row,
+.drawer .nav-row span,
+.drawer .nav-row > .nav-icon {
+  color: var(--ui-ink-secondary) !important;
+}
+
+.drawer .nav-row::before,
+.drawer .nav-row::after {
+  background: transparent !important;
+}
+
+.drawer .nav-row.active,
+.drawer .nav-row:hover {
+  border-color: var(--ui-line) !important;
+  background: var(--ui-surface-muted) !important;
+  color: var(--ui-ink) !important;
+}
+
+.app-shell :is(input, textarea, select) {
+  border-color: var(--ui-line) !important;
+  background: var(--ui-surface) !important;
+  color: var(--ui-ink) !important;
+  box-shadow: none !important;
+}
+
+.app-shell :is(input, textarea, select)::placeholder {
+  color: var(--ui-muted) !important;
+  opacity: 1;
+}
+
+.app-shell :is(input, textarea, select):focus {
+  border-color: var(--ui-line-strong) !important;
+  outline: 1px solid var(--ui-line-strong);
+  outline-offset: 0;
+}
+
+.app-shell :is(.save-profile, .history-new, .primary-action, .modal-head + button,
+  .appearance-modal > .save-profile) {
+  border-color: var(--ui-inverse) !important;
+  background: var(--ui-inverse) !important;
+  color: var(--ui-on-inverse) !important;
+  box-shadow: none !important;
+}
+
+.app-shell button:disabled {
+  opacity: .42;
+  box-shadow: none !important;
+}
+
+.app-shell button:not(:disabled):active {
+  box-shadow: none !important;
+}
+
+.setting-icon,
+.round-check.checked,
+.switch-control.on,
+.toggle-switch.on {
+  background: var(--ui-surface-strong) !important;
+  color: var(--ui-ink) !important;
+}
+
+.connection-dot,
+.voice-status-dot.ok,
+.mcp-live-dot,
+.mcp-enable.on i,
+.bridge-presence i.online,
+.composer-status i.online {
+  background: #666663 !important;
+  box-shadow: none !important;
+}
+
+.connection-dot.off,
+.voice-status-dot,
+.mcp-live-dot.off,
+.composer-status i {
+  background: #aaa9a5 !important;
+  box-shadow: none !important;
+}
+
+.app-shell :is(.delete, .danger, .history-delete, .message-action.danger,
+  .netease-track-remove) {
+  color: var(--ui-danger) !important;
+}
+
+.avatar-mark {
+  border-color: var(--ui-line) !important;
+  box-shadow: none !important;
+}
+
+.avatar-mark.user {
+  background-color: var(--ui-inverse);
+  color: var(--ui-on-inverse);
+}
+
+.avatar-mark.agent {
+  background-color: var(--ui-surface);
+  color: var(--ui-ink);
+}

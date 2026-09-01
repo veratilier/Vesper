@@ -20,7 +20,7 @@ function safeHttpsUrl(value: unknown) {
 }
 
 async function readJson(url: URL) {
-  const response = await fetch(url, {
+  const response = await fetch(url.toString(), {
     headers: {
       accept: "application/json",
       "ngrok-skip-browser-warning": "true",
@@ -50,7 +50,7 @@ async function discoverResource(resource: URL) {
   let challenge = "";
   const diagnostics: string[] = [];
   try {
-    const probe = await fetch(resource, {
+    const probe = await fetch(resource.toString(), {
       method: "POST",
       headers: {
         accept: "application/json, text/event-stream",
@@ -124,7 +124,7 @@ export async function POST(request: Request) {
     let clientSecret = "";
     const registrationEndpoint = metadata.registration_endpoint;
     if (!clientId && typeof registrationEndpoint === "string") {
-      const registration = await fetch(safeHttpsUrl(registrationEndpoint), {
+      const registration = await fetch(safeHttpsUrl(registrationEndpoint).toString(), {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({

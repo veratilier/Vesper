@@ -596,6 +596,7 @@ type FavoriteItem = {
 type MusicControl = { id: string; action: "play" | "pause" | "next" | "previous" | "play_track"; trackId?: string; replaceQueue?: boolean; processedAt?: string };
 type MusicPlaybackState = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
 type MusicResumeState = Pick<MusicPlaybackState, "trackId" | "positionSeconds" | "updatedAt">;
+type MusicQueueUpdate = { autoplay?: boolean; trackId?: string };
 type ConnectionSettings = Record<string, Record<string, string>>;
 type ChatAttachment = {
   key: string;
@@ -711,6 +712,47 @@ export default function Home() {
   const showMusicToast = (message: string) => {
     setMusicToast(message);
     window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
+  };
+  const replaceMusicQueue = (nextQueue: Track[], options: MusicQueueUpdate = {}) => {
+    const now = new Date().toISOString();
+    const preferredTrackId = options.trackId;
+    const retainedIndex = preferredTrackId
+      ? nextQueue.findIndex((track) => track.id === preferredTrackId || track.neteaseId === preferredTrackId)
+      : currentTrack
+        ? nextQueue.findIndex((track) => track.id === currentTrack.id || track.neteaseId === currentTrack.neteaseId)
+        : -1;
+    const nextIndex = retainedIndex >= 0 ? retainedIndex : 0;
+
+    // Stamp the local revision before React's deferred persistence effect runs.
+    // The queue poller uses this timestamp to reject an older server snapshot
+    // while the selected playlist is being written to D1.
+    window.localStorage.setItem("vesper-music-queue-seeded", "true");
+    window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: now, source: "local" }));
+    setQueue(nextQueue);
+    setTrackIndex(nextIndex);
+    if (options.autoplay) {
+      const target = nextQueue[nextIndex];
+      if (target?.url && target.playable !== false) setPlaying(true);
+      else {
+        setPlaying(false);
+        showMusicToast("这首歌暂时没有可播放音源");
+      }
+    } else if (currentTrack && retainedIndex < 0) {
+      setPlaying(false);
+    }
+
+    // Do not leave a window for the three-second device poll to read the old
+    // playlist back from D1. The generic document hook still provides its
+    // retry path if this immediate write is unavailable.
+    void fetch(apiUrl("/api/state"), {
+      method: "PUT",
+      headers: appHeaders(true),
+      body: JSON.stringify({ key: "musicQueue", value: nextQueue }),
+    }).then(async (response) => {
+      if (!response.ok) return;
+      const result = await response.json() as { updatedAt?: string };
+      window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: result.updatedAt || now, source: "local" }));
+    }).catch(() => {});
   };
   useEffect(() => {
     const resolveCard = (event: Event) => {
@@ -975,9 +1017,16 @@ export default function Home() {
         if (result.value?.id && result.value.id !== musicControl?.id) setMusicControl(result.value);
         const queueResponse = await fetch(apiUrl("/api/state?key=musicQueue"), { cache: "no-store", headers: appHeaders() });
         if (queueResponse.ok) {
-          const queueResult = await queueResponse.json() as { value?: Track[] | null };
+          const queueResult = await queueResponse.json() as { value?: Track[] | null; updatedAt?: string };
           if (Array.isArray(queueResult.value)) {
+            const localMeta = readLocalValue<{ updatedAt?: string }>("vesper-document-meta-musicQueue", {});
+            const localUpdatedAt = localMeta.updatedAt ? Date.parse(localMeta.updatedAt) : 0;
+            const remoteUpdatedAt = queueResult.updatedAt ? Date.parse(queueResult.updatedAt) : 0;
+            // A playlist selection is written optimistically. Never let a stale
+            // poll put the previous playlist (and its cover) back on screen.
+            if (localUpdatedAt && remoteUpdatedAt && remoteUpdatedAt < localUpdatedAt) return;
             window.localStorage.setItem("vesper-music-queue-seeded", "true");
+            if (queueResult.updatedAt) window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: queueResult.updatedAt, source: "remote" }));
             setQueue(queueResult.value);
           }
         }
@@ -1026,8 +1075,7 @@ export default function Home() {
       const track = tracks.find((item) => item.id === trackId || item.neteaseId === trackId);
       if (!track) return showToast("找不到这首歌");
       if (activeTracks.some((item) => item.id === track.id || item.neteaseId === track.neteaseId)) return showToast("已经在播放队列");
-      setQueue((current) => [...current, track]);
-      if (!queueSeeded) window.localStorage.setItem("vesper-music-queue-seeded", "true");
+      replaceMusicQueue([...activeTracks, track]);
       showToast("已加入播放队列");
     };
     const open = () => setActive("音乐");
@@ -1039,7 +1087,7 @@ export default function Home() {
       window.removeEventListener("vesper-music-queue-add", add);
       window.removeEventListener("vesper-music-open", open);
     };
-  }, [activeTracks, playMode, queueSeeded, tracks, setQueue]);
+  }, [activeTracks, playMode, queueSeeded, replaceMusicQueue, tracks]);
   const cyclePlayMode = () => {
     const modes: MusicPlayMode[] = ["order", "repeat", "single", "random"];
     const next = modes[(modes.indexOf(playMode) + 1) % modes.length];
@@ -1285,15 +1333,7 @@ export default function Home() {
           ) : active === "音乐" ? (
             <MusicPlayerUI
               queue={activeTracks}
-              onQueue={(value) => {
-                window.localStorage.setItem("vesper-music-queue-seeded", "true");
-                const retainedIndex = currentTrack
-                  ? value.findIndex((track) => track.id === currentTrack.id || track.neteaseId === currentTrack.neteaseId)
-                  : -1;
-                setQueue(value);
-                setTrackIndex(retainedIndex >= 0 ? retainedIndex : 0);
-                if (retainedIndex < 0) setPlaying(false);
-              }}
+              onQueue={replaceMusicQueue}
               selected={trackIndex}
               onTracks={(incoming) => setTracks((current) => {
                 return mergeMusicTracks(current, incoming);
@@ -1312,11 +1352,8 @@ export default function Home() {
               onInvite={() => setMusicTogether((current) => current.status === "connected" ? current : { ...current, status: "invited", inviteRequestedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })}
               onRemoveQueueItem={(index) => {
                 const nextQueue = activeTracks.filter((_, itemIndex) => itemIndex !== index);
-                window.localStorage.setItem("vesper-music-queue-seeded", "true");
-                setQueue(nextQueue);
+                replaceMusicQueue(nextQueue);
                 if (!nextQueue.length) setPlaying(false);
-                else if (index < trackIndex) setTrackIndex((current) => Math.max(0, current - 1));
-                else if (index === trackIndex) setTrackIndex(Math.min(index, nextQueue.length - 1));
               }}
             />
           ) : active === "记忆库" ? (
@@ -5875,7 +5912,7 @@ function MusicPlayerUI({
   onRemoveQueueItem, playlistIntent, onPlaylistIntentConsumed,
 }: {
   queue: Track[];
-  onQueue: (value: Track[]) => void;
+  onQueue: (value: Track[], options?: MusicQueueUpdate) => void;
   selected: number;
   onTracks: (value: Track[]) => void;
   playMode: MusicPlayMode;
@@ -5965,7 +6002,7 @@ function NeteaseMusicLibrary({
 }: {
   onClose: () => void;
   queue: Track[];
-  onQueue: (value: Track[]) => void;
+  onQueue: (value: Track[], options?: MusicQueueUpdate) => void;
   onTracks: (value: Track[]) => void;
   pendingPlaylistTrack: MusicPlaylistIntent | null;
   onPendingPlaylistTrackHandled: () => void;
@@ -6036,6 +6073,12 @@ function NeteaseMusicLibrary({
     if (result) {
       setCollection(result);
       setActiveNeteasePlaylistId(action === "playlist" ? String((payload as { playlistId?: string }).playlistId || "") : "");
+      // Choosing a remote collection means choosing the active listening list.
+      // Search remains non-destructive, but recommendations and playlist-like
+      // sources replace the queue in their returned order without auto-playing.
+      if (["playlist", "recommendations", "personal-fm", "recent-plays", "play-history", "liked-songs"].includes(action)) {
+        await prepareTracks((result.tracks || []) as Track[], true);
+      }
     }
   };
 
@@ -6049,7 +6092,7 @@ function NeteaseMusicLibrary({
     await showCollection("search", { query, limit: 30 });
   };
 
-  const prepareTracks = async (tracks: Track[], replaceQueue = false, autoplay = false) => {
+  async function prepareTracks(tracks: Track[], replaceQueue = false, autoplay = false) {
     const songIds = tracks.map((track) => track.neteaseId || track.id.replace(/^netease-/, "")).filter(Boolean);
     if (!songIds.length) return;
     const result = await invoke("resolve", { songIds, tracks });
@@ -6063,13 +6106,9 @@ function NeteaseMusicLibrary({
       seen.add(key);
       return true;
     });
-    onQueue(nextQueue);
-    if (autoplay) {
-      const trackId = resolved[0]?.id;
-      window.setTimeout(() => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } })), 140);
-    }
-    setMessage(result?.summary || `已加入 ${resolved.length} 首歌曲`);
-  };
+    onQueue(nextQueue, { autoplay, trackId: resolved[0]?.id });
+    setMessage(replaceQueue ? `已同步 ${resolved.length} 首歌曲到当前播放列表` : result?.summary || `已加入 ${resolved.length} 首歌曲`);
+  }
 
   const updateRemotePlaylist = async (action: "playlist-add" | "playlist-remove", playlistId: string, track: MusicPlaylistIntent | Track) => {
     if (!isConnected) {

@@ -1,5 +1,6 @@
 "use client";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -713,7 +714,7 @@ export default function Home() {
     setMusicToast(message);
     window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
   };
-  const replaceMusicQueue = (nextQueue: Track[], options: MusicQueueUpdate = {}) => {
+  const replaceMusicQueue = useCallback((nextQueue: Track[], options: MusicQueueUpdate = {}) => {
     const now = new Date().toISOString();
     const preferredTrackId = options.trackId;
     const retainedIndex = preferredTrackId
@@ -735,7 +736,9 @@ export default function Home() {
       if (target?.url && target.playable !== false) setPlaying(true);
       else {
         setPlaying(false);
-        showMusicToast("这首歌暂时没有可播放音源");
+        const message = "这首歌暂时没有可播放音源";
+        setMusicToast(message);
+        window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
       }
     } else if (currentTrack && retainedIndex < 0) {
       setPlaying(false);
@@ -753,7 +756,7 @@ export default function Home() {
       const result = await response.json() as { updatedAt?: string };
       window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: result.updatedAt || now, source: "local" }));
     }).catch(() => {});
-  };
+  }, [currentTrack, setQueue]);
   useEffect(() => {
     const resolveCard = (event: Event) => {
       const card = (event as CustomEvent<{ card?: MusicCardData }>).detail?.card;
@@ -909,8 +912,10 @@ export default function Home() {
     const query = new URLSearchParams(window.location.search);
     const code = query.get("code");
     const state = query.get("state");
+    const oauthError = query.get("error");
+    const oauthErrorDescription = query.get("error_description");
     const raw = window.sessionStorage.getItem("vesper-mcp-oauth-pending");
-    if (!code || !state || !raw) return;
+    if (!raw || (!code && !oauthError)) return;
     try {
       const pending = JSON.parse(raw) as {
         serverId: string;
@@ -923,6 +928,20 @@ export default function Home() {
         resource?: string;
       };
       if (pending.state !== state) throw new Error("OAuth state 不匹配");
+      if (oauthError) {
+        const detail = oauthErrorDescription?.trim() || oauthError;
+        const key = "vesper-local-external-mcp-servers";
+        const servers = readLocalValue<ExternalMcpEntry[]>(key, []);
+        window.localStorage.setItem(
+          key,
+          JSON.stringify(servers.map((server) => server.id === pending.serverId ? { ...server, oauthStatus: undefined } : server)),
+        );
+        window.sessionStorage.setItem("vesper-mcp-oauth-result", `OAuth 授权未完成：${detail.slice(0, 180)}`);
+        window.sessionStorage.removeItem("vesper-mcp-oauth-pending");
+        window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        return;
+      }
+      if (!code) throw new Error("OAuth 回调中缺少授权码");
       void fetch("/api/mcp/oauth", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -4653,70 +4672,73 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
       setMessage("请先填写 MCP 服务地址");
       return;
     }
-    setMessage("正在发现授权服务…");
-    const redirectUri = `${window.location.origin}/?mcp-oauth=1`;
-    const discoveryResponse = await fetch("/api/mcp/oauth/discover", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
-    });
-    const discovered = (await discoveryResponse.json()) as {
-      authorizationUrl?: string;
-      tokenUrl?: string;
-      clientId?: string;
-      clientSecret?: string;
-      scopes?: string;
-      resource?: string;
-      needsClientId?: boolean;
-      error?: string;
-    };
-    if (!discoveryResponse.ok || !discovered.authorizationUrl || !discovered.tokenUrl) {
-      setMessage(discovered.error || "无法自动发现 OAuth 授权页面");
-      return;
-    }
-    if (discovered.needsClientId || !discovered.clientId) {
-      setMessage("该服务不支持自动注册，请只填写它分配给 Vesper 的 Client ID 后重试");
-      return;
-    }
-    update(server.id, {
-      authorizationUrl: discovered.authorizationUrl,
-      tokenUrl: discovered.tokenUrl,
-      clientId: discovered.clientId,
-      clientSecret: discovered.clientSecret || server.clientSecret,
-      scopes: discovered.scopes,
-      resource: discovered.resource,
-    });
-    const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replaceAll("=", "");
-    const state = crypto.randomUUID();
-    window.sessionStorage.setItem(
-      "vesper-mcp-oauth-pending",
-      JSON.stringify({
-        serverId: server.id,
-        state,
-        verifier,
+    try {
+      setMessage("正在打开授权页面…");
+      const redirectUri = `${window.location.origin}/mcp/oauth/callback`;
+      const discoveryResponse = await fetch("/api/mcp/oauth/discover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
+      });
+      const discovered = (await discoveryResponse.json()) as {
+        authorizationUrl?: string;
+        tokenUrl?: string;
+        clientId?: string;
+        clientSecret?: string;
+        scopes?: string;
+        resource?: string;
+        needsClientId?: boolean;
+        error?: string;
+      };
+      if (!discoveryResponse.ok || !discovered.authorizationUrl || !discovered.tokenUrl) {
+        throw new Error(discovered.error || "无法自动发现 OAuth 授权页面");
+      }
+      if (discovered.needsClientId || !discovered.clientId) {
+        throw new Error("该服务不支持自动注册，请填写它分配给 Vesper 的 Client ID 后重试");
+      }
+      update(server.id, {
+        authorizationUrl: discovered.authorizationUrl,
         tokenUrl: discovered.tokenUrl,
         clientId: discovered.clientId,
         clientSecret: discovered.clientSecret || server.clientSecret,
-        redirectUri,
+        scopes: discovered.scopes,
         resource: discovered.resource,
-      }),
-    );
-    update(server.id, { oauthStatus: "pending" });
-    const target = new URL(discovered.authorizationUrl);
-    target.searchParams.set("response_type", "code");
-    target.searchParams.set("client_id", discovered.clientId);
-    target.searchParams.set("redirect_uri", redirectUri);
-    target.searchParams.set("state", state);
-    target.searchParams.set("code_challenge", challenge);
-    target.searchParams.set("code_challenge_method", "S256");
-    if (discovered.scopes) target.searchParams.set("scope", discovered.scopes);
-    target.searchParams.set("resource", discovered.resource || server.url);
-    window.location.assign(target.toString());
+      });
+      const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+      const state = crypto.randomUUID();
+      window.sessionStorage.setItem(
+        "vesper-mcp-oauth-pending",
+        JSON.stringify({
+          serverId: server.id,
+          state,
+          verifier,
+          tokenUrl: discovered.tokenUrl,
+          clientId: discovered.clientId,
+          clientSecret: discovered.clientSecret || server.clientSecret,
+          redirectUri,
+          resource: discovered.resource,
+        }),
+      );
+      update(server.id, { oauthStatus: "pending" });
+      const target = new URL(discovered.authorizationUrl);
+      target.searchParams.set("response_type", "code");
+      target.searchParams.set("client_id", discovered.clientId);
+      target.searchParams.set("redirect_uri", redirectUri);
+      target.searchParams.set("state", state);
+      target.searchParams.set("code_challenge", challenge);
+      target.searchParams.set("code_challenge_method", "S256");
+      if (discovered.scopes) target.searchParams.set("scope", discovered.scopes);
+      target.searchParams.set("resource", discovered.resource || server.url);
+      window.location.assign(target.toString());
+    } catch (reason) {
+      update(server.id, { oauthStatus: undefined });
+      setMessage(reason instanceof Error ? reason.message : "无法打开 OAuth 授权页面");
+    }
   };
   const test = async (server: ExternalMcpEntry) => {
     if (!server.url) {
@@ -4754,7 +4776,7 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
             <label className="profile-field"><span>名称</span><input value={editor.name} onChange={(event) => updateEditor({ name: event.target.value })} /></label>
             <label className="profile-field"><span>Streamable HTTP 地址</span><input value={editor.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => updateEditor({ url: event.target.value })} /></label>
             <div className="mcp-auth-choice"><span>OAuth 授权</span><div><button className={(editor.authMode || "none") === "none" ? "selected" : ""} onClick={() => updateEditor({ authMode: "none" })}>无</button><button className={editor.authMode === "oauth" ? "selected" : ""} onClick={() => updateEditor({ authMode: "oauth" })}>有</button></div></div>
-            {editor.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并直接跳转授权；通常无需手填授权地址。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={editor.clientId || ""} onChange={(event) => updateEditor({ clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={editor.token} onChange={(event) => updateEditor({ token: event.target.value })} /></label>}
+            {editor.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并跳转授权；若服务要求预先登记回调地址，请填写 <code>https://vesper.r-vera.com/mcp/oauth/callback</code>。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={editor.clientId || ""} onChange={(event) => updateEditor({ clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={editor.token} onChange={(event) => updateEditor({ token: event.target.value })} /></label>}
             <button className={editor.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => updateEditor({ enabled: !editor.enabled })}><span>{editor.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
             {editorMessage && <p className="connection-message">{editorMessage}</p>}
           </div>

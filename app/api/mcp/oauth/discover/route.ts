@@ -21,10 +21,15 @@ function safeHttpsUrl(value: unknown) {
 
 async function readJson(url: URL) {
   const response = await fetch(url, {
-    headers: { accept: "application/json" },
+    headers: {
+      accept: "application/json",
+      "ngrok-skip-browser-warning": "true",
+      "user-agent": "Vesper MCP OAuth discovery",
+    },
+    cache: "no-store",
     redirect: "error",
   });
-  if (!response.ok) return null;
+  if (!response.ok) throw new Error(`metadata HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
   if (contentLength > 1_000_000) throw new Error("OAuth 元数据过大");
   return (await response.json()) as JsonRecord;
@@ -37,11 +42,13 @@ function metadataCandidates(resource: URL, challenge?: string | null) {
     fromHeader,
     `${resource.origin}/.well-known/oauth-protected-resource${path}`,
     `${resource.origin}/.well-known/oauth-protected-resource`,
+    `${resource.origin}${path}/.well-known/oauth-protected-resource`,
   ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
 }
 
 async function discoverResource(resource: URL) {
   let challenge = "";
+  const diagnostics: string[] = [];
   try {
     const probe = await fetch(resource, {
       method: "POST",
@@ -59,13 +66,21 @@ async function discoverResource(resource: URL) {
       redirect: "error",
     });
     challenge = probe.headers.get("www-authenticate") || "";
-  } catch {}
+  } catch (reason) {
+    diagnostics.push(reason instanceof Error ? reason.message.slice(0, 80) : "resource probe failed");
+  }
   for (const candidate of metadataCandidates(resource, challenge)) {
     try {
       const value = await readJson(safeHttpsUrl(candidate));
       if (value) return { value, challenge };
-    } catch {}
+    } catch (reason) {
+      diagnostics.push(reason instanceof Error ? reason.message.slice(0, 80) : "metadata request failed");
+    }
   }
+  console.warn("MCP OAuth protected-resource discovery failed", {
+    resource: resource.toString(),
+    diagnostics,
+  });
   throw new Error("MCP 没有提供 OAuth Protected Resource Metadata");
 }
 

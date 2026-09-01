@@ -27,7 +27,7 @@ async function readJson(url: URL) {
       "user-agent": "Vesper MCP OAuth discovery",
     },
     cache: "no-store",
-    redirect: "error",
+    redirect: "manual",
   });
   if (!response.ok) throw new Error(`metadata HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
@@ -63,7 +63,7 @@ async function discoverResource(resource: URL) {
         method: "initialize",
         params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Vesper", version: "1.0" } },
       }),
-      redirect: "error",
+      redirect: "manual",
     });
     challenge = probe.headers.get("www-authenticate") || "";
   } catch (reason) {
@@ -81,8 +81,7 @@ async function discoverResource(resource: URL) {
     resource: resource.toString(),
     diagnostics,
   });
-  const detail = diagnostics.join("；").replace(/https?:\/\/[^\s；]+/g, "远端服务").slice(0, 180);
-  throw new Error(detail ? `无法读取 MCP 的 OAuth 元数据：${detail}` : "MCP 没有提供 OAuth Protected Resource Metadata");
+  throw new Error("无法读取 MCP 的 OAuth 元数据");
 }
 
 async function discoverAuthorizationServer(issuer: URL) {
@@ -135,7 +134,7 @@ export async function POST(request: Request) {
           grant_types: ["authorization_code"],
           response_types: ["code"],
         }),
-        redirect: "error",
+        redirect: "manual",
       });
       const registered = (await registration.json()) as { client_id?: string; client_secret?: string; error_description?: string };
       if (!registration.ok || !registered.client_id)

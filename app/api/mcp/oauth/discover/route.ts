@@ -81,7 +81,8 @@ async function discoverResource(resource: URL) {
     resource: resource.toString(),
     diagnostics,
   });
-  throw new Error("MCP 没有提供 OAuth Protected Resource Metadata");
+  const detail = diagnostics.join("；").replace(/https?:\/\/[^\s；]+/g, "远端服务").slice(0, 180);
+  throw new Error(detail ? `无法读取 MCP 的 OAuth 元数据：${detail}` : "MCP 没有提供 OAuth Protected Resource Metadata");
 }
 
 async function discoverAuthorizationServer(issuer: URL) {

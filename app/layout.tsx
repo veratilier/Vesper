@@ -5,6 +5,7 @@ import "./chat.css";
 import "./music.css";
 import "./settings.css";
 import "./theme.css";
+import "./home.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

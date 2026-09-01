@@ -1318,6 +1318,7 @@ export default function Home() {
               onToggle={() => setPlaying(!playing)}
               environment={environment}
               userName={userName}
+              onOpenSection={(section) => setActive(section)}
             />
           ) : active === "聊天" ? (
               <ConnectedChat
@@ -1813,12 +1814,14 @@ function Today({
   onToggle,
   environment,
   userName,
+  onOpenSection,
 }: {
   track?: Track;
   playing: boolean;
   onToggle: () => void;
   environment: EnvironmentSnapshot;
   userName: string;
+  onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐") => void;
 }) {
   const [notes] = usePersistentDocument<NoteItem[]>("notes", []);
   const [todos, setTodos] = usePersistentDocument<TodoItem[]>("todos", []);
@@ -1848,8 +1851,83 @@ function Today({
     environment.temperature !== undefined
       ? `${Math.round(environment.temperature)}°`
       : "--°";
+  const homeSignal =
+    hour < 6
+      ? "夜里慢一点。"
+      : hour < 11
+        ? "灯还亮着。"
+        : hour < 18
+          ? "今天也住在这里。"
+          : "你回来了。";
+  const realNotes = [...notes]
+    .filter((note) => note.text.trim().length > 0)
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.createdAt);
+      const rightTime = Date.parse(right.createdAt);
+      return (Number.isFinite(rightTime) ? rightTime : 0) -
+        (Number.isFinite(leftTime) ? leftTime : 0);
+    });
+  const latestNote = realNotes[0];
+  const latestNoteLines = latestNote
+    ? latestNote.text
+        .trim()
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
+  const latestNoteTitle = latestNoteLines[0] || "";
+  const latestNoteSummary = latestNoteLines.slice(1).join(" ").trim();
+  const latestNoteTimestamp = latestNote
+    ? new Intl.DateTimeFormat("zh-CN", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(latestNote.createdAt))
+    : "";
+  const todayReminder = todos.find((item) => {
+    if (item.done || !item.due?.trim()) return false;
+    if (item.due.includes("今天")) return true;
+    const dueAt = new Date(item.due);
+    return Number.isFinite(dueAt.getTime()) && dueAt.toDateString() === now.toDateString();
+  });
+  const todayAnniversary = anniversaries.find((item) => {
+    const date = new Date(`${item.date}T12:00:00`);
+    return Number.isFinite(date.getTime()) &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+  });
+  const todayMoment = todayReminder
+    ? {
+        icon: "check",
+        title: todayReminder.title,
+        detail: todayReminder.due || todayReminder.tag,
+        section: "提醒" as const,
+      }
+    : latestNote
+      ? {
+          icon: latestNote.kind === "agent" ? "sparkles" : "note",
+          title: latestNoteTitle,
+          detail: "最近便笺",
+          section: "便笺" as const,
+        }
+      : todayAnniversary
+        ? {
+            icon: "calendar",
+            title: todayAnniversary.title,
+            detail: "今天的纪念日",
+            section: "纪念日" as const,
+          }
+        : track && playing
+          ? {
+              icon: "music",
+              title: track.title,
+              detail: track.artist,
+              section: "音乐" as const,
+            }
+          : null;
   return (
-    <>
+    <div className="today-home">
       <section className="welcome">
         <div className="date-row">
           <span>{dateText}</span>
@@ -1859,22 +1937,46 @@ function Today({
           </span>
         </div>
         <h1>{greeting}, {userName}.</h1>
+        <p className="home-return-signal">{homeSignal}</p>
       </section>
-      <section className="section-block">
-        <SectionTitle icon="note" title="Notes" count={String(notes.length)} />
-        <div className="note-stack">
-          {notes.slice(0, 2).map((note) => (
-            <article className={`note-card ${note.tone}`} key={note.id}>
-              <Icon name={note.kind === "agent" ? "sparkles" : "feather"} />
-              <div>
-                <p>{note.text}</p>
-                <time>{new Date(note.createdAt).toLocaleString("zh-CN")}</time>
-              </div>
-            </article>
-          ))}
-          {!notes.length && <EmptyState text="No notes yet" />}
-        </div>
+      <section className="section-block home-notes">
+        <SectionTitle icon="note" title="Notes" count={latestNote ? String(realNotes.length) : undefined} />
+        {latestNote ? (
+          <button className="home-note-summary" onClick={() => onOpenSection("便笺")}>
+            <span className="home-card-icon">
+              <Icon name={latestNote.kind === "agent" ? "sparkles" : "note"} />
+            </span>
+            <span className="home-note-copy">
+              <b>{latestNoteTitle}</b>
+              <small>{latestNoteSummary || `记录于 ${latestNoteTimestamp}`}</small>
+            </span>
+            <Icon name="chevron" />
+          </button>
+        ) : (
+          <button className="home-note-empty" onClick={() => onOpenSection("便笺")}>
+            <span>留一句给今天的你。</span>
+            <Icon name="chevron" />
+          </button>
+        )}
       </section>
+      {todayMoment && (
+        <section className="section-block home-moment-section">
+          <button
+            className="home-moment-card"
+            onClick={() => onOpenSection(todayMoment.section)}
+          >
+            <span className="home-card-icon">
+              <Icon name={todayMoment.icon} />
+            </span>
+            <span className="home-moment-copy">
+              <small>今日</small>
+              <b>{todayMoment.title}</b>
+              <span>{todayMoment.detail}</span>
+            </span>
+            <Icon name="chevron" />
+          </button>
+        </section>
+      )}
       <section className="section-block">
         <SectionTitle
           icon="check"
@@ -1923,7 +2025,7 @@ function Today({
         )}
       </section>
       <MusicCard track={track} playing={playing} onToggle={onToggle} />
-    </>
+    </div>
   );
 }
 

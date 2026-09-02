@@ -1804,13 +1804,11 @@ body {
   background: #eeeeeb;
   border-radius: 3px;
 }
-.chat-page:not(.codex-chat) .message p {
-  font:
-    12px/1.75 "Songti SC",
-    serif;
+.message p {
+  font: 14px/1.5 var(--font-chinese);
   margin: 0;
 }
-.chat-page:not(.codex-chat) .message p + p {
+.message p + p {
   margin-top: 11px;
 }
 .message small {

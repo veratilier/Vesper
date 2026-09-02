@@ -1,4 +1,4 @@
-/* The only Codex chat layout and sizing rules. Keep legacy chat styles in globals.css. */
+/* The only active Codex chat layout, sizing, and typography rules. */
 .scroll-view:has(> .codex-chat) {
   overflow: hidden;
   padding-right: 0;
@@ -15,6 +15,12 @@
   min-height: 0;
   margin: 0;
   font-family: var(--font-chinese);
+}
+
+/* Chat text must not inherit the retired Songti rule used by the legacy chat. */
+.codex-chat .message :is(p, li, blockquote),
+.codex-chat .chat-compose textarea {
+  font-family: var(--font-chinese) !important;
 }
 
 .codex-chat .chat-status-stack { grid-row: 1; min-height: 0; }

@@ -123,7 +123,8 @@ body,
   opacity: 1;
 }
 
-.app-shell :is(input, textarea, select):focus {
+.app-shell :is(input, select):focus,
+.app-shell textarea:focus:not(.codex-chat .chat-compose textarea) {
   border-color: var(--ui-line-strong) !important;
   outline: 1px solid var(--ui-line-strong);
   outline-offset: 0;

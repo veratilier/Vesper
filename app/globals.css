@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root {
+  /* System CJK text always uses PingFang on Apple devices. Keeping this as a
+     token makes the fallback explicit for non-Apple browsers as well. */
+  --font-chinese: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
   --ink: #263538;
   --soft: #718082;
   --line: rgba(57, 76, 79, 0.12);
@@ -33,7 +36,7 @@ body {
   overscroll-behavior: none;
 }
 body {
-  font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", sans-serif;
+  font-family: var(--font-chinese);
 }
 button {
   font: inherit;
@@ -3197,10 +3200,10 @@ body p,
 body span,
 body small,
 body label {
-  font-family: "Times New Roman", "Songti SC", serif;
+  font-family: var(--font-chinese);
 }
 body * {
-  font-family: "Times New Roman", "Songti SC", serif !important;
+  font-family: var(--font-chinese) !important;
 }
 .wordmark > b,
 .drawer-brand b {
@@ -3573,7 +3576,7 @@ html {
   position: relative;
   z-index: 1;
   color: inherit;
-  font-family: var(--font-geist-sans), "Avenir Next", "PingFang SC", sans-serif !important;
+  font-family: var(--font-chinese) !important;
   font-size: 12px !important;
   font-weight: 500 !important;
   letter-spacing: 0.04em !important;
@@ -4127,9 +4130,7 @@ html {
     monospace;
 }
 .runtime-summary {
-  font:
-    11px/1.9 "Songti SC",
-    serif !important;
+  font: 11px/1.9 var(--font-chinese) !important;
   color: #4d4d4b !important;
   border-top: 0 !important;
   padding: 20px 0 !important;

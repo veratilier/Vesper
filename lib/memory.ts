@@ -94,7 +94,7 @@ type SecretEnv = {
 const now = () => new Date().toISOString();
 const secretEnv = () => env as unknown as SecretEnv;
 
-function cleanText(value: unknown, limit = MEMORY_CONFIG.maxMemoryLength) {
+function cleanText(value: unknown, limit: number = MEMORY_CONFIG.maxMemoryLength) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
@@ -380,6 +380,34 @@ export async function correctCoreMemory(scope: MemoryScope, id: string, input: {
     getDb().prepare(`UPDATE vesper_memories SET body = ?, mood = ?, tags = ?, embedding = ?, fingerprint = ?,
       updated_at = ?, review_status = 'approved', pinned = 1, weight = 1 WHERE id = ?`)
       .bind(body, mood, JSON.stringify(tags), JSON.stringify(embedding), await sha256(`core:${normalizeText(body)}`), changedAt, id),
+  ]);
+  const updated = await memoryDetail(scope, id);
+  if (updated) await updateFts(updated.memory);
+  return updated;
+}
+
+/**
+ * Non-core memories can be corrected when the user has explicitly asked Codex
+ * to do so. Core facts deliberately use correctCoreMemory instead, so they
+ * always keep their stricter revision and confirmation flow.
+ */
+export async function editMemory(scope: MemoryScope, id: string, input: { body: string; mood?: string; tags?: unknown; reason?: string }) {
+  const detail = await memoryDetail(scope, id);
+  if (!detail) throw new Error("找不到这条记忆");
+  if (detail.memory.type === "core") throw new Error("核心记忆需要使用修正流程");
+  const body = cleanText(input.body);
+  if (body.length < 4) throw new Error("修正后的记忆需要更具体一点");
+  const mood = cleanText(input.mood, 48);
+  const tags = cleanTags(input.tags);
+  const embedding = await embeddingFor(`${body}\n${tags.join(" ")}`);
+  const changedAt = now();
+  await getDb().batch([
+    getDb().prepare(`INSERT INTO vesper_memory_revisions(id, memory_id, body, mood, tags, reason, action, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'edited', ?)`)
+      .bind(crypto.randomUUID(), id, body, mood, JSON.stringify(tags), cleanText(input.reason, 180) || "用户通过 Codex 修正", changedAt),
+    getDb().prepare(`UPDATE vesper_memories SET body = ?, mood = ?, tags = ?, embedding = ?, fingerprint = ?,
+      updated_at = ? WHERE id = ? AND user_id = ? AND character_id = ?`)
+      .bind(body, mood, JSON.stringify(tags), JSON.stringify(embedding), await sha256(`${detail.memory.type}:${normalizeText(body)}`), changedAt, id, scope.userId, scope.characterId),
   ]);
   const updated = await memoryDetail(scope, id);
   if (updated) await updateFts(updated.memory);

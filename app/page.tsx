@@ -3268,6 +3268,9 @@ const CODEX_DYNAMIC_TOOLS = [
   { name: "music_playlist_add", description: "Add a song to the persistent Vesper music playlist, separate from the temporary queue.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" } }, required: ["trackId"] } },
   { name: "recall_vesper_memory", description: "Read Rowan's relevant server-side memories. Returned entries are old background, not the user's current message.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "remember_vesper_memory", description: "Only after a meaningful exchange, preserve one concise and durable memory. Never save a joke, guess, duplicate, or transient detail. Core items are candidates and require the user's confirmation; feelings must be Rowan's first-person feeling.", inputSchema: { type: "object", additionalProperties: false, properties: { type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["type", "body"] } },
+  { name: "manage_vesper_memory", description: "List, add, edit, or remove Vesper memories only after the user explicitly requests that exact change. Core edits require explicit confirmation and a reason.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] }, id: { type: "string" }, type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } }, reason: { type: "string" }, includeDemoted: { type: "boolean" } }, required: ["action"] } },
+  { name: "list_configured_mcp_tools", description: "List the user's enabled Vesper Settings MCP connections and their allowed tools before calling one. Credentials are never returned.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
+  { name: "call_configured_mcp_tool", description: "Call exactly one tool returned by list_configured_mcp_tools. Vesper holds the connection credentials securely on the server.", inputSchema: { type: "object", additionalProperties: false, properties: { connectionId: { type: "string" }, toolName: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["connectionId", "toolName"] } },
 ];
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
@@ -3915,6 +3918,19 @@ function ConnectedChat({
     });
     if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageIsTombstoned(item, tombstonesRef.current))));
   };
+  const loadDynamicTools = async () => {
+    let dynamicTools = CODEX_DYNAMIC_TOOLS;
+    try {
+      const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
+      if (catalog.ok) {
+        const payload = await catalog.json() as { tools?: typeof CODEX_DYNAMIC_TOOLS };
+        if (Array.isArray(payload.tools) && payload.tools.length) dynamicTools = payload.tools;
+      }
+    } catch {
+      // The fallback keeps the app-server handshake useful while the bridge is offline.
+    }
+    return dynamicTools;
+  };
   const connect = async () => {
     if (socket.current?.readyState === WebSocket.OPEN) return;
     const ws = new WebSocket(codexSocketUrl());
@@ -3931,16 +3947,7 @@ function ConnectedChat({
     setOnline(true);
     await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
     ws.send(JSON.stringify({ method: "initialized" }));
-    let dynamicTools = CODEX_DYNAMIC_TOOLS;
-    try {
-      const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
-      if (catalog.ok) {
-        const payload = await catalog.json() as { tools?: typeof CODEX_DYNAMIC_TOOLS };
-        if (Array.isArray(payload.tools) && payload.tools.length) dynamicTools = payload.tools;
-      }
-    } catch {
-      // The fallback keeps the app-server handshake useful while the bridge is offline.
-    }
+    const dynamicTools = await loadDynamicTools();
     if (threadId.current) {
       try {
         const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
@@ -3967,7 +3974,7 @@ function ConnectedChat({
     }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     try {
-      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
+      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), approvalPolicy: "on-request", summary: "concise" });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
@@ -4781,6 +4788,7 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
   const [testingId, setTestingId] = useState("");
   const [editor, setEditor] = useState<ExternalMcpEntry | null>(null);
   const [editorMessage, setEditorMessage] = useState("");
+  const syncedConnections = useRef(new Set<string>());
   const configuredServers = servers.filter(
     (server) => Boolean(server.name.trim() || server.url.trim()),
   );
@@ -4825,6 +4833,34 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
   };
   const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
     setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  const syncToCodex = async (server: ExternalMcpEntry) => {
+    const response = await fetch(apiUrl("/api/mcp/connections"), {
+      method: "PUT",
+      headers: appHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({
+        id: server.id,
+        name: server.name,
+        url: server.url,
+        authMode: server.authMode || "none",
+        token: server.token,
+        enabled: server.enabled,
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { serverName?: string; toolCount?: number; error?: string };
+    if (!response.ok) throw new Error(result.error || "无法同步 MCP 给 Codex");
+    return result;
+  };
+  useEffect(() => {
+    for (const server of servers) {
+      const signature = `${server.id}:${server.url}:${server.token}:${server.enabled}`;
+      if (!server.enabled || !server.url || !server.token || syncedConnections.current.has(signature)) continue;
+      syncedConnections.current.add(signature);
+      void syncToCodex(server).catch(() => {
+        syncedConnections.current.delete(signature);
+      });
+    }
+  }, [servers]);
   const authorize = async (server: ExternalMcpEntry) => {
     if (!server.url) {
       setMessage("请先填写 MCP 服务地址");
@@ -4906,14 +4942,8 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     setTestingId(server.id);
     setMessage("");
     try {
-      const response = await fetch("/api/mcp", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: server.url, token: server.token }),
-      });
-      const result = (await response.json()) as { serverName?: string; toolCount?: number; error?: string };
-      if (!response.ok) throw new Error(result.error || "MCP 连接失败");
-      setMessage(`连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}`);
+      const result = await syncToCodex(server);
+      setMessage(`连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}；已同步给 Codex，新建对话后即可使用。`);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "MCP 连接失败");
     } finally {
@@ -4961,7 +4991,16 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
                     <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中" : "测试"}</button>
                     {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>授权</button>}
                     <button onClick={() => openEditor(server)}>编辑</button>
-                    <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}>删除</button>
+                    <button onClick={() => void (async () => {
+                      try {
+                        const response = await fetch(`${apiUrl("/api/mcp/connections")}?id=${encodeURIComponent(server.id)}`, { method: "DELETE", headers: appHeaders(true), cache: "no-store" });
+                        const result = await response.json().catch(() => ({})) as { error?: string };
+                        if (!response.ok) throw new Error(result.error || "无法删除服务端 MCP 凭证");
+                        setServers((current) => current.filter((item) => item.id !== server.id));
+                      } catch (reason) {
+                        setMessage(reason instanceof Error ? reason.message : "删除 MCP 失败");
+                      }
+                    })()}>删除</button>
                   </div>
                 </article>
               ))}

@@ -1,6 +1,7 @@
 import { allowedDocumentKeys } from "@/db/schema";
 import { ensureSchema, getDb } from "@/lib/db";
-import { captureMemoryCandidate, recallMemory, type MemoryScope } from "@/lib/memory";
+import { callConfiguredMcpTool, configuredMcpTools } from "@/lib/mcp-connections";
+import { captureMemoryCandidate, correctCoreMemory, createMemory, editMemory, listMemories, recallMemory, updateMemoryState, type MemoryScope, type MemoryType } from "@/lib/memory";
 
 type ToolInput = Record<string, unknown>;
 type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
@@ -162,6 +163,44 @@ export const codexToolDefinitions = [
         tags: { type: "array", items: { type: "string" } },
       },
       required: ["type", "body"],
+    },
+  },
+  {
+    name: "manage_vesper_memory",
+    description: "List, add, edit, or remove Rowan's Vesper memories. Only make a change after the user explicitly asks for that exact change. A delete safely removes the memory from recall and keeps it recoverable; editing a core memory requires an explicit user confirmation and a reason.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] },
+        id: { type: "string", description: "Memory id for edit/delete/pin/unpin/restore." },
+        type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] },
+        body: { type: "string" },
+        mood: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        reason: { type: "string", description: "Required explanation for an edit, especially a core-memory correction." },
+        includeDemoted: { type: "boolean" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "list_configured_mcp_tools",
+    description: "List the external MCP tools the user has already connected and authorized in Vesper Settings. Call this before using an external MCP tool; it returns allowed connection ids, tool names, descriptions, and input schemas without exposing credentials.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "call_configured_mcp_tool",
+    description: "Call one tool from the user's Vesper Settings MCP connections. First use list_configured_mcp_tools, then use exactly a listed connectionId and toolName. Vesper keeps OAuth/Bearer credentials on the server and only sends this call to the chosen MCP server.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        connectionId: { type: "string" },
+        toolName: { type: "string" },
+        arguments: { type: "object", additionalProperties: true },
+      },
+      required: ["connectionId", "toolName"],
     },
   },
 ] as const;
@@ -417,6 +456,55 @@ export async function executeCodexTool(name: string, input: ToolInput, memorySco
     if (!memoryScope) throw new Error("Memory scope is unavailable");
     const result = await captureMemoryCandidate(memoryScope, input);
     return { stored: result.created, duplicate: result.duplicate, memory: result.memory };
+  }
+  if (name === "manage_vesper_memory") {
+    if (!memoryScope) throw new Error("Memory scope is unavailable");
+    const action = String(input.action || "");
+    if (action === "list") {
+      const memories = await listMemories(memoryScope, { includeDemoted: input.includeDemoted === true, includeCandidates: true, limit: 80 });
+      return {
+        memories: memories.map((memory) =>
+          Object.fromEntries(Object.entries(memory).filter(([key]) => key !== "embedding")),
+        ),
+      };
+    }
+    if (action === "add") {
+      const typeValue = String(input.type || "long_term");
+      const type: MemoryType = typeValue === "core" ? "core" : typeValue === "feeling" ? "feeling" : typeValue === "dream" ? "dream" : "long_term";
+      const result = await createMemory(memoryScope, {
+        type,
+        body: String(input.body || ""),
+        mood: String(input.mood || ""),
+        tags: input.tags,
+        source: type === "core" ? "codex-explicit-core-candidate" : "codex-explicit",
+        reviewStatus: type === "core" ? "candidate" : "approved",
+      });
+      return { added: result.created, duplicate: result.duplicate, memory: result.memory, note: type === "core" ? "核心记忆已作为候选保存，仍需用户在 Memory 页面确认。" : undefined };
+    }
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("Memory id is required");
+    if (action === "edit") {
+      const reason = String(input.reason || "").trim();
+      if (!reason) throw new Error("Editing a memory requires an explicit reason");
+      const current = (await listMemories(memoryScope, { includeDemoted: true, includeCandidates: true, limit: 250 })).find((memory) => memory.id === id);
+      if (!current) throw new Error("找不到这条记忆");
+      const detail = current.type === "core"
+        ? await correctCoreMemory(memoryScope, id, { body: String(input.body || ""), mood: String(input.mood || ""), tags: input.tags, reason })
+        : await editMemory(memoryScope, id, { body: String(input.body || ""), mood: String(input.mood || ""), tags: input.tags, reason });
+      return { edited: true, memory: detail?.memory || null };
+    }
+    if (action === "delete") return { deleted: true, memory: (await updateMemoryState(memoryScope, id, "demote"))?.memory || null };
+    if (action === "restore") return { restored: true, memory: (await updateMemoryState(memoryScope, id, "restore"))?.memory || null };
+    if (action === "pin" || action === "unpin") return { pinned: action === "pin", memory: (await updateMemoryState(memoryScope, id, "pin", action === "pin"))?.memory || null };
+    throw new Error("Unsupported memory action");
+  }
+  if (name === "list_configured_mcp_tools") {
+    if (!memoryScope) throw new Error("MCP scope is unavailable");
+    return { connections: await configuredMcpTools(memoryScope) };
+  }
+  if (name === "call_configured_mcp_tool") {
+    if (!memoryScope) throw new Error("MCP scope is unavailable");
+    return callConfiguredMcpTool(memoryScope, input);
   }
   throw new Error(`Unknown Codex tool: ${name}`);
 }

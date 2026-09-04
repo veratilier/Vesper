@@ -23,7 +23,7 @@
   position: relative;
   top: auto;
   margin: 4px auto 6px;
-  font-family: var(--font-geist-sans), sans-serif;
+  font-family: var(--font-chinese);
   letter-spacing: .02em;
 }
 
@@ -121,14 +121,14 @@
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 1.7;
   letter-spacing: 0;
 }
 
 .codex-chat .message p + p { margin-top: 7px; }
 .codex-chat .message ul,
-.codex-chat .message ol { margin: 6px 0 0 18px; padding: 0; }
+.codex-chat .message ol { margin: 6px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.7; }
 .codex-chat .message li + li { margin-top: 3px; }
 .codex-chat .message pre { margin: 8px -3px 0; padding: 9px; overflow-x: auto; font-size: 12px; line-height: 1.45; border-radius: 10px; }
 .codex-chat .message small,
@@ -144,13 +144,13 @@
   border: 0;
   background: transparent;
   color: var(--ui-muted);
-  font: 10px/1.25 var(--font-geist-mono), ui-monospace, monospace;
+  font: 10px/1.25 var(--font-chinese);
 }
 
 .codex-chat .turn-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--ui-ink-secondary); box-shadow: none; }
 .codex-chat .message-actions { display: flex; align-items: center; gap: 0; min-height: 32px; margin: -1px 8px 0; }
 .codex-chat .sent-turn .message-actions { justify-content: flex-end; }
-.codex-chat .message-actions time { color: var(--ui-muted); font: 10px/1.2 var(--font-geist-mono), monospace; }
+.codex-chat .message-actions time { color: var(--ui-muted); font: 10px/1.2 var(--font-chinese); }
 .codex-chat .message-action { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ui-muted); }
 .codex-chat .message-action:active { background: var(--ui-surface-strong); color: var(--ui-ink); }
 .codex-chat .message-action.active { color: var(--ui-ink); }
@@ -181,7 +181,7 @@
 .codex-chat .codex-mini-player > button svg { width: 15px; height: 15px; }
 .codex-chat .mini-track { min-width: 0; flex: 1; display: grid; grid-template-columns: 32px minmax(0,1fr); grid-template-rows: 18px 14px; column-gap: 8px; align-items: center; padding: 0; border: 0; background: transparent; text-align: left; }
 .codex-chat .mini-track img,
-.codex-chat .mini-track > span { width: 32px; height: 32px; grid-row: 1 / span 2; border-radius: 8px; object-fit: cover; background: var(--ui-surface-strong); color: var(--ui-ink-secondary); display: grid; place-items: center; font: 16px Georgia, serif; }
+.codex-chat .mini-track > span { width: 32px; height: 32px; grid-row: 1 / span 2; border-radius: 8px; object-fit: cover; background: var(--ui-surface-strong); color: var(--ui-ink-secondary); display: grid; place-items: center; font: 16px var(--font-chinese); }
 .codex-chat .mini-track strong { overflow: hidden; color: var(--ui-ink-secondary); font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .codex-chat .mini-track small { overflow: hidden; color: var(--ui-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -216,7 +216,7 @@
   overflow-y: hidden;
   background: transparent;
   color: var(--ui-ink);
-  font: 16px/1.5 var(--font-chinese);
+  font: 12px/1.7 var(--font-chinese);
 }
 
 .codex-chat .compose-actions { display: flex; align-items: center; gap: 5px; min-height: 28px; height: 28px; }
@@ -237,13 +237,130 @@
   position: static;
   transform: none;
 }
-.codex-chat .composer-status { min-width: 0; flex: 1; display: inline-flex; align-items: center; gap: 5px; color: var(--ui-muted); font: 500 9px/1.1 var(--font-geist-mono), monospace; }
+.codex-chat .composer-status { min-width: 0; flex: 1; display: inline-flex; align-items: center; gap: 5px; color: var(--ui-muted); font: 500 9px/1.1 var(--font-chinese); }
 .codex-chat .composer-status i { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--ui-line-strong); }
 .codex-chat .composer-status i.online { background: var(--ui-ink-secondary); box-shadow: none; }
 .codex-chat .send-message-button { background: var(--ui-inverse); color: var(--ui-on-inverse); }
 .codex-chat .send-message-button:disabled { opacity: .34; }
 
+/* Explicit, per-request app-server approvals. These are intentionally a
+   viewport-level layer so a pending command cannot be hidden by the chat
+   scroller, keyboard, mini player, or a message's overflow rules. */
+.codex-approval-layer {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
+  background: rgba(17, 17, 17, .28);
+}
+
+.codex-approval-dialog {
+  width: min(100%, 560px);
+  max-height: min(78dvh, 640px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 18px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  box-shadow: 0 18px 48px rgba(17, 17, 17, .14);
+  font-family: var(--font-chinese);
+}
+
+.codex-approval-kicker {
+  margin: 0 0 6px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  letter-spacing: .09em;
+}
+
+.codex-approval-dialog h2 {
+  margin: 0;
+  color: var(--ui-ink);
+  font: 600 18px/1.3 var(--font-chinese);
+}
+
+.codex-approval-summary,
+.codex-approval-note,
+.codex-approval-queue {
+  margin: 8px 0 0;
+  color: var(--ui-ink-secondary);
+  font: 12px/1.55 var(--font-chinese);
+}
+
+.codex-approval-details {
+  display: grid;
+  gap: 9px;
+  margin: 14px 0 0;
+}
+
+.codex-approval-details > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface-muted);
+}
+
+.codex-approval-details dt {
+  margin-bottom: 4px;
+  color: var(--ui-muted);
+  font: 10px/1.2 var(--font-chinese);
+}
+
+.codex-approval-details dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ui-ink);
+  font: 12px/1.5 var(--font-chinese);
+  overflow-wrap: anywhere;
+}
+
+.codex-approval-details pre {
+  margin: 0;
+  color: inherit;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.codex-approval-note { color: var(--ui-muted); }
+.codex-approval-queue { color: var(--ui-ink-secondary); }
+
+.codex-approval-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.codex-approval-actions button {
+  min-height: 42px;
+  padding: 0 13px;
+  border-radius: 11px;
+  font: 500 13px/1 var(--font-chinese);
+}
+
+.codex-approval-deny {
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-surface);
+  color: var(--ui-ink-secondary);
+}
+
+.codex-approval-allow {
+  border: 1px solid var(--ui-ink);
+  background: var(--ui-ink);
+  color: var(--ui-on-inverse);
+}
+
+.codex-approval-allow:active,
+.codex-approval-deny:active { transform: scale(.98); }
+
 @media (min-width: 700px) {
   .codex-chat .chat-stream { padding-right: 18px; padding-left: 18px; }
   .codex-chat .message > div { max-width: min(calc(100% - 16px), 680px); }
+  .codex-approval-layer { align-items: center; }
 }

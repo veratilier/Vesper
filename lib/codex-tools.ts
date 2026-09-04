@@ -203,7 +203,7 @@ export const codexToolDefinitions = [
       required: ["connectionId", "toolName"],
     },
   },
-] as const;
+].map((definition) => ({ type: "function" as const, ...definition }));
 
 async function readDocument(key: string): Promise<unknown> {
   if (!allowedDocumentKeys.has(key)) throw new Error("Unsupported Vesper document");

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Pinyon_Script } from "next/font/google";
+import { Pinyon_Script } from "next/font/google";
 import "./globals.css";
 import "./chat.css";
 import "./music.css";
@@ -7,16 +7,7 @@ import "./settings.css";
 import "./theme.css";
 import "./home.css";
 import "./memory.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import "./typography.css";
 
 const pinyonScript = Pinyon_Script({
   variable: "--font-pinyon-script",
@@ -65,9 +56,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${pinyonScript.variable} antialiased`}
-      >
+      <body className={`${pinyonScript.variable} antialiased`}>
         {children}
       </body>
     </html>

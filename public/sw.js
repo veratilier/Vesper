@@ -1,4 +1,4 @@
-const CACHE = "vesper-shell-v17-neutral";
+const CACHE = "vesper-shell-v25-history-guard";
 const SHELL = [
   "./",
   "./manifest.webmanifest?v=10",

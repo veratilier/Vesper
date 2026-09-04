@@ -1,0 +1,43 @@
+/*
+ * One source of truth for every piece of visible Vesper text. This file is
+ * imported last by the root layout, after every page stylesheet, so old
+ * Markdown and form-control defaults cannot reintroduce a fallback face.
+ */
+:root {
+  --font-chinese: "PingFang SC";
+}
+
+html,
+body,
+body *,
+body *::before,
+body *::after,
+button,
+input,
+textarea,
+select,
+option {
+  font-family: "PingFang SC" !important;
+}
+
+/* The two home identity marks are intentional exceptions: they are the
+ * Vesper signature, not interface copy. Everything else stays PingFang. */
+.wordmark > b,
+.drawer-brand b,
+.today-home .welcome h1 {
+  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+  font-weight: 400 !important;
+}
+
+.today-home .welcome h1 {
+  font-size: clamp(34px, 8vw, 52px) !important;
+  line-height: 1.1 !important;
+  letter-spacing: .01em !important;
+}
+
+/* Keep the native iOS text editor out of the signature-font exceptions. */
+.codex-chat .chat-compose textarea,
+.codex-chat .chat-compose textarea::placeholder {
+  font-family: "PingFang SC" !important;
+  font-style: normal !important;
+}

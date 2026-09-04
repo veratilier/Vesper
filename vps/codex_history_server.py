@@ -61,6 +61,17 @@ CREATE INDEX IF NOT EXISTS message_tombstones_lookup
 """
 
 
+INTERNAL_CONTEXT_PREFIXES = (
+    "[vesper response preference — not user content:",
+    "旧记忆背景（只作为长期背景",
+)
+
+
+def is_internal_context(content: str) -> bool:
+    """Reject legacy client-side prompt/context items from durable chat history."""
+    return content.strip().lower().startswith(INTERNAL_CONTEXT_PREFIXES)
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -246,6 +257,12 @@ class Handler(BaseHTTPRequestHandler):
         content = str(body.get("content") or "").strip()
         if not message_id or role not in {"user", "agent", "system"} or not content or len(content) > 120_000:
             self.send_json(400, {"error": "Invalid message"})
+            return
+        if is_internal_context(content):
+            # Older clients temporarily represented developer instructions and
+            # recalled memory as turn input. It is private context, not a user
+            # message, and must never be persisted or returned as chat history.
+            self.send_json(200, {"ok": True, "skipped": "internal_context"})
             return
         metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         item_id = str(metadata.get("itemId") or "").strip() or None

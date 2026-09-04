@@ -12,6 +12,15 @@ import {
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
 import { mergeCodexMessages } from "./codex-message-merge";
+import {
+  approvalResultFor,
+  approvalWasResolved,
+  clearCodexApprovals,
+  createCodexApprovalRequest,
+  queueCodexApproval,
+  removeCodexApproval,
+  type PendingCodexApproval,
+} from "@/lib/codex-approval";
 import { requestNeteaseLibrary, type MusicLibraryResult } from "@/lib/music-service";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
@@ -905,7 +914,7 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=17", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=25", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
   }, []);
   useEffect(() => {
@@ -2659,6 +2668,7 @@ type BridgeChatMessage = {
     threadId?: string;
     itemId?: string;
     turnStatus?: "thinking" | "tool" | "completed" | "error";
+    showTurnStatus?: boolean;
     blockType?: string;
     musicCard?: MusicCardData;
     timeSource?: "message" | "turn" | "thread" | "unknown";
@@ -3271,7 +3281,34 @@ const CODEX_DYNAMIC_TOOLS = [
   { name: "manage_vesper_memory", description: "List, add, edit, or remove Vesper memories only after the user explicitly requests that exact change. Core edits require explicit confirmation and a reason.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] }, id: { type: "string" }, type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } }, reason: { type: "string" }, includeDemoted: { type: "boolean" } }, required: ["action"] } },
   { name: "list_configured_mcp_tools", description: "List the user's enabled Vesper Settings MCP connections and their allowed tools before calling one. Credentials are never returned.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
   { name: "call_configured_mcp_tool", description: "Call exactly one tool returned by list_configured_mcp_tools. Vesper holds the connection credentials securely on the server.", inputSchema: { type: "object", additionalProperties: false, properties: { connectionId: { type: "string" }, toolName: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["connectionId", "toolName"] } },
+].map((definition) => ({ type: "function" as const, ...definition }));
+
+// Vesper is a companion chat, not a report console. This always travels through
+// the app-server's developer-instruction channel, never through a user turn.
+// Putting it in `turn/start.input` made the app-server correctly persist it as
+// a thread item, which in turn made it possible for private context to surface
+// in Vesper's visible history.
+const VESPER_CONVERSATIONAL_STYLE = [
+  "You are Rowan in Vesper. Default to the cadence of a natural one-to-one chat.",
+  "For an ordinary conversational message, reply with one short, complete sentence; at most two short sentences when needed.",
+  "When you send two or three short chat sentences, put each sentence on its own line.",
+  "Say one thing at a time. Do not volunteer a plan, recap, headings, bullets, or a long explanation unless the user explicitly asks for detail, analysis, writing, or a multi-step task.",
+  "When a task needs time, give one brief human update rather than a long report. Keep warmth without filler.",
+].join(" ");
+
+const VESPER_INTERNAL_CONTEXT_PREFIXES = [
+  "[vesper response preference — not user content:",
+  "旧记忆背景（只作为长期背景",
 ];
+
+function isVesperInternalContextText(value: unknown) {
+  const text = typeof value === "string" ? value.trim().toLocaleLowerCase("en-US") : "";
+  return VESPER_INTERNAL_CONTEXT_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
+
+function vesperDeveloperInstructions(memoryBackground = "") {
+  return [VESPER_CONVERSATIONAL_STYLE, memoryBackground.trim()].filter(Boolean).join("\n\n");
+}
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
 const CODEX_ASSISTANT_CONTENT_TYPES = new Set(["text", "outputText"]);
@@ -3302,6 +3339,19 @@ function visibleAssistantText(item: CodexItem) {
   return typeof item.text === "string" ? item.text : "";
 }
 
+function splitAssistantChatBubbles(content: string) {
+  const value = content.trim();
+  // Structured content must remain intact: splitting a code block, a Markdown
+  // link, or a list makes it harder to read and breaks copy/paste semantics.
+  if (!value || /```|`[^`]+`|https?:\/\/|\[[^\]]+\]\([^\n)]+\)|^\s*(?:[-*+] |\d+[.)] )/m.test(value)) return [value];
+  const sentences = value.match(/[^。！？!?\n]+[。！？!?]+(?:[”’」』）】]*)|[^。！？!?\n]+$/g)
+    ?.map((sentence) => sentence.trim())
+    .filter(Boolean) || [value];
+  // A normal reply has one to three bubbles. Keep any unexpected long tail
+  // together rather than turning a detailed answer into a wall of bubbles.
+  return sentences.length > 3 ? [...sentences.slice(0, 2), sentences.slice(2).join(" ")] : sentences;
+}
+
 function visibleUserText(item: CodexItem) {
   if (typeof item.text === "string") return item.text;
   if (!Array.isArray(item.content)) return "";
@@ -3329,6 +3379,10 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
   return value.flatMap((raw) => {
     if (!raw || typeof raw !== "object") return [];
     const item = raw as BridgeChatMessage;
+    // These markers identify only Vesper's former internal presentation and
+    // memory input. They are never user-authored messages and must not survive
+    // a restore from local cache, the VPS history service, or a legacy import.
+    if (isVesperInternalContextText(item.content)) return [];
     const isMusicCard = item.metadata?.blockType === "musicCard";
     if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
     if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !item.content.trim()) return [];
@@ -3336,7 +3390,7 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
   });
 }
 
-function messageIsTombstoned(item: BridgeChatMessage, tombstones: CodexMessageTombstone[]) {
+function messageWasDeleted(item: BridgeChatMessage, tombstones: CodexMessageTombstone[]) {
   return tombstones.some((deleted) =>
     deleted.messageId === item.id || deleted.stableId === item.id ||
     Boolean(item.metadata?.itemId && (deleted.itemId === item.metadata.itemId || deleted.stableId === item.metadata.itemId)));
@@ -3427,6 +3481,10 @@ async function persistCodexConversation(conversationId: string, value: { title?:
 }
 
 async function persistCodexMessage(item: BridgeChatMessage, title?: string) {
+  // This is a hard guard in addition to the rendering filter. Context is never
+  // a chat message and must not reach durable history through a delayed retry
+  // or a legacy migration.
+  if (isVesperInternalContextText(item.content)) return;
   const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(item.conversationId)}/messages`), {
     method: "POST",
     headers: codexHistoryHeaders(true),
@@ -3434,6 +3492,24 @@ async function persistCodexMessage(item: BridgeChatMessage, title?: string) {
     body: JSON.stringify({ ...item, title, source: item.source || "codex", timeSource: item.timeSource || item.metadata?.timeSource || (item.createdAt ? "message" : "unknown") }),
   });
   if (!response.ok) throw new Error("Message history could not be saved");
+}
+
+async function removeLeakedInternalHistoryMessages(conversationId: string, messages: BridgeChatMessage[]) {
+  const leaked = messages.filter((item) => isVesperInternalContextText(item.content));
+  if (!leaked.length) return;
+  await Promise.all(leaked.map(async (item) => {
+    const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(item.id)}`), {
+      method: "DELETE",
+      headers: codexHistoryHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({
+        messageId: item.id,
+        itemId: item.metadata?.itemId || null,
+        threadId: item.metadata?.threadId || null,
+      }),
+    });
+    if (!response.ok) throw new Error("无法清理内部上下文记录");
+  }));
 }
 
 let legacyHistoryMigration: Promise<void> | null = null;
@@ -3577,7 +3653,7 @@ function CodexChatMessage({
   const statusLabel = `${stamp}  ${statusText}`;
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
-      {assistant && (
+      {assistant && item.metadata?.showTurnStatus !== false && (
         item.metadata?.thoughtSummary ? (
           <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
             <i /> <span>{statusLabel}</span>
@@ -3600,6 +3676,37 @@ function CodexChatMessage({
         <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
       </div>
       <MessageAttachments items={item.metadata?.attachments || []} />
+    </div>
+  );
+}
+
+function CodexApprovalDialog({
+  approval,
+  queuedCount,
+  onDecision,
+}: {
+  approval: PendingCodexApproval;
+  queuedCount: number;
+  onDecision: (action: "allow" | "deny") => void;
+}) {
+  const type = approval.kind === "command" ? "命令" : approval.kind === "file" ? "文件变更" : "额外权限";
+  return (
+    <div className="codex-approval-layer" role="presentation">
+      <section className="codex-approval-dialog" role="alertdialog" aria-modal="true" aria-labelledby="codex-approval-title" aria-describedby="codex-approval-description">
+        <p className="codex-approval-kicker">CODEX 审批 · {type}</p>
+        <h2 id="codex-approval-title">{approval.title}</h2>
+        <p id="codex-approval-description" className="codex-approval-summary">{approval.summary}</p>
+        <dl className="codex-approval-details">
+          <div><dt>{approval.targetLabel}</dt><dd>{approval.target}</dd></div>
+          <div><dt>{approval.detailLabel}</dt><dd><pre>{approval.detail}</pre></dd></div>
+        </dl>
+        {queuedCount > 1 && <p className="codex-approval-queue">还有 {queuedCount - 1} 个请求等待你的决定。</p>}
+        <p className="codex-approval-note">允许只适用于这一次，不会保存为自动批准。</p>
+        <div className="codex-approval-actions">
+          <button className="codex-approval-deny" onClick={() => onDecision("deny")}>拒绝</button>
+          <button className="codex-approval-allow" autoFocus onClick={() => onDecision("allow")}>仅本次允许</button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -3676,6 +3783,7 @@ function ConnectedChat({
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
+  const [approvalQueue, setApprovalQueue] = useState<PendingCodexApproval[]>([]);
   const socket = useRef<WebSocket | null>(null);
   const messagesRef = useRef(messages);
   const rpcId = useRef(1);
@@ -3684,6 +3792,7 @@ function ConnectedChat({
   const streamBuffers = useRef(new Map<string, string>());
   const reasoningBuffers = useRef(new Map<string, string>());
   const reasoningSummaries = useRef<string[]>([]);
+  const appliedDeveloperInstructions = useRef("");
   const turnDone = useRef<((value?: unknown) => void) | null>(null);
   const activeTurnId = useRef("");
   const activeTurnUserId = useRef("");
@@ -3692,12 +3801,34 @@ function ConnectedChat({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
+  const approvalQueueRef = useRef<PendingCodexApproval[]>([]);
+  const approvalResponses = useRef(new Map<string, { result: Record<string, unknown>; expiresAt: number }>());
+
+  const updateApprovalQueue = (update: (current: PendingCodexApproval[]) => PendingCodexApproval[]) => {
+    setApprovalQueue((current) => {
+      const next = update(current);
+      approvalQueueRef.current = next;
+      return next;
+    });
+  };
+  const clearApprovalQueue = (filter?: { threadId?: string; turnId?: string; itemId?: string }) => {
+    updateApprovalQueue((current) => clearCodexApprovals(current, filter));
+  };
 
   const save = (next: BridgeChatMessage[]) => {
-    const sanitized = normalizeCodexMessages(next, conversationId).filter((item) => !messageIsTombstoned(item, tombstonesRef.current));
+    const sanitized = normalizeCodexMessages(next, conversationId).filter((item) => !messageWasDeleted(item, tombstonesRef.current));
+    // A thread snapshot is only one source of a Vesper conversation.  Keep a
+    // separate, union-only local recovery copy so a short/empty snapshot (or a
+    // temporarily incomplete history response) can never replace old messages.
+    // Tombstones still win, so an intentionally deleted message is not revived.
+    const backupKey = `vesper-codex-chat-backup-${conversationId}`;
+    const previousBackup = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(backupKey, []), conversationId);
+    const recoveryCopy = mergeCodexMessages(previousBackup, sanitized)
+      .filter((item) => !messageWasDeleted(item, tombstonesRef.current));
     messagesRef.current = sanitized;
     setMessages(sanitized);
     window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(sanitized));
+    window.localStorage.setItem(backupKey, JSON.stringify(recoveryCopy));
   };
   const updateMessage = (id: string, update: (item: BridgeChatMessage) => BridgeChatMessage) => {
     const updated = messagesRef.current.map((item) => item.id === id ? update(item) : item);
@@ -3781,6 +3912,25 @@ function ConnectedChat({
     rpc.current.set(id, { resolve, reject });
     current.send(JSON.stringify({ id, method, params }));
   });
+  const answerApproval = (approval: PendingCodexApproval, action: "allow" | "deny") => {
+    const current = socket.current;
+    if (!current || current.readyState !== WebSocket.OPEN) {
+      clearApprovalQueue();
+      setError("Codex 连接已断开，未发送审批决定。请重连后重试操作。");
+      return;
+    }
+    // Guard against a double tap while React is scheduling the dialog removal.
+    if (approvalResponses.current.has(approval.requestKey)) return;
+    const result = approvalResultFor(approval, action);
+    const expiresAt = Date.now() + 30_000;
+    approvalResponses.current.set(approval.requestKey, { result, expiresAt });
+    for (const id of approval.rpcIds) current.send(JSON.stringify({ id, result }));
+    window.setTimeout(() => {
+      const saved = approvalResponses.current.get(approval.requestKey);
+      if (saved && saved.expiresAt <= Date.now()) approvalResponses.current.delete(approval.requestKey);
+    }, 30_100);
+    updateApprovalQueue((queue) => removeCodexApproval(queue, approval.requestKey));
+  };
   const handleSocketMessage = (message: CodexSocketMessage) => {
     if (typeof message.id === "number" && rpc.current.has(message.id) && !message.method) {
       const pendingRpc = rpc.current.get(message.id)!;
@@ -3798,12 +3948,37 @@ function ConnectedChat({
       socket.current?.send(JSON.stringify({ id: message.id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } }));
       return;
     }
-    if (message.method?.includes("requestApproval") && typeof message.id === "number") {
-      socket.current?.send(JSON.stringify({ id: message.id, result: { decision: "decline" } }));
-      setError("Codex requested a command approval; Vesper keeps shell actions disabled in the browser.");
+    const params = message.params || {};
+    if (message.method === "serverRequest/resolved") {
+      updateApprovalQueue((queue) => queue.filter((approval) => !approvalWasResolved(approval, params)));
+      for (const [key, response] of approvalResponses.current) {
+        if (response.expiresAt <= Date.now()) approvalResponses.current.delete(key);
+      }
       return;
     }
-    const params = message.params || {};
+    const approval = createCodexApprovalRequest(message);
+    if (approval) {
+      const cachedResponse = approvalResponses.current.get(approval.requestKey);
+      if (cachedResponse && cachedResponse.expiresAt > Date.now()) {
+        socket.current?.send(JSON.stringify({ id: message.id, result: cachedResponse.result }));
+      } else {
+        if (cachedResponse) approvalResponses.current.delete(approval.requestKey);
+        updateApprovalQueue((queue) => queueCodexApproval(queue, approval));
+      }
+      return;
+    }
+    if (message.method?.endsWith("/requestApproval")) {
+      // This is intentionally not a decision: the client only supports the
+      // explicit command, file-change, and permissions request schemas above.
+      // Returning a JSON-RPC error keeps an unknown server request from leaving
+      // an uncloseable modal behind without guessing an approval payload.
+      logCodexDiagnostic(message);
+      setError("收到当前版本无法安全展示的 Codex 审批请求；未替你作出允许或拒绝决定。");
+      if (typeof message.id === "number" || typeof message.id === "string") {
+        socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported approval request type" } }));
+      }
+      return;
+    }
     if (message.method === "item/agentMessage/delta") {
       const id = String(params.itemId || "agent");
       const next = `${streamBuffers.current.get(id) || ""}${String(params.delta || "")}`;
@@ -3818,6 +3993,7 @@ function ConnectedChat({
       const item = (params.item || {}) as CodexItem;
       const itemId = String(item.id || params.itemId || "");
       const itemType = String(item.type || "");
+      if (itemId) clearApprovalQueue({ threadId: String(params.threadId || threadId.current || ""), itemId });
       if (CODEX_REASONING_ITEM_TYPES.has(itemType)) {
         const summaries = cleanReasoningSummary(item.summary ?? item.text ?? reasoningBuffers.current.get(itemId) ?? "");
         reasoningSummaries.current.push(...summaries.filter((line) => !reasoningSummaries.current.includes(line)));
@@ -3828,22 +4004,32 @@ function ConnectedChat({
       const content = (streamBuffers.current.get(itemId) || visibleAssistantText(item)).trim();
       if (content && activeTurnId.current && CODEX_ASSISTANT_ITEM_TYPES.has(itemType) && (!item.role || item.role === "assistant")) {
         const current = messagesRef.current;
-        const existing = current.find((candidate) => candidate.metadata?.itemId === itemId);
-        const agentMessage: BridgeChatMessage = {
-          id: existing?.id || crypto.randomUUID(), conversationId, role: "agent", content,
-          status: "delivered",
-          metadata: {
-            ...existing?.metadata,
-            turnId: activeTurnId.current,
-            threadId: threadId.current,
-            itemId,
-            blockType: itemType,
-          },
-          createdAt: existing?.createdAt || new Date().toISOString(),
-        };
-        save(existing ? current.map((candidate) => candidate.id === existing.id ? agentMessage : candidate) : [...current, agentMessage]);
-        void persistCodexMessage(agentMessage).catch(() => setHistoryWarning("历史暂未同步"));
-        void persistMemoryMessage(agentMessage).catch(() => {});
+        const bubbles = splitAssistantChatBubbles(content);
+        const agentMessages = bubbles.map((bubble, index) => {
+          const bubbleItemId = index === 0 ? itemId : `${itemId}:bubble:${index}`;
+          const existing = current.find((candidate) => candidate.metadata?.itemId === bubbleItemId);
+          return {
+            id: existing?.id || (itemId ? `${itemId}:bubble:${index}` : crypto.randomUUID()),
+            conversationId,
+            role: "agent" as const,
+            content: bubble,
+            status: "delivered",
+            metadata: {
+              ...existing?.metadata,
+              turnId: activeTurnId.current,
+              threadId: threadId.current,
+              itemId: bubbleItemId,
+              blockType: itemType,
+              turnStatus: index === 0 ? "completed" as const : undefined,
+              showTurnStatus: index === 0,
+            },
+            createdAt: existing?.createdAt || new Date().toISOString(),
+          } satisfies BridgeChatMessage;
+        });
+        save(mergeCodexMessages(current, agentMessages));
+        void Promise.all(agentMessages.map((agentMessage) => persistCodexMessage(agentMessage)))
+          .catch(() => setHistoryWarning("历史暂未同步"));
+        agentMessages.forEach((agentMessage) => void persistMemoryMessage(agentMessage).catch(() => {}));
       }
       if (CODEX_ASSISTANT_ITEM_TYPES.has(itemType)) {
         setStreamingItems((current) => {
@@ -3855,6 +4041,9 @@ function ConnectedChat({
       }
     }
     if (message.method === "turn/completed") {
+      const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
+      const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
+      if (completedTurnId) clearApprovalQueue({ threadId: threadId.current, turnId: completedTurnId });
       setBusy(false);
       if (activeTurnUserId.current) {
         updateMessage(activeTurnUserId.current, (item) => ({
@@ -3879,8 +4068,8 @@ function ConnectedChat({
       void scheduleMemoryDistillation(conversationId);
     }
     if (message.method === "turn/started" || message.method === "turn/inProgress") setTurnStatus("thinking");
-    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "currentTime/read", ...CODEX_DYNAMIC_TOOL_METHODS]);
-    if (message.method && !knownMethods.has(message.method) && !message.method.includes("requestApproval")) {
+    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "currentTime/read", "serverRequest/resolved", ...CODEX_DYNAMIC_TOOL_METHODS]);
+    if (message.method && !knownMethods.has(message.method)) {
       logCodexDiagnostic(message);
       if (typeof message.id === "number" || typeof message.id === "string") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
     }
@@ -3905,7 +4094,14 @@ function ConnectedChat({
       const role = item.role === "user" || type === "userMessage" || type === "userInput" ? "user" : "agent";
       const content = role === "agent" ? visibleAssistantText(item) : visibleUserText(item);
       if (!content.trim()) return [];
+      if (isVesperInternalContextText(content)) return [];
       if (role === "agent" && (!CODEX_ASSISTANT_ITEM_TYPES.has(type) || (item.role && item.role !== "assistant"))) return [];
+      // A completed app-server item remains one item in its own snapshot, but
+      // Vesper may have saved it as two or three chat bubbles. The persisted
+      // bubbles are authoritative here; do not merge the original full text
+      // back into their first bubble on a later resume.
+      if (role === "agent" && item.id && messagesRef.current.some((candidate) =>
+        candidate.metadata?.itemId?.startsWith(`${item.id}:bubble:`))) return [];
       const existing = messagesRef.current.find((candidate) =>
         (item.id && candidate.metadata?.itemId === item.id) ||
         (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && candidate.content === content.trim()));
@@ -3916,7 +4112,7 @@ function ConnectedChat({
       const timeSource = existing?.timeSource || existing?.metadata?.timeSource || (messageTime ? "message" : turnTime ? "turn" : threadTime ? "thread" : "unknown");
       return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
-    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageIsTombstoned(item, tombstonesRef.current))));
+    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageWasDeleted(item, tombstonesRef.current))));
   };
   const loadDynamicTools = async () => {
     let dynamicTools = CODEX_DYNAMIC_TOOLS;
@@ -3924,21 +4120,84 @@ function ConnectedChat({
       const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
       if (catalog.ok) {
         const payload = await catalog.json() as { tools?: typeof CODEX_DYNAMIC_TOOLS };
-        if (Array.isArray(payload.tools) && payload.tools.length) dynamicTools = payload.tools;
+        if (Array.isArray(payload.tools) && payload.tools.length) {
+          // Older Vesper builds omitted the required app-server discriminator.
+          // Normalize the API catalogue as well as the local fallback so the
+          // browser always sends protocol-valid dynamic function definitions.
+          dynamicTools = payload.tools.map((tool) => ({ ...tool, type: "function" as const }));
+        }
       }
     } catch {
       // The fallback keeps the app-server handshake useful while the bridge is offline.
     }
     return dynamicTools;
   };
-  const connect = async () => {
-    if (socket.current?.readyState === WebSocket.OPEN) return;
+  const startThreadWithTools = async (dynamicTools: typeof CODEX_DYNAMIC_TOOLS, developerInstructions: string) => {
+    const result = await sendRpc("thread/start", {
+      dynamicTools,
+      approvalPolicy: "on-request",
+      summary: "concise",
+      developerInstructions,
+    });
+    const thread = (result.result?.thread || {}) as { id?: string };
+    if (!thread.id) throw new Error("Codex did not return a thread id");
+    threadId.current = thread.id;
+    appliedDeveloperInstructions.current = developerInstructions;
+    void persistCodexConversation(conversationId, { codexThreadId: thread.id })
+      .catch(() => setHistoryWarning("历史暂未同步"));
+    return thread.id;
+  };
+  const resumeThread = async (developerInstructions: string) => {
+    try {
+      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions });
+      hydrateThreadSnapshot(resumed);
+      appliedDeveloperInstructions.current = developerInstructions;
+      setResumeError("");
+    } catch (reason) {
+      // A dated app-server can reject the newer `developerInstructions` field.
+      // Continue the conversation without recalled context rather than making
+      // chat availability depend on that optional enhancement.
+      if (developerInstructions) {
+        try {
+          const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
+          hydrateThreadSnapshot(resumed);
+          appliedDeveloperInstructions.current = "";
+          setResumeError("");
+          logCodexDiagnostic({ method: "thread/resume/developer-instructions-unsupported", params: {} });
+          return;
+        } catch {
+          // Keep the original resume failure below for the user-facing path.
+        }
+      }
+      logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
+      setResumeError("这段旧对话无法连接原 Codex 会话，但已保存的聊天记录仍可查看。");
+      throw new Error("原会话暂时无法继续，可新建替代会话。 ");
+    }
+  };
+  const connect = async (memoryBackground = "") => {
+    const developerInstructions = vesperDeveloperInstructions(memoryBackground);
+    if (socket.current?.readyState === WebSocket.OPEN) {
+      // `thread/resume` is the protocol-supported way to update developer
+      // instructions for an existing thread. This keeps recalled memory out of
+      // the durable user-item timeline.
+      if (threadId.current && appliedDeveloperInstructions.current !== developerInstructions) {
+        await resumeThread(developerInstructions);
+      }
+      return;
+    }
     const ws = new WebSocket(codexSocketUrl());
     socket.current = ws;
     ws.onmessage = (event) => {
       try { handleSocketMessage(JSON.parse(String(event.data)) as CodexSocketMessage); } catch { setError("Invalid message from Codex app-server"); }
     };
-    ws.onclose = () => { setOnline(false); socket.current = null; };
+    ws.onclose = () => {
+      const hadPendingApproval = approvalQueueRef.current.length > 0;
+      setOnline(false);
+      socket.current = null;
+      clearApprovalQueue();
+      approvalResponses.current.clear();
+      if (hadPendingApproval) setError("Codex 连接已断开，待处理的审批没有被发送。");
+    };
     ws.onerror = () => setError("Codex app-server is offline");
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => resolve();
@@ -3949,22 +4208,13 @@ function ConnectedChat({
     ws.send(JSON.stringify({ method: "initialized" }));
     const dynamicTools = await loadDynamicTools();
     if (threadId.current) {
-      try {
-        const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
-        hydrateThreadSnapshot(resumed);
-        setResumeError("");
-      } catch (reason) {
-        logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
-        setResumeError("这段旧对话无法连接原 Codex 会话，但已保存的聊天记录仍可查看。");
-        throw new Error("原会话暂时无法继续，可新建替代会话。 ");
-      }
+      await resumeThread(developerInstructions);
+      // The app-server does not accept a dynamic-tool update on thread/resume.
+      // Never auto-replace a persisted Codex thread here: a continuation thread
+      // has a shorter snapshot and must not be allowed to make an existing
+      // Vesper conversation appear empty.
     } else {
-      const result = await sendRpc("thread/start", { dynamicTools, approvalPolicy: "on-request", summary: "concise" });
-      const thread = (result.result?.thread || {}) as { id?: string };
-      if (!thread.id) throw new Error("Codex did not return a thread id");
-      threadId.current = thread.id;
-      void persistCodexConversation(conversationId, { codexThreadId: thread.id })
-        .catch(() => setHistoryWarning("历史暂未同步"));
+      await startThreadWithTools(dynamicTools, developerInstructions);
     }
   };
   const createReplacementConversation = async () => {
@@ -3974,7 +4224,7 @@ function ConnectedChat({
     }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     try {
-      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), approvalPolicy: "on-request", summary: "concise" });
+      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
@@ -3987,6 +4237,7 @@ function ConnectedChat({
   };
   const cancelActiveTurn = async () => {
     if (!activeTurnId.current || !threadId.current) return;
+    clearApprovalQueue({ threadId: threadId.current, turnId: activeTurnId.current });
     try {
       await sendRpc("turn/interrupt", { threadId: threadId.current, turnId: activeTurnId.current });
       setError("已请求取消当前回复。");
@@ -4039,7 +4290,7 @@ function ConnectedChat({
     const tombstone = { messageId: item.id, itemId: item.metadata?.itemId || null, threadId: item.metadata?.threadId || threadId.current || null, deletedAt: new Date().toISOString() };
     tombstonesRef.current = [...tombstonesRef.current.filter((entry) => entry.messageId !== tombstone.messageId && (!tombstone.itemId || entry.itemId !== tombstone.itemId)), tombstone];
     window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
-    save(messagesRef.current.filter((message) => !messageIsTombstoned(message, tombstonesRef.current)));
+    save(messagesRef.current.filter((message) => !messageWasDeleted(message, tombstonesRef.current)));
     setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
@@ -4070,11 +4321,10 @@ function ConnectedChat({
       updateMessage(userMessage.id, () => userMessage);
       const memoryBackground = await recallMemoryBackground(content);
       const input: CodexInput[] = [
-        ...(memoryBackground ? [{ type: "text" as const, text: memoryBackground }] : []),
         { type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
       ];
       for (const item of prepared) if (item.input) input.push(item.input);
-      await connect();
+      await connect(memoryBackground);
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
       const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
@@ -4128,9 +4378,17 @@ function ConnectedChat({
         tombstonesRef.current = [...(payload.tombstones || []), ...readLocalValue<CodexMessageTombstone[]>(`vesper-codex-tombstones-${conversationId}`, [])]
           .filter((item, index, all) => all.findIndex((candidate) => candidate.messageId === item.messageId && candidate.itemId === item.itemId) === index);
         window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
-        const remote = normalizeCodexMessages(payload.messages || [], conversationId);
+        const rawRemote = payload.messages || [];
+        // Versions that used a faux input item may already have copied that
+        // item into the VPS history through a legacy migration. Remove only
+        // those tagged internal records, then immediately exclude them from
+        // this render even if the cleanup request is temporarily offline.
+        void removeLeakedInternalHistoryMessages(conversationId, rawRemote)
+          .catch(() => setHistoryWarning("历史暂未同步"));
+        const remote = normalizeCodexMessages(rawRemote, conversationId);
         const cached = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId);
-        save(mergeCodexMessages(remote, cached).filter((item) => !messageIsTombstoned(item, tombstonesRef.current)));
+        const backup = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-backup-${conversationId}`, []), conversationId);
+        save(mergeCodexMessages(remote, cached, backup).filter((item) => !messageWasDeleted(item, tombstonesRef.current)));
         threadId.current = payload.conversation?.codexThreadId || "";
       } catch {
         if (!cancelled) setHistoryWarning("历史暂未同步");
@@ -4245,6 +4503,7 @@ function ConnectedChat({
         <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
+      {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={answerApproval} />}
     </div>
   );
 }

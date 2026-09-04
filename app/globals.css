@@ -3,7 +3,7 @@
 :root {
   /* System CJK text always uses PingFang on Apple devices. Keeping this as a
      token makes the fallback explicit for non-Apple browsers as well. */
-  --font-chinese: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  --font-chinese: "PingFang SC";
   --ink: #263538;
   --soft: #718082;
   --line: rgba(57, 76, 79, 0.12);
@@ -164,8 +164,7 @@ body {
 }
 .empty-state span {
   font:
-    18px Georgia,
-    serif;
+    18px var(--font-chinese);
 }
 .empty-state p {
   margin: 8px 0 0;
@@ -235,13 +234,11 @@ body {
   place-items: center;
   transform: rotate(45deg);
   font:
-    11px Georgia,
-    serif;
+    11px var(--font-chinese);
 }
 .wordmark b {
   font:
-    12px Georgia,
-    serif;
+    12px var(--font-chinese);
   letter-spacing: 0.24em;
 }
 .avatar-button {
@@ -253,8 +250,7 @@ body {
   background: #dfe5e1;
   color: #60716f;
   font:
-    12px "Songti SC",
-    serif;
+    12px var(--font-chinese);
 }
 .scroll-view {
   height: 100%;
@@ -289,16 +285,13 @@ body {
 }
 .welcome h1 {
   font:
-    400 29px/1.35 Georgia,
-    "Songti SC",
-    serif;
+    400 29px/1.35 var(--font-chinese);
   letter-spacing: 0.035em;
   margin: 24px 0 8px;
 }
 .welcome > p {
   font:
-    13px/1.8 "Songti SC",
-    serif;
+    13px/1.8 var(--font-chinese);
   color: #748184;
   margin: 0;
 }
@@ -312,8 +305,7 @@ body {
   border-left: 2px solid #93a19e;
   color: #687779;
   font:
-    11px/1.65 "Songti SC",
-    serif;
+    11px/1.65 var(--font-chinese);
 }
 .care-note svg {
   width: 14px;
@@ -345,8 +337,7 @@ body {
 }
 .section-title h2 {
   font:
-    500 14px "Songti SC",
-    serif;
+    500 14px var(--font-chinese);
   letter-spacing: 0.11em;
   margin: 0;
 }
@@ -403,8 +394,7 @@ body {
 }
 .note-card p {
   font:
-    12px/1.7 "Songti SC",
-    serif;
+    12px/1.7 var(--font-chinese);
   margin: 0 0 13px;
 }
 .note-card time {
@@ -484,8 +474,7 @@ body {
 }
 .days b {
   font:
-    29px Georgia,
-    serif;
+    29px var(--font-chinese);
   margin: 0 3px;
 }
 .days small {
@@ -503,8 +492,7 @@ body {
 }
 .anniversary-copy h2 {
   font:
-    13px "Songti SC",
-    serif;
+    13px var(--font-chinese);
   margin: 9px 0 5px;
   white-space: nowrap;
   overflow: hidden;
@@ -545,8 +533,7 @@ body {
 }
 .album-art span {
   font:
-    30px Georgia,
-    serif;
+    30px var(--font-chinese);
   color: rgba(255, 255, 255, 0.82);
 }
 .track {
@@ -560,8 +547,7 @@ body {
 }
 .track h2 {
   font:
-    14px Georgia,
-    serif;
+    14px var(--font-chinese);
   margin: 8px 0 3px;
   white-space: nowrap;
   overflow: hidden;
@@ -603,9 +589,7 @@ body {
   text-align: center;
   color: #97a2a1;
   font:
-    9px Georgia,
-    "Songti SC",
-    serif;
+    9px var(--font-chinese);
   letter-spacing: 0.1em;
   margin: 8px 0 0;
 }
@@ -674,8 +658,7 @@ body {
 }
 .drawer-brand b {
   font:
-    12px Georgia,
-    serif;
+    12px var(--font-chinese);
   letter-spacing: 0.22em;
 }
 .drawer-brand small {
@@ -812,8 +795,7 @@ body {
 .page-name {
   justify-self: center;
   font:
-    500 14px "Songti SC",
-    serif;
+    500 14px var(--font-chinese);
   letter-spacing: 0.12em;
   margin: 0;
 }
@@ -830,16 +812,13 @@ body {
 }
 .page-intro h1 {
   font:
-    400 28px Georgia,
-    "Songti SC",
-    serif;
+    400 28px var(--font-chinese);
   letter-spacing: 0.04em;
   margin: 13px 0 7px;
 }
 .page-intro p {
   font:
-    11px/1.7 "Songti SC",
-    serif;
+    11px/1.7 var(--font-chinese);
   color: #7c8889;
   margin: 0;
 }
@@ -880,14 +859,12 @@ body {
   place-items: center;
   transform: rotate(45deg);
   font:
-    10px Georgia,
-    serif;
+    10px var(--font-chinese);
   flex: none;
 }
 .bubble p {
   font:
-    12px/1.75 "Songti SC",
-    serif;
+    12px/1.75 var(--font-chinese);
   margin: 0;
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.68);
@@ -955,15 +932,13 @@ body {
 }
 .calendar-head h2 {
   font:
-    14px Georgia,
-    "Songti SC",
-    serif;
+    14px var(--font-chinese);
   margin: 0;
 }
 .calendar-head button {
   border: 0;
   background: transparent;
-  font: 22px Georgia;
+  font: 22px var(--font-chinese);
   color: #81908f;
 }
 .calendar {
@@ -993,8 +968,7 @@ body {
 }
 .calendar-grid b {
   font:
-    11px Georgia,
-    serif;
+    11px var(--font-chinese);
 }
 .calendar-grid .muted {
   color: #b9c0be;
@@ -1054,14 +1028,12 @@ body {
 .month-memory b {
   display: block;
   font:
-    15px "Songti SC",
-    serif;
+    15px var(--font-chinese);
   margin: 8px 0;
 }
 .month-memory p {
   font:
-    11px/1.7 "Songti SC",
-    serif;
+    11px/1.7 var(--font-chinese);
   color: #788587;
   margin: 0;
 }
@@ -1102,8 +1074,7 @@ body {
 }
 .modal-head h2 {
   font:
-    20px "Songti SC",
-    serif;
+    20px var(--font-chinese);
   margin: 7px 0 0;
 }
 .modal-head button {
@@ -1133,8 +1104,7 @@ body {
 }
 .diary-sheet b {
   font:
-    9px Georgia,
-    serif;
+    9px var(--font-chinese);
   letter-spacing: 0.15em;
 }
 .diary-sheet em {
@@ -1158,13 +1128,11 @@ body {
   background: transparent;
   color: #526365;
   font:
-    12px/1.8 "Songti SC",
-    serif;
+    12px/1.8 var(--font-chinese);
 }
 .diary-sheet p {
   font:
-    12px/1.8 "Songti SC",
-    serif;
+    12px/1.8 var(--font-chinese);
   color: #526365;
   margin: 0 0 10px;
 }
@@ -1243,8 +1211,7 @@ body {
 }
 .sticky-meta span {
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   letter-spacing: 0.15em;
   color: #7f8a88;
 }
@@ -1258,8 +1225,7 @@ body {
 }
 .sticky p {
   font:
-    12px/1.75 "Songti SC",
-    serif;
+    12px/1.75 var(--font-chinese);
   margin: 23px 0 18px;
 }
 .sticky footer {
@@ -1308,8 +1274,7 @@ body {
 }
 .todo-summary b {
   font:
-    27px Georgia,
-    serif;
+    27px var(--font-chinese);
 }
 .todo-summary span {
   font-size: 9px;
@@ -1418,15 +1383,13 @@ body {
 }
 .days-hero > span {
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   letter-spacing: 0.2em;
   opacity: 0.7;
 }
 .days-hero h2 {
   font:
-    17px "Songti SC",
-    serif;
+    17px var(--font-chinese);
   font-weight: 400;
   margin: 17px 0;
 }
@@ -1438,8 +1401,7 @@ body {
 }
 .days-hero > div b {
   font:
-    78px Georgia,
-    serif;
+    78px var(--font-chinese);
   font-weight: 400;
   line-height: 1;
 }
@@ -1470,8 +1432,7 @@ body {
 }
 .anniv-row time {
   font:
-    15px Georgia,
-    serif;
+    15px var(--font-chinese);
   color: #657a77;
 }
 .anniv-row > div {
@@ -1483,8 +1444,7 @@ body {
 }
 .anniv-row b {
   font:
-    12px "Songti SC",
-    serif;
+    12px var(--font-chinese);
 }
 .anniv-row small {
   font-size: 7px;
@@ -1497,8 +1457,7 @@ body {
 }
 .anniv-row strong {
   font:
-    18px Georgia,
-    serif;
+    18px var(--font-chinese);
   color: #5e7470;
   margin-right: 3px;
 }
@@ -1566,8 +1525,7 @@ body {
 }
 .setting-row em {
   font:
-    9px Georgia,
-    serif;
+    9px var(--font-chinese);
   font-style: normal;
   background: #6d817d;
   color: white;
@@ -1630,14 +1588,12 @@ body {
 }
 .placeholder h1 {
   font:
-    25px "Songti SC",
-    serif;
+    25px var(--font-chinese);
   margin: 22px 0 10px;
 }
 .placeholder p {
   font:
-    11px/1.8 "Songti SC",
-    serif;
+    11px/1.8 var(--font-chinese);
   color: #879392;
 }
 
@@ -1764,7 +1720,7 @@ body {
   place-items: center;
   background: #222;
   color: white;
-  font: 9px Arial;
+  font: 9px var(--font-chinese);
   font-style: normal;
 }
 .chat-page {
@@ -1794,8 +1750,7 @@ body {
   border: 1px solid #333;
   transform: rotate(45deg);
   font:
-    9px Georgia,
-    serif;
+    9px var(--font-chinese);
   flex: none;
 }
 .message > div {
@@ -1844,8 +1799,7 @@ body {
   outline: 0;
   background: transparent;
   font:
-    15px/1.5 "Songti SC",
-    serif;
+    15px/1.5 var(--font-chinese);
   color: #222;
 }
 .chat-page:not(.codex-chat) .chat-compose textarea::placeholder {
@@ -1976,8 +1930,7 @@ body {
   place-items: center;
   background: #e5e5e2;
   font:
-    10px "Songti SC",
-    serif;
+    10px var(--font-chinese);
   flex: none;
 }
 .profile-layer {
@@ -2003,8 +1956,7 @@ body {
   place-items: center;
   margin: 5px auto 25px;
   font:
-    23px "Songti SC",
-    serif;
+    23px var(--font-chinese);
 }
 .profile-photo i {
   position: absolute;
@@ -2059,8 +2011,7 @@ body {
 /* connection previews */
 .connection-modal > p {
   font:
-    11px/1.7 "Songti SC",
-    serif;
+    11px/1.7 var(--font-chinese);
   color: #777;
   text-align: center;
   max-width: 310px;
@@ -2128,7 +2079,7 @@ body {
   color: #536e68;
   font:
     9px/1.6 system-ui,
-    sans-serif;
+    var(--font-chinese);
 }
 .functional-modal {
   max-height: 88%;
@@ -2211,14 +2162,13 @@ body {
 }
 .export-panel h3 {
   font:
-    15px "Songti SC",
-    serif;
+    15px var(--font-chinese);
   margin: 13px 0 7px;
 }
 .export-panel p {
   font:
     9px/1.7 system-ui,
-    sans-serif;
+    var(--font-chinese);
   color: #858c8a;
   margin: 0 auto 14px;
   max-width: 300px;
@@ -2244,7 +2194,7 @@ body {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  font-family: Georgia, "Songti SC", serif;
+  font-family: var(--font-chinese);
   letter-spacing: 0.04em;
 }
 .chat-header-actions {
@@ -2272,8 +2222,7 @@ body {
   display: block;
   margin: 0 0 6px 36px;
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   letter-spacing: 0.08em;
   color: #a0a0a0;
 }
@@ -2357,8 +2306,7 @@ body {
   background: transparent;
   color: #202020;
   font:
-    12px/1.75 "Songti SC",
-    serif;
+    12px/1.75 var(--font-chinese);
 }
 .sticky-editor::placeholder {
   color: #aaa;
@@ -2376,8 +2324,7 @@ body {
 }
 .music-top > span {
   font:
-    8px Georgia,
-    serif;
+    8px var(--font-chinese);
   letter-spacing: 0.18em;
   color: #888;
 }
@@ -2432,8 +2379,7 @@ body {
   position: relative;
   z-index: 2;
   font:
-    31px Georgia,
-    serif;
+    31px var(--font-chinese);
 }
 .spinning {
   animation: spin 14s linear infinite;
@@ -2450,9 +2396,7 @@ body {
 }
 .now-track h1 {
   font:
-    22px Georgia,
-    "Songti SC",
-    serif;
+    22px var(--font-chinese);
   margin: 0 0 6px;
 }
 .now-track p {
@@ -2500,8 +2444,7 @@ body {
 }
 .music-progress span {
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   color: #999;
 }
 .music-progress span:last-child {
@@ -2579,8 +2522,7 @@ body {
 }
 .queue-head h2 {
   font:
-    14px "Songti SC",
-    serif;
+    14px var(--font-chinese);
   margin: 0;
 }
 .queue-head span {
@@ -2601,8 +2543,7 @@ body {
 .queue-row > span {
   width: 28px;
   font:
-    10px Georgia,
-    serif;
+    10px var(--font-chinese);
   color: #999;
 }
 .queue-row > div {
@@ -2623,8 +2564,7 @@ body {
 }
 .queue-row time {
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   color: #999;
 }
 .queue-row.active b {
@@ -2636,7 +2576,7 @@ body {
 .music-controls .mode-control,
 .music-controls .queue-control { position: relative; display: grid; place-items: center; gap: 2px; }
 .music-controls .mode-control small,
-.music-controls .queue-control small { color: #829093; font: 8px/1 "Times New Roman", serif; }
+.music-controls .queue-control small { color: #829093; font: 8px/1 var(--font-chinese); }
 .music-controls .mode-control svg,
 .music-controls .queue-control svg { width: 18px; height: 18px; }
 .music-controls .main-play { flex: 0 0 56px; }
@@ -2681,7 +2621,7 @@ body {
 .sync-buttons { display: grid; grid-template-columns: 1fr 1.35fr; gap: 8px; margin-top: 12px; }
 .sync-buttons button { min-height: 42px; border-radius: 14px; font-size: 10px; }
 .music-message-card { display: flex; gap: 10px; width: min(100%, 330px); padding: 9px; border: 1px solid rgba(112, 148, 154, .17); border-radius: 14px; background: rgba(237, 247, 248, .76); }
-.music-message-card > img,.music-card-placeholder { width: 52px; height: 52px; flex: 0 0 52px; border-radius: 10px; object-fit: cover; background: #d8e9ec; display: grid; place-items: center; color: #65868d; font: 22px Georgia, serif; }
+.music-message-card > img,.music-card-placeholder { width: 52px; height: 52px; flex: 0 0 52px; border-radius: 10px; object-fit: cover; background: #d8e9ec; display: grid; place-items: center; color: #65868d; font: 22px var(--font-chinese); }
 .music-card-copy { min-width: 0; flex: 1; display: grid; gap: 3px; }
 .music-card-copy > b { overflow: hidden; color: #3f565b; font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .music-card-copy > span { overflow: hidden; color: #7e9092; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
@@ -2913,9 +2853,9 @@ body {
   height: 17px;
 }
 
-.codex-thinking-label { display: flex; align-items: center; gap: 6px; margin: -2px 0 9px; color: #6f8588; font: 700 10px/1 var(--font-geist-mono), monospace; letter-spacing: .06em; }
+.codex-thinking-label { display: flex; align-items: center; gap: 6px; margin: -2px 0 9px; color: #6f8588; font: 700 10px/1 var(--font-chinese); letter-spacing: .06em; }
 .codex-thinking-label i { width: 6px; height: 6px; border-radius: 50%; background: #99bdc5; box-shadow: 0 0 0 4px rgba(153, 189, 197, .15); }
-.codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-geist-mono), monospace; }
+.codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-chinese); }
 .codex-connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: #aab4b4; }
 .codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }
 
@@ -2960,9 +2900,9 @@ body {
 }
 .together-identities .avatar-mark + .avatar-mark { margin-left: -11px; }
 .together-copy { min-width: 0; }
-.together-copy small { display: block; margin-bottom: 3px; color: #91a1a4; font: 8px/1.2 var(--font-geist-mono), monospace; letter-spacing: .12em; }
-.together-copy p { overflow: hidden; margin: 0; color: #63777b; font: 10px/1.35 var(--font-geist-sans), "PingFang SC", sans-serif; text-overflow: ellipsis; white-space: nowrap; }
-.together-invite,.together-state { min-height: 28px; padding: 0 10px; border: 1px solid rgba(106, 142, 149, .24); border-radius: 15px; background: rgba(247, 251, 251, .62); color: #668087; font: 9px/1 var(--font-geist-sans), sans-serif; white-space: nowrap; }
+.together-copy small { display: block; margin-bottom: 3px; color: #91a1a4; font: 8px/1.2 var(--font-chinese); letter-spacing: .12em; }
+.together-copy p { overflow: hidden; margin: 0; color: #63777b; font: 10px/1.35 var(--font-chinese); text-overflow: ellipsis; white-space: nowrap; }
+.together-invite,.together-state { min-height: 28px; padding: 0 10px; border: 1px solid rgba(106, 142, 149, .24); border-radius: 15px; background: rgba(247, 251, 251, .62); color: #668087; font: 9px/1 var(--font-chinese); white-space: nowrap; }
 .together-state.connected { display: inline-grid; place-items: center; border-color: rgba(110, 170, 160, .35); color: #568379; }
 .cover-orbit { position: relative; display: grid; min-height: clamp(245px, 45vw, 340px); place-items: center; margin: 2px 0 4px; }
 .cover-orbit::after { content: ""; position: absolute; width: min(74vw, 318px); height: min(74vw, 318px); border-radius: 50%; background: radial-gradient(circle, rgba(var(--music-tint), .15), transparent 68%); filter: blur(13px); }
@@ -2984,13 +2924,13 @@ body {
 .cover-stardust::after { opacity: .68; background-image: radial-gradient(circle at 16% 29%, rgba(var(--music-tint), .82) 0 1px, transparent 1.5px), radial-gradient(circle at 77% 14%, rgba(255,255,255,.95) 0 1.2px, transparent 1.7px), radial-gradient(circle at 88% 61%, rgba(var(--music-tint), .76) 0 .9px, transparent 1.5px), radial-gradient(circle at 28% 84%, rgba(255,255,255,.9) 0 1px, transparent 1.5px), radial-gradient(circle at 7% 64%, rgba(var(--music-tint), .62) 0 .8px, transparent 1.35px); }
 .album-disc { width: 100%; height: 100%; overflow: hidden; border: 5px solid rgba(250, 253, 253, .86); border-radius: 50%; background: linear-gradient(135deg, rgba(var(--music-tint), .4), rgba(240,247,247,.92)); box-shadow: 0 19px 44px rgba(56, 91, 99, .2); }
 .album-disc img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.album-fallback { display: grid; width: 100%; height: 100%; place-items: center; color: rgba(68, 98, 104, .84); font: 72px/1 Georgia, "Times New Roman", serif; }
+.album-fallback { display: grid; width: 100%; height: 100%; place-items: center; color: rgba(68, 98, 104, .84); font: 72px/1 var(--font-chinese); }
 @keyframes vesper-cover-rotate { to { transform: rotate(360deg); } }
 .music-song-copy { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 2px 10px; }
 .music-song-copy > div:first-child { min-width: 0; }
-.music-song-copy small { display: block; margin-bottom: 4px; color: #92a1a3; font: 8px/1 var(--font-geist-mono), monospace; letter-spacing: .13em; }
-.music-song-copy h2 { overflow: hidden; margin: 0; color: #3e5358; font: 23px/1.2 Georgia, "Times New Roman", "Songti SC", serif; text-overflow: ellipsis; white-space: nowrap; }
-.music-song-copy p { overflow: hidden; margin: 6px 0 0; color: #74888c; font: 11px/1.35 var(--font-geist-sans), "PingFang SC", sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.music-song-copy small { display: block; margin-bottom: 4px; color: #92a1a3; font: 8px/1 var(--font-chinese); letter-spacing: .13em; }
+.music-song-copy h2 { overflow: hidden; margin: 0; color: #3e5358; font: 23px/1.2 var(--font-chinese); text-overflow: ellipsis; white-space: nowrap; }
+.music-song-copy p { overflow: hidden; margin: 6px 0 0; color: #74888c; font: 11px/1.35 var(--font-chinese); text-overflow: ellipsis; white-space: nowrap; }
 .song-note-actions { display: flex; flex: 0 0 auto; gap: 4px; }
 .song-note-actions button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 50%; background: rgba(237, 246, 246, .68); color: #69838a; }
 .song-note-actions button.saved { color: #658d92; background: rgba(203, 225, 227, .75); }
@@ -2999,13 +2939,13 @@ body {
 .annotation-editor > div { grid-column: 1 / 3; display: flex; gap: 5px; }
 .annotation-editor > div button { min-height: 23px; padding: 0 9px; border: 0; border-radius: 12px; background: transparent; color: #7d9094; font-size: 9px; }
 .annotation-editor > div button.active { background: rgba(199, 223, 226, .62); color: #54757d; }
-.annotation-editor textarea { min-height: 37px; max-height: 78px; padding: 8px; border: 1px solid rgba(111, 142, 148, .16); border-radius: 10px; outline: 0; resize: vertical; background: rgba(255,255,255,.72); color: #576b70; font: 10px/1.45 var(--font-geist-sans), sans-serif; }
+.annotation-editor textarea { min-height: 37px; max-height: 78px; padding: 8px; border: 1px solid rgba(111, 142, 148, .16); border-radius: 10px; outline: 0; resize: vertical; background: rgba(255,255,255,.72); color: #576b70; font: 10px/1.45 var(--font-chinese); }
 .annotation-editor > button { min-width: 58px; border: 0; border-radius: 10px; background: #698f96; color: #fff; font-size: 9px; }
 .annotation-editor > button:disabled { opacity: .4; }
 .shared-annotations { display: grid; gap: 5px; margin: 0 0 9px; }
 .shared-annotations article { display: grid; grid-template-columns: 24px minmax(0,1fr) 25px; align-items: center; gap: 7px; padding: 7px 8px; border-radius: 12px; background: rgba(238, 247, 247, .5); }
 .shared-annotations .avatar-mark { width: 24px; height: 24px; font-size: 8px; }
-.shared-annotations p { margin: 0; color: #64777b; font: 10px/1.35 var(--font-geist-sans), sans-serif; }
+.shared-annotations p { margin: 0; color: #64777b; font: 10px/1.35 var(--font-chinese); }
 .shared-annotations b { margin-right: 5px; color: #4f6f76; font-weight: 600; }
 .shared-annotations button { display: grid; width: 25px; height: 25px; place-items: center; border: 0; background: transparent; color: #9ba9aa; }
 .shared-annotations .ui-icon { width: 14px; height: 14px; stroke-width: 1.25; }
@@ -3014,36 +2954,36 @@ body {
 .immersive-progress input::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: rgba(103, 130, 135, .2); }
 .immersive-progress input::-webkit-slider-thumb { width: 11px; height: 11px; margin-top: -4px; appearance: none; border: 2px solid #f7fbfb; border-radius: 50%; background: rgb(var(--music-tint)); box-shadow: 0 1px 6px rgba(54,87,92,.26); }
 .immersive-progress input:disabled { opacity: .4; }
-.immersive-progress > div { display: flex; justify-content: space-between; padding: 0 2px; color: #8d9da0; font: 9px/1.2 var(--font-geist-mono), monospace; }
+.immersive-progress > div { display: flex; justify-content: space-between; padding: 0 2px; color: #8d9da0; font: 9px/1.2 var(--font-chinese); }
 .immersive-controls { display: grid; grid-template-columns: 1fr 46px 64px 46px 1fr; align-items: center; gap: 2px; min-height: 80px; }
 .immersive-controls button { min-width: 0; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: #55727a; }
 .immersive-controls .ui-icon { width: 20px; height: 20px; stroke-width: 1.25; }
 .immersive-controls .mode-control,.immersive-controls .queue-control { gap: 2px; color: #6d858a; }
-.immersive-controls .mode-control small,.immersive-controls .queue-control small { color: #82979a; font: 8px/1 var(--font-geist-sans), sans-serif; }
+.immersive-controls .mode-control small,.immersive-controls .queue-control small { color: #82979a; font: 8px/1 var(--font-chinese); }
 .immersive-controls .immersive-play { width: 58px; height: 58px; justify-self: center; border: 1px solid rgba(100, 142, 150, .3); background: rgba(220, 237, 239, .83); box-shadow: 0 7px 18px rgba(86, 125, 132, .14); color: #466971; }
 .immersive-controls .immersive-play .ui-icon { width: 23px; height: 23px; }
 .music-empty-state { min-height: 365px; display: grid; place-content: center; justify-items: center; gap: 9px; padding: 0 28px; text-align: center; }
 .music-empty-state .ui-icon { width: 27px; height: 27px; color: #85a5ac; stroke-width: 1.15; }
-.music-empty-state h2 { margin: 0; color: #53696e; font: 21px/1.3 Georgia, serif; }
-.music-empty-state p { margin: 0; color: #849598; font: 11px/1.55 var(--font-geist-sans), sans-serif; }
+.music-empty-state h2 { margin: 0; color: #53696e; font: 21px/1.3 var(--font-chinese); }
+.music-empty-state p { margin: 0; color: #849598; font: 11px/1.55 var(--font-chinese); }
 .music-lower-panel { min-height: 236px; margin-top: 3px; padding: 12px 0 2px; border-top: 1px solid rgba(105, 135, 141, .14); }
 .music-panel-tabs { display: flex; align-items: center; gap: 4px; margin-bottom: 9px; }
-.music-panel-tabs button { min-height: 27px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: #829397; font: 10px/1 var(--font-geist-sans), sans-serif; }
+.music-panel-tabs button { min-height: 27px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: #829397; font: 10px/1 var(--font-chinese); }
 .music-panel-tabs button.active { background: rgba(204, 226, 229, .57); color: #53747b; }
 .music-panel-tabs .sync-link { margin-left: auto; color: #66868e; }
 .music-panel-tabs small { color: inherit; font-size: 8px; }
 .lyrics-scroll { height: 210px; overflow-y: auto; padding: 7px 10px 16px; scroll-behavior: smooth; }
-.lyrics-scroll p { margin: 0 0 12px; color: rgba(93, 118, 123, .42); font: 13px/1.55 Georgia, "Songti SC", serif; transition: color .28s ease, transform .28s ease; }
+.lyrics-scroll p { margin: 0 0 12px; color: rgba(93, 118, 123, .42); font: 13px/1.55 var(--font-chinese); transition: color .28s ease, transform .28s ease; }
 .lyrics-scroll p.active { color: #4f737b; transform: translateX(3px); }
 .lyrics-scroll .empty-state { min-height: 170px; }
 .immersive-queue { height: 210px; overflow-y: auto; padding: 2px 0 16px; }
 .immersive-queue article { display: grid; grid-template-columns: minmax(0,1fr) 30px; align-items: center; min-height: 56px; border-bottom: 1px solid rgba(105, 135, 141, .1); }
 .immersive-queue .queue-track { min-width: 0; display: grid; grid-template-columns: 36px minmax(0,1fr) auto 10px; align-items: center; gap: 9px; padding: 6px 2px; border: 0; background: transparent; text-align: left; }
-.immersive-queue .queue-track img,.immersive-queue .queue-track > span { width: 36px; height: 36px; border-radius: 9px; object-fit: cover; background: rgba(var(--music-tint), .15); color: #6f8c93; display: grid; place-items: center; font: 12px Georgia, serif; }
+.immersive-queue .queue-track img,.immersive-queue .queue-track > span { width: 36px; height: 36px; border-radius: 9px; object-fit: cover; background: rgba(var(--music-tint), .15); color: #6f8c93; display: grid; place-items: center; font: 12px var(--font-chinese); }
 .immersive-queue .queue-track div { min-width: 0; }
 .immersive-queue .queue-track b,.immersive-queue .queue-track small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .immersive-queue .queue-track b { color: #587178; font-size: 11px; font-weight: 500; }
-.immersive-queue .queue-track small,.immersive-queue .queue-track time { margin-top: 3px; color: #94a3a5; font: 8px/1.2 var(--font-geist-sans), sans-serif; }
+.immersive-queue .queue-track small,.immersive-queue .queue-track time { margin-top: 3px; color: #94a3a5; font: 8px/1.2 var(--font-chinese); }
 .immersive-queue .queue-track time { margin: 0; }
 .immersive-queue .queue-track i { width: 5px; height: 5px; border-radius: 50%; background: #7daeb6; box-shadow: 0 0 0 3px rgba(125,174,182,.15); }
 .immersive-queue article.active b { color: #4b808a; }
@@ -3148,7 +3088,7 @@ body {
 .app-header .icon-button .ui-icon,
 .history-drawer .ui-icon,
 .modal-head .ui-icon { stroke-width: 1.25 !important; }
-.welcome h1 { font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important; font-size: clamp(34px, 8vw, 52px); font-weight: 400; letter-spacing: .01em; }
+.welcome h1 { font-family: var(--font-chinese) !important; font-size: clamp(34px, 8vw, 52px); font-weight: 400; letter-spacing: .01em; }
 .voice-status-dot { display: inline-block; width: 6px; height: 6px; margin: 0 5px 1px 0; border-radius: 50%; background: #a9b3b4; vertical-align: middle; }
 .voice-status-dot.ok { background: #79a78a; box-shadow: 0 0 0 3px rgba(121,167,138,.14); }
 
@@ -3205,7 +3145,7 @@ body * {
 }
 .wordmark > b,
 .drawer-brand b {
-  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+  font-family: var(--font-chinese) !important;
 }
 body button,
 body input,
@@ -3251,7 +3191,7 @@ html {
 }
 .queue-row > button:first-child > span {
   width: auto;
-  font: 14px/1 "Times New Roman", "Songti SC", serif;
+  font: 14px/1 var(--font-chinese);
   color: #858f91;
 }
 .queue-row > button:first-child > div {
@@ -3352,15 +3292,13 @@ html {
 }
 .thought-sheet-head small {
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   letter-spacing: 0.16em;
   color: #999;
 }
 .thought-sheet-head h2 {
   font:
-    21px "Songti SC",
-    serif;
+    21px var(--font-chinese);
   font-weight: 400;
   margin: 7px 0 9px;
 }
@@ -3426,8 +3364,7 @@ html {
 }
 .thought-sheet li span {
   font:
-    9px/1.75 "Songti SC",
-    serif;
+    9px/1.75 var(--font-chinese);
   color: #767676;
 }
 .thought-sheet > p {
@@ -3474,7 +3411,7 @@ html {
   border-radius: 50%;
   background: #f8faf9;
   color: #789099;
-  font: normal 9px/1 ui-monospace, monospace;
+  font: normal 9px/1 var(--font-chinese);
 }
 @keyframes thought-sheet-up {
   from {
@@ -3656,9 +3593,7 @@ html {
   position: relative;
   z-index: 1;
   font:
-    10px Georgia,
-    "Songti SC",
-    serif;
+    10px var(--font-chinese);
 }
 .avatar-mark.user {
   background-color: #25282b;
@@ -3796,8 +3731,7 @@ html {
 }
 .appearance-title b {
   font:
-    13px "Songti SC",
-    serif;
+    13px var(--font-chinese);
 }
 .appearance-title small {
   font-size: 7px;
@@ -3978,8 +3912,7 @@ html {
   margin: 0 39px 6px 0;
   text-align: right;
   font:
-    7px Georgia,
-    serif;
+    7px var(--font-chinese);
   letter-spacing: 0.04em;
   color: #a0a0a0;
   animation: sent-time-in 0.28s 0.1s both;
@@ -4097,8 +4030,7 @@ html {
 }
 .chat-empty b {
   font:
-    13px "Songti SC",
-    serif;
+    13px var(--font-chinese);
   color: #555;
 }
 .chat-empty span {
@@ -4123,9 +4055,9 @@ html {
   background: #fff;
   outline: 0;
   font:
-    11px ui-monospace,
+    11px var(--font-chinese),
     SFMono-Regular,
-    monospace;
+    var(--font-chinese);
 }
 .runtime-summary {
   font: 11px/1.9 var(--font-chinese) !important;
@@ -4303,7 +4235,7 @@ html {
 }
 .voice-call-modal h2 {
   margin: 7px 0 5px;
-  font: 22px Georgia, "Songti SC", serif;
+  font: 22px var(--font-chinese);
 }
 .voice-call-modal p {
   min-height: 21px;
@@ -4426,7 +4358,7 @@ html {
   color: #9a9f9d;
 }
 .netease-entry b {
-  font: 12px Georgia, "Songti SC", serif;
+  font: 12px var(--font-chinese);
 }
 .netease-entry span {
   font-size: 7px;
@@ -4691,7 +4623,7 @@ body {
 /* Final Vesper identity and drawer artwork. Keep this after legacy theme rules. */
 .wordmark > b,
 .drawer-brand b {
-  font-family: var(--font-pinyon-script), cursive;
+  font-family: var(--font-chinese);
   font-style: normal;
   font-weight: 400;
   letter-spacing: .035em;
@@ -4721,7 +4653,7 @@ body {
 /* 2026-08 mobile polish: identity, safe areas and live controls. */
 .wordmark > b,
 .drawer-brand b {
-  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+  font-family: var(--font-chinese) !important;
   font-weight: 400 !important;
   text-transform: none !important;
   letter-spacing: .015em !important;
@@ -4773,9 +4705,9 @@ body {
 }
 .thought-sheet:before { margin: -6px auto 22px; }
 .thought-sheet-head { position: relative; justify-content: center; align-items: center; text-align: center; border-bottom: 0; padding-bottom: 22px; }
-.thought-sheet-head h2 { margin: 0; font: 700 18px/1.2 var(--font-geist-sans), sans-serif; }
+.thought-sheet-head h2 { margin: 0; font: 700 18px/1.2 var(--font-chinese); }
 .thought-sheet-head > button { position: absolute; left: 0; top: -5px; width: 42px; height: 42px; background: #fff; border: 1px solid rgba(40,45,46,.12); }
-.thought-raw { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px 6px 30px; color: #171919; font: 600 16px/1.72 Georgia, "Songti SC", serif; }
+.thought-raw { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px 6px 30px; color: #171919; font: 600 16px/1.72 var(--font-chinese); }
 
 .message-edit {
   display: inline-flex;
@@ -4855,7 +4787,7 @@ body {
 }
 .queue-row > button:first-child > span {
   width: auto;
-  font: 14px/1 "Times New Roman", "Songti SC", serif;
+  font: 14px/1 var(--font-chinese);
   color: #858f91;
 }
 .queue-row > button:first-child > div {
@@ -4990,8 +4922,8 @@ body {
 
 
 
-.codex-thinking-label { display: flex; align-items: center; gap: 6px; margin: -2px 0 9px; color: #6f8588; font: 700 10px/1 var(--font-geist-mono), monospace; letter-spacing: .06em; }
+.codex-thinking-label { display: flex; align-items: center; gap: 6px; margin: -2px 0 9px; color: #6f8588; font: 700 10px/1 var(--font-chinese); letter-spacing: .06em; }
 .codex-thinking-label i { width: 6px; height: 6px; border-radius: 50%; background: #99bdc5; box-shadow: 0 0 0 4px rgba(153, 189, 197, .15); }
-.codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-geist-mono), monospace; }
+.codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-chinese); }
 .codex-connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: #aab4b4; }
 .codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }

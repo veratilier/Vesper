@@ -3405,7 +3405,11 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
     // a restore from local cache, the VPS history service, or a legacy import.
     if (isVesperInternalContextText(item.content)) return [];
     const isMusicCard = item.metadata?.blockType === "musicCard";
-    const isSticker = item.type === "sticker" && Boolean(item.metadata?.sticker?.assetId);
+    // Older VPS history servers do not yet persist `message_type`, but they do
+    // preserve metadata. Treat that durable metadata as authoritative so an
+    // already-sent sticker never falls back to its compatibility text after a
+    // refresh or a device switch.
+    const isSticker = Boolean(item.metadata?.sticker?.assetId) && (item.type === "sticker" || !item.type);
     if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !isSticker && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
     if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !isSticker && !item.content.trim()) return [];
     return [{ ...item, type: isSticker ? "sticker" : "text", conversationId: item.conversationId || conversationId }];
@@ -4166,7 +4170,10 @@ function ConnectedChat({
           conversationId,
           role: "agent" as const,
           type: "sticker" as const,
-          content: "",
+          // The deployed VPS history service previously required non-empty
+          // content. The renderer ignores this compatibility value whenever a
+          // structured sticker is present.
+          content: "[Sticker]",
           status: "delivered",
           metadata: { sticker, turnId: completedTurnId, threadId: threadId.current, itemId: `${completedTurnId}:sticker:${index}`, blockType: "sticker", showTurnStatus: false },
           createdAt: new Date().toISOString(),
@@ -4434,7 +4441,7 @@ function ConnectedChat({
     setBusy(true); setError(""); setDraft("");
     pendingAgentStickers.current = [];
     nearBottomRef.current = true;
-    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", type: selectedSticker ? "sticker" : "text", content: content || (selectedSticker ? "" : "Attachment"), status: "thinking", metadata: { attachments: [], sticker: selectedSticker ? { assetId: selectedSticker.assetId, url: selectedSticker.url, width: selectedSticker.width, height: selectedSticker.height, mimeType: selectedSticker.mimeType, alt: selectedSticker.alt || selectedSticker.description || selectedSticker.name || "表情包", description: selectedSticker.description, category: selectedSticker.category } : undefined, turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
+    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", type: selectedSticker ? "sticker" : "text", content: content || (selectedSticker ? "[Sticker]" : "Attachment"), status: "thinking", metadata: { attachments: [], sticker: selectedSticker ? { assetId: selectedSticker.assetId, url: selectedSticker.url, width: selectedSticker.width, height: selectedSticker.height, mimeType: selectedSticker.mimeType, alt: selectedSticker.alt || selectedSticker.description || selectedSticker.name || "表情包", description: selectedSticker.description, category: selectedSticker.category } : undefined, turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
     activeTurnUserId.current = userMessage.id;
     save([...messagesRef.current, userMessage]);
     if (selectedSticker) void fetch(apiUrl(`/api/stickers/${encodeURIComponent(selectedSticker.assetId)}`), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "use" }) }).catch(() => {});
@@ -4442,7 +4449,7 @@ function ConnectedChat({
     try {
       void persistCodexMessage(userMessage, content.slice(0, 42) || (selectedSticker ? "表情包" : "Attachment"))
         .catch(() => setHistoryWarning("历史暂未同步"));
-      if (userMessage.content) void persistMemoryMessage(userMessage).catch(() => {});
+      if (userMessage.content && userMessage.type !== "sticker") void persistMemoryMessage(userMessage).catch(() => {});
       const prepared = await Promise.all(pending.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
@@ -4457,9 +4464,9 @@ function ConnectedChat({
         })).catch(() => {});
       }
       const stickerText = selectedSticker ? `[Vesper sticker sent by Vera. This is a private catalog asset, not a user text message. category: ${selectedSticker.category || "未分类"}; description: ${selectedSticker.description || selectedSticker.alt || "无"}; assetId: ${selectedSticker.assetId}]` : "";
-      const memoryBackground = await recallMemoryBackground(content || stickerText);
+      const memoryBackground = await recallMemoryBackground((selectedSticker ? "" : content) || stickerText);
       const input: CodexInput[] = [
-        { type: "text", text: [content, stickerText, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
+        { type: "text", text: [selectedSticker ? "" : content, stickerText, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
       ];
       for (const item of prepared) if (item.input) input.push(item.input);
       if (selectedSticker) { const image = await stickerInputForModel(selectedSticker); if (image) input.push(image); }

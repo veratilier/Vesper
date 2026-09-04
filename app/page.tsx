@@ -1,5 +1,6 @@
 "use client";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -11,6 +12,16 @@ import {
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
 import { mergeCodexMessages } from "./codex-message-merge";
+import {
+  approvalResultFor,
+  approvalWasResolved,
+  clearCodexApprovals,
+  createCodexApprovalRequest,
+  queueCodexApproval,
+  removeCodexApproval,
+  type PendingCodexApproval,
+} from "@/lib/codex-approval";
+import { requestNeteaseLibrary, type MusicLibraryResult } from "@/lib/music-service";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
   const add = () =>
@@ -105,7 +116,22 @@ function Notes() {
   );
 }
 const VESPER_API_ORIGIN = "https://api.vesper.r-vera.com";
-const DEFAULT_APP_BACKGROUND = 'url("/vesper-default-bg.webp")';
+const DEFAULT_APP_BACKGROUND = "#f5f5f3";
+const NEUTRAL_ACCENTS = new Set(["#4a4a48", "#6b6b68", "#878783", "#a3a39f"]);
+
+function normalizeNeutralAccent(value?: string) {
+  return value && NEUTRAL_ACCENTS.has(value.toLowerCase()) ? value.toLowerCase() : "#6b6b68";
+}
+
+function normalizeAppBackground(value?: string) {
+  const candidate = value?.trim() || "";
+  if (/^#[\da-f]{6}$/i.test(candidate)) return candidate;
+  // Uploaded photographs remain user content. Former colour/gradient presets and
+  // the old blue marble default become the new warm-white canvas.
+  return candidate.includes("url(") && !candidate.includes("vesper-default-bg.webp")
+    ? candidate
+    : DEFAULT_APP_BACKGROUND;
+}
 function apiUrl(path: string) {
   if (typeof window === "undefined") return path;
   return ["localhost", "127.0.0.1"].includes(window.location.hostname)
@@ -286,7 +312,6 @@ const iconPaths: Record<string, string[]> = {
   home: ["M15 21v-8H9v8", "M3 10 12 2l9 8v9H3z"],
   library: ["m16 6 4 14", "M12 6v14", "M8 8v12", "M4 4v16"],
   menu: ["M4 6h16", "M4 12h16", "M4 18h16"],
-  pet: ["M3 16a9 9 0 1 1 4 4l-5 2 1-6", "M8 12c2-3 6-3 8 0l-4 4z"],
   music: ["M12 18V3l7 3", "M12 18a4 4 0 1 1-4-4 4 4 0 0 1 4 4"],
   diary: [
     "M13 3H6a2 2 0 0 0-2 2v15h14v-7",
@@ -420,14 +445,6 @@ const vesperNavMarks: Record<string, string[]> = {
   calendar: [
     "M10 17.25 3.9 11.7C.35 8.45 2.25 3.25 6.25 3.25c1.65 0 2.95.8 3.75 2.1.8-1.3 2.1-2.1 3.75-2.1 4 0 5.9 5.2 2.35 8.45z",
   ],
-  pet: [
-    "M5 6.2h10a2 2 0 0 1 2 2v6.3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.2a2 2 0 0 1 2-2z",
-    "M10 6.2V3",
-    "M8.8 2.5h2.4",
-    "M6.75 10h.01M13.25 10h.01",
-    "M7.2 13.1h5.6",
-    "M1.5 11.3H3M17 11.3h1.5",
-  ],
   box: [
     "m10 2.4 7 3.9v7.4l-7 3.9-7-3.9V6.3z",
     "m3 6.3 7 4 7-4",
@@ -480,7 +497,6 @@ const navIconPaths: Record<string, string[]> = {
   note: ["M4 3.5h9l3 3v10H4z", "M13 3.5v3h3", "M7 10h6", "M7 13h4"],
   check: ["M15.5 8.5a5.5 5.5 0 1 1-2-3.9", "M10 8.5l2 2 4.5-5"],
   calendar: ["M10 17.2 4.5 12a4.4 4.4 0 0 1 6.2-6.2L10 7l-.7-1.2A4.4 4.4 0 0 1 15.5 12z"],
-  pet: ["M5 6.5h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z", "M10 6.5v-2", "M7 11h.01M13 11h.01", "M7 14h6"],
   box: ["m10 3 7 4v8l-7 4-7-4V7z", "m3 7 7 4 7-4", "M10 11v8"],
   music: ["M8 14V4l7-1.5v9.5", "M8 14a3 3 0 1 1-3-3h3z", "M15 12a3 3 0 1 1-3-3h3z"],
   library: ["M10 17a7 7 0 1 1 0-14", "M10 3v14", "M6 6.5h2M6 10h2M6 13.5h2"],
@@ -497,8 +513,6 @@ const nav = [
   { label: "便笺", english: "Notes", icon: "note" },
   { label: "提醒", english: "Reminders", icon: "check" },
   { label: "纪念日", english: "Dates", icon: "calendar" },
-  { label: "桌宠互动", english: "Companion", icon: "pet" },
-  { label: "魔盒", english: "Cabinet", icon: "box" },
   { label: "音乐", english: "Music", icon: "music" },
   { label: "记忆库", english: "Memory", icon: "library" },
   { label: "设置", english: "Settings", icon: "settings" },
@@ -547,13 +561,6 @@ type MusicTogetherState = {
   updatedAt?: string;
   inviteRequestedAt?: string;
 };
-type MusicAnnotation = {
-  id: string;
-  trackId: string;
-  author: "user" | "agent";
-  text: string;
-  createdAt: string;
-};
 type PlayerSnapshot = {
   playing: boolean;
   currentTime: number;
@@ -583,6 +590,7 @@ type MusicCardData = {
   message?: string;
   source?: string;
 };
+type MusicPlaylistIntent = Pick<MusicCardData, "trackId" | "title" | "artist" | "album" | "cover" | "duration" | "url" | "playable" | "source">;
 type FavoriteItem = {
   id: string;
   folderId: string;
@@ -596,13 +604,9 @@ type FavoriteItem = {
   createdAt: string;
 };
 type MusicControl = { id: string; action: "play" | "pause" | "next" | "previous" | "play_track"; trackId?: string; replaceQueue?: boolean; processedAt?: string };
-type BoxApp = {
-  id: string;
-  name: string;
-  description: string;
-  url?: string;
-  kind: string;
-};
+type MusicPlaybackState = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
+type MusicResumeState = Pick<MusicPlaybackState, "trackId" | "positionSeconds" | "updatedAt">;
+type MusicQueueUpdate = { autoplay?: boolean; trackId?: string };
 type ConnectionSettings = Record<string, Record<string, string>>;
 type ChatAttachment = {
   key: string;
@@ -650,6 +654,16 @@ function readLocalValue<T>(key: string, fallback: T): T {
   }
 }
 
+function mergeMusicTracks(current: Track[], incoming: Track[]) {
+  const next = [...current];
+  for (const track of incoming) {
+    const index = next.findIndex((item) => item.id === track.id || (item.neteaseId && item.neteaseId === track.neteaseId));
+    if (index >= 0) next[index] = { ...next[index], ...track };
+    else next.push(track);
+  }
+  return next;
+}
+
 export default function Home() {
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -661,10 +675,14 @@ export default function Home() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
-  const [conversationId, setConversationId] = useState("main");
+  const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
   const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
-  const initialAppearance = readLocalValue("vesper-local-appearance", { accent: "#b8dce8", background: DEFAULT_APP_BACKGROUND });
+  const storedAppearance = readLocalValue("vesper-local-appearance", { accent: "#6b6b68", background: DEFAULT_APP_BACKGROUND });
+  const initialAppearance = {
+    accent: normalizeNeutralAccent(storedAppearance.accent),
+    background: normalizeAppBackground(storedAppearance.background),
+  };
   const [userName, setUserName] = useState(initialProfile.userName);
   const [agentName, setAgentName] = useState(initialProfile.agentName);
   const [userAvatar, setUserAvatar] = useState(initialProfile.userAvatar);
@@ -679,24 +697,118 @@ export default function Home() {
   const [queue, setQueue] = usePersistentDocument<Track[]>("musicQueue", []);
   const [favorites, setFavorites] = usePersistentDocument<FavoriteItem[]>("favorites", []);
   const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
+  const [, setMusicPlayback] = usePersistentDocument<MusicPlaybackState>("musicPlayback", {});
+  const [musicResume, setMusicResume] = useLocalDocument<MusicResumeState>("music-resume", {});
+  const [savedMusicCookie] = useLocalDocument("netease-music-u", "");
   const [musicTogether, setMusicTogether] = usePersistentDocument<MusicTogetherState>("musicTogether", {});
-  const [musicAnnotations, setMusicAnnotations] = usePersistentDocument<MusicAnnotation[]>("musicAnnotations", []);
-  const [musicFavorites, setMusicFavorites] = usePersistentDocument<string[]>("musicFavorites", []);
   const [playMode, setPlayMode] = useState<MusicPlayMode>(() => readLocalValue<MusicPlayMode>("vesper-music-play-mode", "order"));
   const [musicToast, setMusicToast] = useState("");
+  const [musicPlaylistIntent, setMusicPlaylistIntent] = useState<MusicPlaylistIntent | null>(null);
   const globalPlayer = useRef<HTMLAudioElement>(null);
+  const playbackTimeRef = useRef(0);
+  const playbackResumeReady = useRef(false);
   const [storageReady, setStorageReady] = useState(false);
   const [environment, setEnvironment] =
     usePersistentDocument<EnvironmentSnapshot>("environment", {
       permission: "unknown",
     });
   const queueSeeded = readLocalValue<boolean>("vesper-music-queue-seeded", false);
-  const activeTracks = queueSeeded ? queue : tracks;
+  // `music` is the full library. `musicQueue` is the selected playlist that is
+  // currently being listened to. A fresh PWA install has no local queue marker,
+  // but it can still receive a non-empty queue from D1; never fall back to the
+  // full library in that case.
+  const activeTracks = queue.length > 0 || queueSeeded ? queue : tracks;
   const currentTrack = activeTracks[trackIndex];
   const showMusicToast = (message: string) => {
     setMusicToast(message);
     window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
   };
+  const replaceMusicQueue = useCallback((nextQueue: Track[], options: MusicQueueUpdate = {}) => {
+    const now = new Date().toISOString();
+    const preferredTrackId = options.trackId;
+    const retainedIndex = preferredTrackId
+      ? nextQueue.findIndex((track) => track.id === preferredTrackId || track.neteaseId === preferredTrackId)
+      : currentTrack
+        ? nextQueue.findIndex((track) => track.id === currentTrack.id || track.neteaseId === currentTrack.neteaseId)
+        : -1;
+    const nextIndex = retainedIndex >= 0 ? retainedIndex : 0;
+
+    // Stamp the local revision before React's deferred persistence effect runs.
+    // The queue poller uses this timestamp to reject an older server snapshot
+    // while the selected playlist is being written to D1.
+    window.localStorage.setItem("vesper-music-queue-seeded", "true");
+    window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: now, source: "local" }));
+    setQueue(nextQueue);
+    setTrackIndex(nextIndex);
+    if (options.autoplay) {
+      const target = nextQueue[nextIndex];
+      if (target?.url && target.playable !== false) setPlaying(true);
+      else {
+        setPlaying(false);
+        const message = "这首歌暂时没有可播放音源";
+        setMusicToast(message);
+        window.setTimeout(() => setMusicToast((current) => current === message ? "" : current), 1800);
+      }
+    } else if (currentTrack && retainedIndex < 0) {
+      setPlaying(false);
+    }
+
+    // Do not leave a window for the three-second device poll to read the old
+    // playlist back from D1. The generic document hook still provides its
+    // retry path if this immediate write is unavailable.
+    void fetch(apiUrl("/api/state"), {
+      method: "PUT",
+      headers: appHeaders(true),
+      body: JSON.stringify({ key: "musicQueue", value: nextQueue }),
+    }).then(async (response) => {
+      if (!response.ok) return;
+      const result = await response.json() as { updatedAt?: string };
+      window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: result.updatedAt || now, source: "local" }));
+    }).catch(() => {});
+  }, [currentTrack, setQueue]);
+  useEffect(() => {
+    const resolveCard = (event: Event) => {
+      const card = (event as CustomEvent<{ card?: MusicCardData }>).detail?.card;
+      const neteaseId = card?.trackId?.replace(/^netease-/, "");
+      if (!card || card.source !== "netease" || !neteaseId) return;
+      const existing = tracks.find((track) => track.id === card.trackId || track.neteaseId === neteaseId);
+      if (existing?.url && savedMusicCookie) return;
+      void requestNeteaseLibrary(apiUrl("/api/music/library"), appHeaders(true), {
+        action: "resolve",
+        songIds: [neteaseId],
+        cookie: savedMusicCookie,
+        tracks: [{
+          id: card.trackId,
+          neteaseId,
+          title: card.title,
+          artist: card.artist,
+          album: card.album,
+          cover: card.cover,
+          duration: card.duration,
+          url: card.url || "",
+          playable: card.playable,
+        }],
+      }).then((result) => {
+        if (!result.tracks?.length) return;
+        setTracks((current) => mergeMusicTracks(current, result.tracks as Track[]));
+      }).catch(() => {});
+    };
+    window.addEventListener("vesper-music-card", resolveCard);
+    return () => window.removeEventListener("vesper-music-card", resolveCard);
+  }, [savedMusicCookie, setTracks, tracks]);
+  useEffect(() => {
+    const refreshLibrary = () => {
+      void fetch(apiUrl("/api/state?key=music"), { cache: "no-store", headers: appHeaders() })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((result: { value?: Track[] | null }) => {
+          if (!Array.isArray(result.value)) return;
+          window.dispatchEvent(new CustomEvent("vesper-document-change", { detail: { key: "music", value: result.value } }));
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("vesper-music-library-refresh", refreshLibrary);
+    return () => window.removeEventListener("vesper-music-library-refresh", refreshLibrary);
+  }, []);
   const playerAdapter: PlayerAdapter = {
     play: () => {
       if (!currentTrack?.url || currentTrack.playable === false) return showMusicToast("当前歌曲没有可播放音频");
@@ -739,6 +851,50 @@ export default function Home() {
       canSeek: Boolean(currentTrack?.url && playbackDuration > 0),
     }),
   };
+  useEffect(() => {
+    if (musicTogether.status !== "connected" || musicTogether.sessionStartedAt) return;
+    const startedAt = new Date().toISOString();
+    setMusicTogether((current) => current.status === "connected" && !current.sessionStartedAt ? { ...current, sessionStartedAt: startedAt, updatedAt: startedAt } : current);
+  }, [musicTogether.status, musicTogether.sessionStartedAt, setMusicTogether]);
+  useEffect(() => {
+    playbackTimeRef.current = playbackTime;
+  }, [playbackTime]);
+  useEffect(() => {
+    // Resume is a one-time bootstrap action. Re-running it whenever the current
+    // track changes makes a manual next/previous action bounce back to the old
+    // song and can leave the audio element between two sources.
+    if (playbackResumeReady.current || !activeTracks.length) return;
+    const savedIndex = musicResume.trackId
+      ? activeTracks.findIndex((track) => track.id === musicResume.trackId || track.neteaseId === musicResume.trackId)
+      : -1;
+    if (savedIndex >= 0) setTrackIndex(savedIndex);
+    playbackResumeReady.current = true;
+  }, [activeTracks, musicResume.trackId]);
+  useEffect(() => {
+    if (!playbackResumeReady.current || !currentTrack?.id) return;
+    setMusicResume((current) => current.trackId === currentTrack.id ? current : {
+      trackId: currentTrack.id,
+      positionSeconds: Math.floor(playbackTimeRef.current),
+      updatedAt: new Date().toISOString(),
+    });
+  }, [currentTrack?.id, setMusicResume]);
+  useEffect(() => {
+    if (!playbackResumeReady.current || !currentTrack?.id) return;
+    const publish = () => {
+      setMusicPlayback({
+        trackId: currentTrack?.id,
+        playing,
+        positionSeconds: Math.floor(playbackTimeRef.current),
+        durationSeconds: Math.floor(playbackDuration),
+        queueLength: activeTracks.length,
+        updatedAt: new Date().toISOString(),
+      });
+    };
+    publish();
+    if (!playing) return;
+    const timer = window.setInterval(publish, 10_000);
+    return () => window.clearInterval(timer);
+  }, [activeTracks.length, currentTrack?.id, playbackDuration, playing, setMusicPlayback]);
   useAutonomousWake(agentName);
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -758,15 +914,17 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=16", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=25", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
   }, []);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const code = query.get("code");
     const state = query.get("state");
+    const oauthError = query.get("error");
+    const oauthErrorDescription = query.get("error_description");
     const raw = window.sessionStorage.getItem("vesper-mcp-oauth-pending");
-    if (!code || !state || !raw) return;
+    if (!raw || (!code && !oauthError)) return;
     try {
       const pending = JSON.parse(raw) as {
         serverId: string;
@@ -779,6 +937,20 @@ export default function Home() {
         resource?: string;
       };
       if (pending.state !== state) throw new Error("OAuth state 不匹配");
+      if (oauthError) {
+        const detail = oauthErrorDescription?.trim() || oauthError;
+        const key = "vesper-local-external-mcp-servers";
+        const servers = readLocalValue<ExternalMcpEntry[]>(key, []);
+        window.localStorage.setItem(
+          key,
+          JSON.stringify(servers.map((server) => server.id === pending.serverId ? { ...server, oauthStatus: undefined } : server)),
+        );
+        window.sessionStorage.setItem("vesper-mcp-oauth-result", `OAuth 授权未完成：${detail.slice(0, 180)}`);
+        window.sessionStorage.removeItem("vesper-mcp-oauth-pending");
+        window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        return;
+      }
+      if (!code) throw new Error("OAuth 回调中缺少授权码");
       void fetch("/api/mcp/oauth", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -873,9 +1045,16 @@ export default function Home() {
         if (result.value?.id && result.value.id !== musicControl?.id) setMusicControl(result.value);
         const queueResponse = await fetch(apiUrl("/api/state?key=musicQueue"), { cache: "no-store", headers: appHeaders() });
         if (queueResponse.ok) {
-          const queueResult = await queueResponse.json() as { value?: Track[] | null };
+          const queueResult = await queueResponse.json() as { value?: Track[] | null; updatedAt?: string };
           if (Array.isArray(queueResult.value)) {
+            const localMeta = readLocalValue<{ updatedAt?: string }>("vesper-document-meta-musicQueue", {});
+            const localUpdatedAt = localMeta.updatedAt ? Date.parse(localMeta.updatedAt) : 0;
+            const remoteUpdatedAt = queueResult.updatedAt ? Date.parse(queueResult.updatedAt) : 0;
+            // A playlist selection is written optimistically. Never let a stale
+            // poll put the previous playlist (and its cover) back on screen.
+            if (localUpdatedAt && remoteUpdatedAt && remoteUpdatedAt < localUpdatedAt) return;
             window.localStorage.setItem("vesper-music-queue-seeded", "true");
+            if (queueResult.updatedAt) window.localStorage.setItem("vesper-document-meta-musicQueue", JSON.stringify({ updatedAt: queueResult.updatedAt, source: "remote" }));
             setQueue(queueResult.value);
           }
         }
@@ -924,8 +1103,7 @@ export default function Home() {
       const track = tracks.find((item) => item.id === trackId || item.neteaseId === trackId);
       if (!track) return showToast("找不到这首歌");
       if (activeTracks.some((item) => item.id === track.id || item.neteaseId === track.neteaseId)) return showToast("已经在播放队列");
-      setQueue((current) => [...current, track]);
-      if (!queueSeeded) window.localStorage.setItem("vesper-music-queue-seeded", "true");
+      replaceMusicQueue([...activeTracks, track]);
       showToast("已加入播放队列");
     };
     const open = () => setActive("音乐");
@@ -937,7 +1115,7 @@ export default function Home() {
       window.removeEventListener("vesper-music-queue-add", add);
       window.removeEventListener("vesper-music-open", open);
     };
-  }, [activeTracks, playMode, queueSeeded, tracks, setQueue]);
+  }, [activeTracks, playMode, queueSeeded, replaceMusicQueue, tracks]);
   const cyclePlayMode = () => {
     const modes: MusicPlayMode[] = ["order", "repeat", "single", "random"];
     const next = modes[(modes.indexOf(playMode) + 1) % modes.length];
@@ -947,14 +1125,27 @@ export default function Home() {
     setMusicToast(labels[next]);
     window.setTimeout(() => setMusicToast(""), 1600);
   };
+  const isPhotoBackground = customBackground.includes("url(");
   const shellStyle = {
     "--theme-accent": accent,
-    backgroundImage: customBackground || DEFAULT_APP_BACKGROUND,
+    backgroundColor: isPhotoBackground ? DEFAULT_APP_BACKGROUND : customBackground || DEFAULT_APP_BACKGROUND,
+    backgroundImage: isPhotoBackground ? customBackground : "none",
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
+    if (label === "聊天") setConversationId(latestLocalConversationId());
     if (label !== active) window.setTimeout(() => setActive(label), 290);
   };
+  useEffect(() => {
+    if (active !== "聊天") return;
+    let cancelled = false;
+    void resolveLatestConversationId().then((id) => {
+      if (!cancelled) setConversationId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
   useEffect(() => {
     let live = true;
     let hasLocalProfile = false;
@@ -988,8 +1179,8 @@ export default function Home() {
           setAgentAvatar(profile.agentAvatar || "");
         }
         if (appearance && !hasLocalAppearance) {
-          setAccent(appearance.accent || "#b8dce8");
-          setCustomBackground(appearance.background || DEFAULT_APP_BACKGROUND);
+          setAccent(normalizeNeutralAccent(appearance.accent));
+          setCustomBackground(normalizeAppBackground(appearance.background));
         }
       })
       .catch(() => {})
@@ -1061,19 +1252,19 @@ export default function Home() {
       />
       <section className="app-shell" style={shellStyle}>
         <header
-          className={`${active === "聊天" ? "app-header chat-mode" : "app-header"}${historyOpen ? " history-host-shift" : ""}`}
+          className={`${active === "聊天" ? "app-header chat-mode" : active === "音乐" ? "app-header music-mode" : "app-header"}${historyOpen ? " history-host-shift" : ""}`}
         >
           <button
-            className={active === "音乐" ? "icon-button music-back-button" : "icon-button"}
-            aria-label={active === "音乐" ? "返回今日" : "打开目录"}
-            onClick={() => active === "音乐" ? setActive("今日") : setDrawerOpen(true)}
+            className="icon-button"
+            aria-label="打开目录"
+            onClick={() => setDrawerOpen(true)}
           >
-            <Icon name={active === "音乐" ? "chevron" : "menu"} />
+            <Icon name="menu" />
           </button>
           {active === "今日" ? (
             <div className="wordmark">
               <span className="home-app-mark">
-                <img src="/icon-192-20260823-v8.png" alt="" />
+                <img src="/icon-192-20260901-v1.png" alt="" />
               </span>
               <b>Vesper</b>
             </div>
@@ -1114,13 +1305,7 @@ export default function Home() {
               </button>
             </div>
           ) : active === "音乐" ? (
-            <button
-              className="icon-button music-header-queue"
-              aria-label="打开播放队列"
-              onClick={() => window.dispatchEvent(new Event("vesper-music-open-queue"))}
-            >
-              <Icon name="queue" />
-            </button>
+            <span className="music-header-spacer" aria-hidden="true" />
           ) : (
             <button
               className="avatar-button"
@@ -1134,7 +1319,7 @@ export default function Home() {
             </button>
           )}
         </header>
-        <div className={`scroll-view view-enter${historyOpen ? " history-host-shift" : ""}`} key={active}>
+        <div className={`scroll-view${active === "音乐" ? " music-scroll-view" : ""}${historyOpen ? " history-host-shift" : ""}`} key={active}>
           {active === "今日" ? (
             <Today
               track={currentTrack}
@@ -1142,6 +1327,7 @@ export default function Home() {
               onToggle={() => setPlaying(!playing)}
               environment={environment}
               userName={userName}
+              onOpenSection={(section) => setActive(section)}
             />
           ) : active === "聊天" ? (
               <ConnectedChat
@@ -1150,8 +1336,6 @@ export default function Home() {
                 onSelectConversation={setConversationId}
               agentName={agentName}
               userName={userName}
-              agentAvatar={agentAvatar}
-                userAvatar={userAvatar}
                 favorites={favorites}
                 setFavorites={setFavorites}
                 focusMessageId={focusMessageId}
@@ -1162,6 +1346,10 @@ export default function Home() {
                   if (activeTracks.length) setTrackIndex((index) => (index + 1) % activeTracks.length);
                 }}
                 onOpenMusic={() => setActive("音乐")}
+                onAddMusicToPlaylist={(card) => {
+                  setMusicPlaylistIntent(card);
+                  setActive("音乐");
+                }}
               />
           ) : active === "日记" ? (
             <Diary />
@@ -1171,19 +1359,16 @@ export default function Home() {
             <Todos />
           ) : active === "纪念日" ? (
             <Anniversaries />
-          ) : active === "桌宠互动" ? (
-            <PetPage />
-          ) : active === "魔盒" ? (
-            <MagicBox />
           ) : active === "音乐" ? (
             <MusicPlayerUI
               queue={activeTracks}
-              onQueue={(value) => {
-                window.localStorage.setItem("vesper-music-queue-seeded", "true");
-                setQueue(value);
-              }}
+              onQueue={replaceMusicQueue}
               selected={trackIndex}
-              onTracks={setTracks}
+              onTracks={(incoming) => setTracks((current) => {
+                return mergeMusicTracks(current, incoming);
+              })}
+              playlistIntent={musicPlaylistIntent}
+              onPlaylistIntentConsumed={() => setMusicPlaylistIntent(null)}
               playMode={playMode}
               onCycleMode={cyclePlayMode}
               toast={musicToast}
@@ -1194,21 +1379,10 @@ export default function Home() {
               agentAvatar={agentAvatar}
               together={musicTogether}
               onInvite={() => setMusicTogether((current) => current.status === "connected" ? current : { ...current, status: "invited", inviteRequestedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })}
-              annotations={musicAnnotations}
-              onAddAnnotation={(entry) => setMusicAnnotations((items) => [...items, entry])}
-              onRemoveAnnotation={(id) => setMusicAnnotations((items) => items.filter((item) => item.id !== id))}
-              favorite={currentTrack ? musicFavorites.includes(currentTrack.id) : false}
-              onFavorite={() => {
-                if (!currentTrack) return;
-                setMusicFavorites((items) => items.includes(currentTrack.id) ? items.filter((id) => id !== currentTrack.id) : [...items, currentTrack.id]);
-              }}
               onRemoveQueueItem={(index) => {
                 const nextQueue = activeTracks.filter((_, itemIndex) => itemIndex !== index);
-                window.localStorage.setItem("vesper-music-queue-seeded", "true");
-                setQueue(nextQueue);
+                replaceMusicQueue(nextQueue);
                 if (!nextQueue.length) setPlaying(false);
-                else if (index < trackIndex) setTrackIndex((current) => Math.max(0, current - 1));
-                else if (index === trackIndex) setTrackIndex(Math.min(index, nextQueue.length - 1));
               }}
             />
           ) : active === "记忆库" ? (
@@ -1217,8 +1391,8 @@ export default function Home() {
             <SettingsPage
               accent={accent}
               background={customBackground}
-              onAccent={setAccent}
-              onBackground={setCustomBackground}
+              onAccent={(value) => setAccent(normalizeNeutralAccent(value))}
+              onBackground={(value) => setCustomBackground(normalizeAppBackground(value))}
               environment={environment}
               onEnvironment={setEnvironment}
             />
@@ -1239,7 +1413,7 @@ export default function Home() {
             <div className="drawer-head">
               <div className="drawer-brand">
                 <span className="drawer-app-mark">
-                  <img src="/icon-192-20260823-v8.png" alt="" />
+                  <img src="/icon-192-20260901-v1.png" alt="" />
                 </span>
                 <div>
                   <b>Vesper</b>
@@ -1625,7 +1799,7 @@ function useAutonomousWake(agentName: string) {
           await registration?.showNotification(agentName || "Vesper", {
             body: `给你留了一张便笺：${text}`,
             tag: `vesper-wake-${generation}`,
-            icon: "/icon-192-20260823-v8.png",
+            icon: "/icon-192-20260901-v1.png",
           });
         }
       } finally {
@@ -1649,12 +1823,14 @@ function Today({
   onToggle,
   environment,
   userName,
+  onOpenSection,
 }: {
   track?: Track;
   playing: boolean;
   onToggle: () => void;
   environment: EnvironmentSnapshot;
   userName: string;
+  onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐") => void;
 }) {
   const [notes] = usePersistentDocument<NoteItem[]>("notes", []);
   const [todos, setTodos] = usePersistentDocument<TodoItem[]>("todos", []);
@@ -1684,8 +1860,83 @@ function Today({
     environment.temperature !== undefined
       ? `${Math.round(environment.temperature)}°`
       : "--°";
+  const homeSignal =
+    hour < 6
+      ? "夜里慢一点。"
+      : hour < 11
+        ? "灯还亮着。"
+        : hour < 18
+          ? "今天也住在这里。"
+          : "你回来了。";
+  const realNotes = [...notes]
+    .filter((note) => note.text.trim().length > 0)
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.createdAt);
+      const rightTime = Date.parse(right.createdAt);
+      return (Number.isFinite(rightTime) ? rightTime : 0) -
+        (Number.isFinite(leftTime) ? leftTime : 0);
+    });
+  const latestNote = realNotes[0];
+  const latestNoteLines = latestNote
+    ? latestNote.text
+        .trim()
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
+  const latestNoteTitle = latestNoteLines[0] || "";
+  const latestNoteSummary = latestNoteLines.slice(1).join(" ").trim();
+  const latestNoteTimestamp = latestNote
+    ? new Intl.DateTimeFormat("zh-CN", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(latestNote.createdAt))
+    : "";
+  const todayReminder = todos.find((item) => {
+    if (item.done || !item.due?.trim()) return false;
+    if (item.due.includes("今天")) return true;
+    const dueAt = new Date(item.due);
+    return Number.isFinite(dueAt.getTime()) && dueAt.toDateString() === now.toDateString();
+  });
+  const todayAnniversary = anniversaries.find((item) => {
+    const date = new Date(`${item.date}T12:00:00`);
+    return Number.isFinite(date.getTime()) &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+  });
+  const todayMoment = todayReminder
+    ? {
+        icon: "check",
+        title: todayReminder.title,
+        detail: todayReminder.due || todayReminder.tag,
+        section: "提醒" as const,
+      }
+    : latestNote
+      ? {
+          icon: latestNote.kind === "agent" ? "sparkles" : "note",
+          title: latestNoteTitle,
+          detail: "最近便笺",
+          section: "便笺" as const,
+        }
+      : todayAnniversary
+        ? {
+            icon: "calendar",
+            title: todayAnniversary.title,
+            detail: "今天的纪念日",
+            section: "纪念日" as const,
+          }
+        : track && playing
+          ? {
+              icon: "music",
+              title: track.title,
+              detail: track.artist,
+              section: "音乐" as const,
+            }
+          : null;
   return (
-    <>
+    <div className="today-home">
       <section className="welcome">
         <div className="date-row">
           <span>{dateText}</span>
@@ -1695,22 +1946,46 @@ function Today({
           </span>
         </div>
         <h1>{greeting}, {userName}.</h1>
+        <p className="home-return-signal">{homeSignal}</p>
       </section>
-      <section className="section-block">
-        <SectionTitle icon="note" title="Notes" count={String(notes.length)} />
-        <div className="note-stack">
-          {notes.slice(0, 2).map((note) => (
-            <article className={`note-card ${note.tone}`} key={note.id}>
-              <Icon name={note.kind === "agent" ? "sparkles" : "feather"} />
-              <div>
-                <p>{note.text}</p>
-                <time>{new Date(note.createdAt).toLocaleString("zh-CN")}</time>
-              </div>
-            </article>
-          ))}
-          {!notes.length && <EmptyState text="No notes yet" />}
-        </div>
+      <section className="section-block home-notes">
+        <SectionTitle icon="note" title="Notes" count={latestNote ? String(realNotes.length) : undefined} />
+        {latestNote ? (
+          <button className="home-note-summary" onClick={() => onOpenSection("便笺")}>
+            <span className="home-card-icon">
+              <Icon name={latestNote.kind === "agent" ? "sparkles" : "note"} />
+            </span>
+            <span className="home-note-copy">
+              <b>{latestNoteTitle}</b>
+              <small>{latestNoteSummary || `记录于 ${latestNoteTimestamp}`}</small>
+            </span>
+            <Icon name="chevron" />
+          </button>
+        ) : (
+          <button className="home-note-empty" onClick={() => onOpenSection("便笺")}>
+            <span>留一句给今天的你。</span>
+            <Icon name="chevron" />
+          </button>
+        )}
       </section>
+      {todayMoment && (
+        <section className="section-block home-moment-section">
+          <button
+            className="home-moment-card"
+            onClick={() => onOpenSection(todayMoment.section)}
+          >
+            <span className="home-card-icon">
+              <Icon name={todayMoment.icon} />
+            </span>
+            <span className="home-moment-copy">
+              <small>今日</small>
+              <b>{todayMoment.title}</b>
+              <span>{todayMoment.detail}</span>
+            </span>
+            <Icon name="chevron" />
+          </button>
+        </section>
+      )}
       <section className="section-block">
         <SectionTitle
           icon="check"
@@ -1759,7 +2034,7 @@ function Today({
         )}
       </section>
       <MusicCard track={track} playing={playing} onToggle={onToggle} />
-    </>
+    </div>
   );
 }
 
@@ -1767,8 +2042,48 @@ type ConversationSummary = {
   id: string;
   title: string;
   updatedAt: string;
+  createdAt?: string;
   messageCount: number;
 };
+
+function conversationUpdatedTimestamp(item: ConversationSummary) {
+  const timestamp = Date.parse(item.updatedAt || item.createdAt || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function mergeConversationSummaries(remote: ConversationSummary[], local: ConversationSummary[]) {
+  const byId = new Map<string, ConversationSummary>();
+  for (const item of [...remote, ...local]) {
+    if (!item?.id) continue;
+    const existing = byId.get(item.id);
+    if (!existing || conversationUpdatedTimestamp(item) > conversationUpdatedTimestamp(existing)) {
+      byId.set(item.id, item);
+    }
+  }
+  return [...byId.values()].sort((left, right) => conversationUpdatedTimestamp(right) - conversationUpdatedTimestamp(left));
+}
+
+function latestLocalConversationId() {
+  const conversations = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []);
+  return mergeConversationSummaries([], conversations)[0]?.id || "main";
+}
+
+async function resolveLatestConversationId() {
+  const local = readLocalValue<ConversationSummary[]>("vesper-local-conversation-index", []);
+  try {
+    const response = await fetch(codexHistoryUrl("/conversations"), {
+      headers: codexHistoryHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("History is unavailable");
+    const payload = await response.json() as { conversations?: ConversationSummary[] };
+    const conversations = mergeConversationSummaries(payload.conversations || [], local);
+    window.localStorage.setItem("vesper-local-conversation-index", JSON.stringify(conversations.slice(0, 100)));
+    return conversations[0]?.id || "main";
+  } catch {
+    return mergeConversationSummaries([], local)[0]?.id || "main";
+  }
+}
 
 function rememberConversation(id: string, title = "新对话", messageCount?: number) {
   if (typeof window === "undefined") return;
@@ -2353,6 +2668,7 @@ type BridgeChatMessage = {
     threadId?: string;
     itemId?: string;
     turnStatus?: "thinking" | "tool" | "completed" | "error";
+    showTurnStatus?: boolean;
     blockType?: string;
     musicCard?: MusicCardData;
     timeSource?: "message" | "turn" | "thread" | "unknown";
@@ -2915,7 +3231,7 @@ function LegacyConnectedChat({
 }
 
 type CodexSocketMessage = {
-  id?: number;
+  id?: number | string;
   method?: string;
   params?: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -2952,17 +3268,53 @@ const CODEX_DYNAMIC_TOOLS = [
     description: "Create a Vesper note, reminder, anniversary, or agent journal entry.",
     inputSchema: { type: "object", additionalProperties: false, properties: { kind: { type: "string", enum: ["note", "reminder", "anniversary", "journal"] }, text: { type: "string" }, title: { type: "string" }, date: { type: "string" }, repeats: { type: "boolean" }, due: { type: "string" }, tag: { type: "string" } }, required: ["kind"] },
   },
-  { name: "music_search", description: "Search the Vesper music library by title, artist, album, or keyword. Read-only.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } }, required: ["query"] } },
+  { name: "music_get_status", description: "Read the current device playback state, including song, playing/paused state, position, duration and queue length. Use before answering what is currently playing.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
+  { name: "music_search", description: "Search the Vesper music library and current queue by title, artist, album, or keyword. Read-only.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } }, required: ["query"] } },
+  { name: "music_netease_search", description: "Search the public NetEase Music catalog, save returned songs to Vesper music, then use music_send_card, music_queue_add, or music_play with an exact trackId. This does not edit a NetEase playlist.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 10 } }, required: ["query"] } },
   { name: "music_play", description: "Play one uniquely identified Vesper song on the user's current device. Never claims success without a playable source.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } }, required: ["trackId"] } },
+  { name: "music_control", description: "Control the current player: play/resume, pause, next track, or previous track.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["play", "pause", "next", "previous"] } }, required: ["action"] } },
   { name: "music_queue_add", description: "Add one Vesper song to the shared playback queue, either next or at the end.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } }, required: ["trackId", "position"] } },
   { name: "music_send_card", description: "Return a structured Vesper song card for the chat timeline without starting playback.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, message: { type: "string" } }, required: ["trackId"] } },
   { name: "music_playlist_add", description: "Add a song to the persistent Vesper music playlist, separate from the temporary queue.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" } }, required: ["trackId"] } },
+  { name: "recall_vesper_memory", description: "Read Rowan's relevant server-side memories. Returned entries are old background, not the user's current message.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" } }, required: ["query"] } },
+  { name: "remember_vesper_memory", description: "Only after a meaningful exchange, preserve one concise and durable memory. Never save a joke, guess, duplicate, or transient detail. Core items are candidates and require the user's confirmation; feelings must be Rowan's first-person feeling.", inputSchema: { type: "object", additionalProperties: false, properties: { type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["type", "body"] } },
+  { name: "manage_vesper_memory", description: "List, add, edit, or remove Vesper memories only after the user explicitly requests that exact change. Core edits require explicit confirmation and a reason.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] }, id: { type: "string" }, type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } }, reason: { type: "string" }, includeDemoted: { type: "boolean" } }, required: ["action"] } },
+  { name: "list_configured_mcp_tools", description: "List the user's enabled Vesper Settings MCP connections and their allowed tools before calling one. Credentials are never returned.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
+  { name: "call_configured_mcp_tool", description: "Call exactly one tool returned by list_configured_mcp_tools. Vesper holds the connection credentials securely on the server.", inputSchema: { type: "object", additionalProperties: false, properties: { connectionId: { type: "string" }, toolName: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["connectionId", "toolName"] } },
+].map((definition) => ({ type: "function" as const, ...definition }));
+
+// Vesper is a companion chat, not a report console. This always travels through
+// the app-server's developer-instruction channel, never through a user turn.
+// Putting it in `turn/start.input` made the app-server correctly persist it as
+// a thread item, which in turn made it possible for private context to surface
+// in Vesper's visible history.
+const VESPER_CONVERSATIONAL_STYLE = [
+  "You are Rowan in Vesper. Default to the cadence of a natural one-to-one chat.",
+  "For an ordinary conversational message, reply with one short, complete sentence; at most two short sentences when needed.",
+  "When you send two or three short chat sentences, put each sentence on its own line.",
+  "Say one thing at a time. Do not volunteer a plan, recap, headings, bullets, or a long explanation unless the user explicitly asks for detail, analysis, writing, or a multi-step task.",
+  "When a task needs time, give one brief human update rather than a long report. Keep warmth without filler.",
+].join(" ");
+
+const VESPER_INTERNAL_CONTEXT_PREFIXES = [
+  "[vesper response preference — not user content:",
+  "旧记忆背景（只作为长期背景",
 ];
+
+function isVesperInternalContextText(value: unknown) {
+  const text = typeof value === "string" ? value.trim().toLocaleLowerCase("en-US") : "";
+  return VESPER_INTERNAL_CONTEXT_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
+
+function vesperDeveloperInstructions(memoryBackground = "") {
+  return [VESPER_CONVERSATIONAL_STYLE, memoryBackground.trim()].filter(Boolean).join("\n\n");
+}
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
 const CODEX_ASSISTANT_CONTENT_TYPES = new Set(["text", "outputText"]);
 const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "shellCall", "computerCall", "webSearchCall"]);
 const CODEX_REASONING_ITEM_TYPES = new Set(["reasoning", "reasoningSummary"]);
+const CODEX_DYNAMIC_TOOL_METHODS = new Set(["item/tool/call", "tool/call", "tools/call"]);
 
 function cleanReasoningSummary(value: unknown) {
   if (typeof value !== "string") return [] as string[];
@@ -2985,6 +3337,19 @@ function visibleAssistantText(item: CodexItem) {
     if (chunks.length) return chunks.join("");
   }
   return typeof item.text === "string" ? item.text : "";
+}
+
+function splitAssistantChatBubbles(content: string) {
+  const value = content.trim();
+  // Structured content must remain intact: splitting a code block, a Markdown
+  // link, or a list makes it harder to read and breaks copy/paste semantics.
+  if (!value || /```|`[^`]+`|https?:\/\/|\[[^\]]+\]\([^\n)]+\)|^\s*(?:[-*+] |\d+[.)] )/m.test(value)) return [value];
+  const sentences = value.match(/[^。！？!?\n]+[。！？!?]+(?:[”’」』）】]*)|[^。！？!?\n]+$/g)
+    ?.map((sentence) => sentence.trim())
+    .filter(Boolean) || [value];
+  // A normal reply has one to three bubbles. Keep any unexpected long tail
+  // together rather than turning a detailed answer into a wall of bubbles.
+  return sentences.length > 3 ? [...sentences.slice(0, 2), sentences.slice(2).join(" ")] : sentences;
 }
 
 function visibleUserText(item: CodexItem) {
@@ -3014,13 +3379,18 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
   return value.flatMap((raw) => {
     if (!raw || typeof raw !== "object") return [];
     const item = raw as BridgeChatMessage;
-    if (item.role === "agent" && item.metadata?.blockType && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
-    if (item.role === "agent" && item.metadata?.blockType && !item.content.trim()) return [];
+    // These markers identify only Vesper's former internal presentation and
+    // memory input. They are never user-authored messages and must not survive
+    // a restore from local cache, the VPS history service, or a legacy import.
+    if (isVesperInternalContextText(item.content)) return [];
+    const isMusicCard = item.metadata?.blockType === "musicCard";
+    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
+    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !item.content.trim()) return [];
     return [{ ...item, conversationId: item.conversationId || conversationId }];
   });
 }
 
-function messageIsTombstoned(item: BridgeChatMessage, tombstones: CodexMessageTombstone[]) {
+function messageWasDeleted(item: BridgeChatMessage, tombstones: CodexMessageTombstone[]) {
   return tombstones.some((deleted) =>
     deleted.messageId === item.id || deleted.stableId === item.id ||
     Boolean(item.metadata?.itemId && (deleted.itemId === item.metadata.itemId || deleted.stableId === item.metadata.itemId)));
@@ -3052,6 +3422,53 @@ function codexHistoryHeaders(json = false) {
   };
 }
 
+async function persistMemoryMessage(item: BridgeChatMessage) {
+  if (item.role !== "user" && item.role !== "agent") return;
+  const response = await fetch(apiUrl("/api/memory/messages"), {
+    method: "POST",
+    headers: appHeaders(true),
+    cache: "no-store",
+    body: JSON.stringify({
+      conversationId: item.conversationId,
+      messageId: item.id,
+      role: item.role,
+      content: item.content,
+      createdAt: item.createdAt,
+      turnId: item.metadata?.turnId,
+    }),
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) throw new Error("memory-message-sync-failed");
+}
+
+async function recallMemoryBackground(query: string) {
+  try {
+    const response = await fetch(apiUrl("/api/memory/context"), {
+      method: "POST",
+      headers: appHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!response.ok) return "";
+    const payload = await response.json() as { context?: string };
+    return typeof payload.context === "string" ? payload.context : "";
+  } catch {
+    // Memory retrieval is intentionally degradable: it can never stop a chat turn.
+    return "";
+  }
+}
+
+function scheduleMemoryDistillation(conversationId: string) {
+  return fetch(apiUrl("/api/memory/distill"), {
+    method: "POST",
+    headers: appHeaders(true),
+    cache: "no-store",
+    body: JSON.stringify({ conversationId }),
+    signal: AbortSignal.timeout(5_000),
+  }).catch(() => {});
+}
+
 async function persistCodexConversation(conversationId: string, value: { title?: string; codexThreadId?: string | null; createdAt?: string; updatedAt?: string; source?: "legacy-vesper" | "codex" }) {
   const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}`), {
     method: "POST",
@@ -3064,6 +3481,10 @@ async function persistCodexConversation(conversationId: string, value: { title?:
 }
 
 async function persistCodexMessage(item: BridgeChatMessage, title?: string) {
+  // This is a hard guard in addition to the rendering filter. Context is never
+  // a chat message and must not reach durable history through a delayed retry
+  // or a legacy migration.
+  if (isVesperInternalContextText(item.content)) return;
   const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(item.conversationId)}/messages`), {
     method: "POST",
     headers: codexHistoryHeaders(true),
@@ -3071,6 +3492,24 @@ async function persistCodexMessage(item: BridgeChatMessage, title?: string) {
     body: JSON.stringify({ ...item, title, source: item.source || "codex", timeSource: item.timeSource || item.metadata?.timeSource || (item.createdAt ? "message" : "unknown") }),
   });
   if (!response.ok) throw new Error("Message history could not be saved");
+}
+
+async function removeLeakedInternalHistoryMessages(conversationId: string, messages: BridgeChatMessage[]) {
+  const leaked = messages.filter((item) => isVesperInternalContextText(item.content));
+  if (!leaked.length) return;
+  await Promise.all(leaked.map(async (item) => {
+    const response = await fetch(codexHistoryUrl(`/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(item.id)}`), {
+      method: "DELETE",
+      headers: codexHistoryHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({
+        messageId: item.id,
+        itemId: item.metadata?.itemId || null,
+        threadId: item.metadata?.threadId || null,
+      }),
+    });
+    if (!response.ok) throw new Error("无法清理内部上下文记录");
+  }));
 }
 
 let legacyHistoryMigration: Promise<void> | null = null;
@@ -3179,8 +3618,6 @@ function CodexChatMessage({
   item,
   agentName,
   userName,
-  agentAvatar,
-  userAvatar,
   onEdit,
   onThought,
   onCopy,
@@ -3190,12 +3627,11 @@ function CodexChatMessage({
   onPlayMusic,
   onQueueMusic,
   onOpenMusic,
+  onAddMusicToPlaylist,
 }: {
   item: BridgeChatMessage;
   agentName: string;
   userName: string;
-  agentAvatar: string;
-  userAvatar: string;
   onEdit: (item: BridgeChatMessage) => void;
   onThought: (item: BridgeChatMessage) => void;
   onCopy: (item: BridgeChatMessage) => void;
@@ -3205,6 +3641,7 @@ function CodexChatMessage({
   onPlayMusic: (trackId: string) => void;
   onQueueMusic: (trackId: string) => void;
   onOpenMusic: () => void;
+  onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const assistant = item.role === "agent";
   const timestamp = visibleMessageTimestamp(item.createdAt);
@@ -3216,7 +3653,7 @@ function CodexChatMessage({
   const statusLabel = `${stamp}  ${statusText}`;
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
-      {assistant && (
+      {assistant && item.metadata?.showTurnStatus !== false && (
         item.metadata?.thoughtSummary ? (
           <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
             <i /> <span>{statusLabel}</span>
@@ -3226,12 +3663,10 @@ function CodexChatMessage({
         )
       )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
-        {assistant && <AvatarMark src={agentAvatar} label={agentName} kind="agent" />}
         <div>
           {item.content && <p>{item.content}</p>}
-          {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} />}
+          {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
         </div>
-        {!assistant && <AvatarMark src={userAvatar} label={userName} kind="user" />}
       </div>
       <div className="message-actions">
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
@@ -3245,16 +3680,49 @@ function CodexChatMessage({
   );
 }
 
+function CodexApprovalDialog({
+  approval,
+  queuedCount,
+  onDecision,
+}: {
+  approval: PendingCodexApproval;
+  queuedCount: number;
+  onDecision: (action: "allow" | "deny") => void;
+}) {
+  const type = approval.kind === "command" ? "命令" : approval.kind === "file" ? "文件变更" : "额外权限";
+  return (
+    <div className="codex-approval-layer" role="presentation">
+      <section className="codex-approval-dialog" role="alertdialog" aria-modal="true" aria-labelledby="codex-approval-title" aria-describedby="codex-approval-description">
+        <p className="codex-approval-kicker">CODEX 审批 · {type}</p>
+        <h2 id="codex-approval-title">{approval.title}</h2>
+        <p id="codex-approval-description" className="codex-approval-summary">{approval.summary}</p>
+        <dl className="codex-approval-details">
+          <div><dt>{approval.targetLabel}</dt><dd>{approval.target}</dd></div>
+          <div><dt>{approval.detailLabel}</dt><dd><pre>{approval.detail}</pre></dd></div>
+        </dl>
+        {queuedCount > 1 && <p className="codex-approval-queue">还有 {queuedCount - 1} 个请求等待你的决定。</p>}
+        <p className="codex-approval-note">允许只适用于这一次，不会保存为自动批准。</p>
+        <div className="codex-approval-actions">
+          <button className="codex-approval-deny" onClick={() => onDecision("deny")}>拒绝</button>
+          <button className="codex-approval-allow" autoFocus onClick={() => onDecision("allow")}>仅本次允许</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function MusicMessageCard({
   card,
   onPlay,
   onQueue,
   onOpen,
+  onAddToPlaylist,
 }: {
   card: MusicCardData;
   onPlay: (trackId: string) => void;
   onQueue: (trackId: string) => void;
   onOpen: () => void;
+  onAddToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   return (
     <article className="music-message-card">
@@ -3266,6 +3734,7 @@ function MusicMessageCard({
         <div className="music-card-actions">
           <button disabled={!card.playable} onClick={() => onPlay(card.trackId)}><Icon name="play" /> 播放</button>
           <button onClick={() => onQueue(card.trackId)}><Icon name="plus" /> 队列</button>
+          {card.source === "netease" && <button onClick={() => onAddToPlaylist(card)}><Icon name="library" /> 歌单</button>}
           <button onClick={onOpen}><Icon name="music" /> 播放器</button>
         </div>
       </div>
@@ -3278,8 +3747,6 @@ function ConnectedChat({
   onSelectConversation,
   agentName,
   userName,
-  agentAvatar,
-  userAvatar,
   favorites,
   setFavorites,
   focusMessageId,
@@ -3288,13 +3755,12 @@ function ConnectedChat({
   onToggleMusic,
   onNextMusic,
   onOpenMusic,
+  onAddMusicToPlaylist,
 }: {
   conversationId: string;
   onSelectConversation: (id: string) => void;
   agentName: string;
   userName: string;
-  agentAvatar: string;
-  userAvatar: string;
   favorites: FavoriteItem[];
   setFavorites: Dispatch<SetStateAction<FavoriteItem[]>>;
   focusMessageId?: string;
@@ -3303,6 +3769,7 @@ function ConnectedChat({
   onToggleMusic: () => void;
   onNextMusic: () => void;
   onOpenMusic: () => void;
+  onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<BridgeChatMessage[]>(() => normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId));
@@ -3316,6 +3783,7 @@ function ConnectedChat({
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
+  const [approvalQueue, setApprovalQueue] = useState<PendingCodexApproval[]>([]);
   const socket = useRef<WebSocket | null>(null);
   const messagesRef = useRef(messages);
   const rpcId = useRef(1);
@@ -3324,6 +3792,7 @@ function ConnectedChat({
   const streamBuffers = useRef(new Map<string, string>());
   const reasoningBuffers = useRef(new Map<string, string>());
   const reasoningSummaries = useRef<string[]>([]);
+  const appliedDeveloperInstructions = useRef("");
   const turnDone = useRef<((value?: unknown) => void) | null>(null);
   const activeTurnId = useRef("");
   const activeTurnUserId = useRef("");
@@ -3332,12 +3801,34 @@ function ConnectedChat({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
+  const approvalQueueRef = useRef<PendingCodexApproval[]>([]);
+  const approvalResponses = useRef(new Map<string, { result: Record<string, unknown>; expiresAt: number }>());
+
+  const updateApprovalQueue = (update: (current: PendingCodexApproval[]) => PendingCodexApproval[]) => {
+    setApprovalQueue((current) => {
+      const next = update(current);
+      approvalQueueRef.current = next;
+      return next;
+    });
+  };
+  const clearApprovalQueue = (filter?: { threadId?: string; turnId?: string; itemId?: string }) => {
+    updateApprovalQueue((current) => clearCodexApprovals(current, filter));
+  };
 
   const save = (next: BridgeChatMessage[]) => {
-    const sanitized = normalizeCodexMessages(next, conversationId).filter((item) => !messageIsTombstoned(item, tombstonesRef.current));
+    const sanitized = normalizeCodexMessages(next, conversationId).filter((item) => !messageWasDeleted(item, tombstonesRef.current));
+    // A thread snapshot is only one source of a Vesper conversation.  Keep a
+    // separate, union-only local recovery copy so a short/empty snapshot (or a
+    // temporarily incomplete history response) can never replace old messages.
+    // Tombstones still win, so an intentionally deleted message is not revived.
+    const backupKey = `vesper-codex-chat-backup-${conversationId}`;
+    const previousBackup = normalizeCodexMessages(readLocalValue<BridgeChatMessage[]>(backupKey, []), conversationId);
+    const recoveryCopy = mergeCodexMessages(previousBackup, sanitized)
+      .filter((item) => !messageWasDeleted(item, tombstonesRef.current));
     messagesRef.current = sanitized;
     setMessages(sanitized);
     window.localStorage.setItem(`vesper-codex-chat-${conversationId}`, JSON.stringify(sanitized));
+    window.localStorage.setItem(backupKey, JSON.stringify(recoveryCopy));
   };
   const updateMessage = (id: string, update: (item: BridgeChatMessage) => BridgeChatMessage) => {
     const updated = messagesRef.current.map((item) => item.id === id ? update(item) : item);
@@ -3373,16 +3864,39 @@ function ConnectedChat({
     return payload.result;
   };
 
+  const dynamicToolCall = (params: Record<string, unknown>) => {
+    const nested = params.toolCall && typeof params.toolCall === "object" ? params.toolCall as Record<string, unknown> : {};
+    const rawArguments = params.arguments ?? params.input ?? nested.arguments ?? nested.input ?? {};
+    let argumentsValue: Record<string, unknown> = {};
+    if (rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)) argumentsValue = rawArguments as Record<string, unknown>;
+    if (typeof rawArguments === "string") {
+      try {
+        const parsed = JSON.parse(rawArguments) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) argumentsValue = parsed as Record<string, unknown>;
+      } catch {}
+    }
+    return {
+      name: String(params.tool ?? params.name ?? nested.tool ?? nested.name ?? ""),
+      itemId: String(params.itemId ?? params.callId ?? nested.itemId ?? nested.callId ?? nested.id ?? ""),
+      argumentsValue,
+    };
+  };
+
   const sendToolResult = async (message: CodexSocketMessage) => {
-    if (typeof message.id !== "number") return;
-    const params = message.params || {};
-    const name = String(params.tool || params.name || "");
-    const itemId = String(params.itemId || params.callId || "");
+    if (typeof message.id !== "number" && typeof message.id !== "string") return;
+    const { name, itemId, argumentsValue } = dynamicToolCall(message.params || {});
+    if (!name) {
+      socket.current?.send(JSON.stringify({ id: message.id, result: { success: false, error: "Dynamic tool name is missing" } }));
+      return;
+    }
     setTurnStatus("tool");
     try {
-      const result = await callServerTool(name, (params.arguments || params.input || {}) as Record<string, unknown>, itemId);
+      const result = await callServerTool(name, argumentsValue, itemId);
       if (result && typeof result === "object" && "musicCard" in result) {
         window.dispatchEvent(new CustomEvent("vesper-music-card", { detail: { conversationId, card: (result as { musicCard: MusicCardData }).musicCard } }));
+      }
+      if (result && typeof result === "object" && (result as { musicLibraryRefresh?: unknown }).musicLibraryRefresh === true) {
+        window.dispatchEvent(new CustomEvent("vesper-music-library-refresh"));
       }
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true } }));
     } catch (reason) {
@@ -3398,6 +3912,25 @@ function ConnectedChat({
     rpc.current.set(id, { resolve, reject });
     current.send(JSON.stringify({ id, method, params }));
   });
+  const answerApproval = (approval: PendingCodexApproval, action: "allow" | "deny") => {
+    const current = socket.current;
+    if (!current || current.readyState !== WebSocket.OPEN) {
+      clearApprovalQueue();
+      setError("Codex 连接已断开，未发送审批决定。请重连后重试操作。");
+      return;
+    }
+    // Guard against a double tap while React is scheduling the dialog removal.
+    if (approvalResponses.current.has(approval.requestKey)) return;
+    const result = approvalResultFor(approval, action);
+    const expiresAt = Date.now() + 30_000;
+    approvalResponses.current.set(approval.requestKey, { result, expiresAt });
+    for (const id of approval.rpcIds) current.send(JSON.stringify({ id, result }));
+    window.setTimeout(() => {
+      const saved = approvalResponses.current.get(approval.requestKey);
+      if (saved && saved.expiresAt <= Date.now()) approvalResponses.current.delete(approval.requestKey);
+    }, 30_100);
+    updateApprovalQueue((queue) => removeCodexApproval(queue, approval.requestKey));
+  };
   const handleSocketMessage = (message: CodexSocketMessage) => {
     if (typeof message.id === "number" && rpc.current.has(message.id) && !message.method) {
       const pendingRpc = rpc.current.get(message.id)!;
@@ -3406,8 +3939,8 @@ function ConnectedChat({
       else pendingRpc.resolve(message);
       return;
     }
-    // Generated bindings for the installed app-server identify this as the dynamic-tool request.
-    if (message.method === "item/tool/call") {
+    // App-server versions have used each of these request names for dynamic tools.
+    if (message.method && CODEX_DYNAMIC_TOOL_METHODS.has(message.method)) {
       void sendToolResult(message);
       return;
     }
@@ -3415,12 +3948,37 @@ function ConnectedChat({
       socket.current?.send(JSON.stringify({ id: message.id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } }));
       return;
     }
-    if (message.method?.includes("requestApproval") && typeof message.id === "number") {
-      socket.current?.send(JSON.stringify({ id: message.id, result: { decision: "decline" } }));
-      setError("Codex requested a command approval; Vesper keeps shell actions disabled in the browser.");
+    const params = message.params || {};
+    if (message.method === "serverRequest/resolved") {
+      updateApprovalQueue((queue) => queue.filter((approval) => !approvalWasResolved(approval, params)));
+      for (const [key, response] of approvalResponses.current) {
+        if (response.expiresAt <= Date.now()) approvalResponses.current.delete(key);
+      }
       return;
     }
-    const params = message.params || {};
+    const approval = createCodexApprovalRequest(message);
+    if (approval) {
+      const cachedResponse = approvalResponses.current.get(approval.requestKey);
+      if (cachedResponse && cachedResponse.expiresAt > Date.now()) {
+        socket.current?.send(JSON.stringify({ id: message.id, result: cachedResponse.result }));
+      } else {
+        if (cachedResponse) approvalResponses.current.delete(approval.requestKey);
+        updateApprovalQueue((queue) => queueCodexApproval(queue, approval));
+      }
+      return;
+    }
+    if (message.method?.endsWith("/requestApproval")) {
+      // This is intentionally not a decision: the client only supports the
+      // explicit command, file-change, and permissions request schemas above.
+      // Returning a JSON-RPC error keeps an unknown server request from leaving
+      // an uncloseable modal behind without guessing an approval payload.
+      logCodexDiagnostic(message);
+      setError("收到当前版本无法安全展示的 Codex 审批请求；未替你作出允许或拒绝决定。");
+      if (typeof message.id === "number" || typeof message.id === "string") {
+        socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported approval request type" } }));
+      }
+      return;
+    }
     if (message.method === "item/agentMessage/delta") {
       const id = String(params.itemId || "agent");
       const next = `${streamBuffers.current.get(id) || ""}${String(params.delta || "")}`;
@@ -3435,6 +3993,7 @@ function ConnectedChat({
       const item = (params.item || {}) as CodexItem;
       const itemId = String(item.id || params.itemId || "");
       const itemType = String(item.type || "");
+      if (itemId) clearApprovalQueue({ threadId: String(params.threadId || threadId.current || ""), itemId });
       if (CODEX_REASONING_ITEM_TYPES.has(itemType)) {
         const summaries = cleanReasoningSummary(item.summary ?? item.text ?? reasoningBuffers.current.get(itemId) ?? "");
         reasoningSummaries.current.push(...summaries.filter((line) => !reasoningSummaries.current.includes(line)));
@@ -3445,21 +4004,32 @@ function ConnectedChat({
       const content = (streamBuffers.current.get(itemId) || visibleAssistantText(item)).trim();
       if (content && activeTurnId.current && CODEX_ASSISTANT_ITEM_TYPES.has(itemType) && (!item.role || item.role === "assistant")) {
         const current = messagesRef.current;
-        const existing = current.find((candidate) => candidate.metadata?.itemId === itemId);
-        const agentMessage: BridgeChatMessage = {
-          id: existing?.id || crypto.randomUUID(), conversationId, role: "agent", content,
-          status: "delivered",
-          metadata: {
-            ...existing?.metadata,
-            turnId: activeTurnId.current,
-            threadId: threadId.current,
-            itemId,
-            blockType: itemType,
-          },
-          createdAt: existing?.createdAt || new Date().toISOString(),
-        };
-        save(existing ? current.map((candidate) => candidate.id === existing.id ? agentMessage : candidate) : [...current, agentMessage]);
-        void persistCodexMessage(agentMessage).catch(() => setHistoryWarning("历史暂未同步"));
+        const bubbles = splitAssistantChatBubbles(content);
+        const agentMessages = bubbles.map((bubble, index) => {
+          const bubbleItemId = index === 0 ? itemId : `${itemId}:bubble:${index}`;
+          const existing = current.find((candidate) => candidate.metadata?.itemId === bubbleItemId);
+          return {
+            id: existing?.id || (itemId ? `${itemId}:bubble:${index}` : crypto.randomUUID()),
+            conversationId,
+            role: "agent" as const,
+            content: bubble,
+            status: "delivered",
+            metadata: {
+              ...existing?.metadata,
+              turnId: activeTurnId.current,
+              threadId: threadId.current,
+              itemId: bubbleItemId,
+              blockType: itemType,
+              turnStatus: index === 0 ? "completed" as const : undefined,
+              showTurnStatus: index === 0,
+            },
+            createdAt: existing?.createdAt || new Date().toISOString(),
+          } satisfies BridgeChatMessage;
+        });
+        save(mergeCodexMessages(current, agentMessages));
+        void Promise.all(agentMessages.map((agentMessage) => persistCodexMessage(agentMessage)))
+          .catch(() => setHistoryWarning("历史暂未同步"));
+        agentMessages.forEach((agentMessage) => void persistMemoryMessage(agentMessage).catch(() => {}));
       }
       if (CODEX_ASSISTANT_ITEM_TYPES.has(itemType)) {
         setStreamingItems((current) => {
@@ -3471,6 +4041,9 @@ function ConnectedChat({
       }
     }
     if (message.method === "turn/completed") {
+      const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
+      const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
+      if (completedTurnId) clearApprovalQueue({ threadId: threadId.current, turnId: completedTurnId });
       setBusy(false);
       if (activeTurnUserId.current) {
         updateMessage(activeTurnUserId.current, (item) => ({
@@ -3492,12 +4065,13 @@ function ConnectedChat({
       turnDone.current = null;
       activeTurnId.current = "";
       activeTurnUserId.current = "";
+      void scheduleMemoryDistillation(conversationId);
     }
     if (message.method === "turn/started" || message.method === "turn/inProgress") setTurnStatus("thinking");
-    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "item/tool/call", "currentTime/read"]);
-    if (message.method && !knownMethods.has(message.method) && !message.method.includes("requestApproval")) {
+    const knownMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/completed", "turn/completed", "turn/started", "turn/inProgress", "item/started", "currentTime/read", "serverRequest/resolved", ...CODEX_DYNAMIC_TOOL_METHODS]);
+    if (message.method && !knownMethods.has(message.method)) {
       logCodexDiagnostic(message);
-      if (typeof message.id === "number") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
+      if (typeof message.id === "number" || typeof message.id === "string") socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported app-server request" } }));
     }
   };
   const hydrateThreadSnapshot = (response: CodexSocketMessage) => {
@@ -3520,7 +4094,14 @@ function ConnectedChat({
       const role = item.role === "user" || type === "userMessage" || type === "userInput" ? "user" : "agent";
       const content = role === "agent" ? visibleAssistantText(item) : visibleUserText(item);
       if (!content.trim()) return [];
+      if (isVesperInternalContextText(content)) return [];
       if (role === "agent" && (!CODEX_ASSISTANT_ITEM_TYPES.has(type) || (item.role && item.role !== "assistant"))) return [];
+      // A completed app-server item remains one item in its own snapshot, but
+      // Vesper may have saved it as two or three chat bubbles. The persisted
+      // bubbles are authoritative here; do not merge the original full text
+      // back into their first bubble on a later resume.
+      if (role === "agent" && item.id && messagesRef.current.some((candidate) =>
+        candidate.metadata?.itemId?.startsWith(`${item.id}:bubble:`))) return [];
       const existing = messagesRef.current.find((candidate) =>
         (item.id && candidate.metadata?.itemId === item.id) ||
         (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && candidate.content === content.trim()));
@@ -3531,16 +4112,92 @@ function ConnectedChat({
       const timeSource = existing?.timeSource || existing?.metadata?.timeSource || (messageTime ? "message" : turnTime ? "turn" : threadTime ? "thread" : "unknown");
       return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
-    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageIsTombstoned(item, tombstonesRef.current))));
+    if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageWasDeleted(item, tombstonesRef.current))));
   };
-  const connect = async () => {
-    if (socket.current?.readyState === WebSocket.OPEN) return;
+  const loadDynamicTools = async () => {
+    let dynamicTools = CODEX_DYNAMIC_TOOLS;
+    try {
+      const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
+      if (catalog.ok) {
+        const payload = await catalog.json() as { tools?: typeof CODEX_DYNAMIC_TOOLS };
+        if (Array.isArray(payload.tools) && payload.tools.length) {
+          // Older Vesper builds omitted the required app-server discriminator.
+          // Normalize the API catalogue as well as the local fallback so the
+          // browser always sends protocol-valid dynamic function definitions.
+          dynamicTools = payload.tools.map((tool) => ({ ...tool, type: "function" as const }));
+        }
+      }
+    } catch {
+      // The fallback keeps the app-server handshake useful while the bridge is offline.
+    }
+    return dynamicTools;
+  };
+  const startThreadWithTools = async (dynamicTools: typeof CODEX_DYNAMIC_TOOLS, developerInstructions: string) => {
+    const result = await sendRpc("thread/start", {
+      dynamicTools,
+      approvalPolicy: "on-request",
+      summary: "concise",
+      developerInstructions,
+    });
+    const thread = (result.result?.thread || {}) as { id?: string };
+    if (!thread.id) throw new Error("Codex did not return a thread id");
+    threadId.current = thread.id;
+    appliedDeveloperInstructions.current = developerInstructions;
+    void persistCodexConversation(conversationId, { codexThreadId: thread.id })
+      .catch(() => setHistoryWarning("历史暂未同步"));
+    return thread.id;
+  };
+  const resumeThread = async (developerInstructions: string) => {
+    try {
+      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions });
+      hydrateThreadSnapshot(resumed);
+      appliedDeveloperInstructions.current = developerInstructions;
+      setResumeError("");
+    } catch (reason) {
+      // A dated app-server can reject the newer `developerInstructions` field.
+      // Continue the conversation without recalled context rather than making
+      // chat availability depend on that optional enhancement.
+      if (developerInstructions) {
+        try {
+          const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
+          hydrateThreadSnapshot(resumed);
+          appliedDeveloperInstructions.current = "";
+          setResumeError("");
+          logCodexDiagnostic({ method: "thread/resume/developer-instructions-unsupported", params: {} });
+          return;
+        } catch {
+          // Keep the original resume failure below for the user-facing path.
+        }
+      }
+      logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
+      setResumeError("这段旧对话无法连接原 Codex 会话，但已保存的聊天记录仍可查看。");
+      throw new Error("原会话暂时无法继续，可新建替代会话。 ");
+    }
+  };
+  const connect = async (memoryBackground = "") => {
+    const developerInstructions = vesperDeveloperInstructions(memoryBackground);
+    if (socket.current?.readyState === WebSocket.OPEN) {
+      // `thread/resume` is the protocol-supported way to update developer
+      // instructions for an existing thread. This keeps recalled memory out of
+      // the durable user-item timeline.
+      if (threadId.current && appliedDeveloperInstructions.current !== developerInstructions) {
+        await resumeThread(developerInstructions);
+      }
+      return;
+    }
     const ws = new WebSocket(codexSocketUrl());
     socket.current = ws;
     ws.onmessage = (event) => {
       try { handleSocketMessage(JSON.parse(String(event.data)) as CodexSocketMessage); } catch { setError("Invalid message from Codex app-server"); }
     };
-    ws.onclose = () => { setOnline(false); socket.current = null; };
+    ws.onclose = () => {
+      const hadPendingApproval = approvalQueueRef.current.length > 0;
+      setOnline(false);
+      socket.current = null;
+      clearApprovalQueue();
+      approvalResponses.current.clear();
+      if (hadPendingApproval) setError("Codex 连接已断开，待处理的审批没有被发送。");
+    };
     ws.onerror = () => setError("Codex app-server is offline");
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => resolve();
@@ -3549,33 +4206,15 @@ function ConnectedChat({
     setOnline(true);
     await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
     ws.send(JSON.stringify({ method: "initialized" }));
-    let dynamicTools = CODEX_DYNAMIC_TOOLS;
-    try {
-      const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
-      if (catalog.ok) {
-        const payload = await catalog.json() as { tools?: typeof CODEX_DYNAMIC_TOOLS };
-        if (Array.isArray(payload.tools) && payload.tools.length) dynamicTools = payload.tools;
-      }
-    } catch {
-      // The fallback keeps the app-server handshake useful while the bridge is offline.
-    }
+    const dynamicTools = await loadDynamicTools();
     if (threadId.current) {
-      try {
-        const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
-        hydrateThreadSnapshot(resumed);
-        setResumeError("");
-      } catch (reason) {
-        logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
-        setResumeError("这段旧对话无法连接原 Codex 会话，但已保存的聊天记录仍可查看。");
-        throw new Error("原会话暂时无法继续，可新建替代会话。 ");
-      }
+      await resumeThread(developerInstructions);
+      // The app-server does not accept a dynamic-tool update on thread/resume.
+      // Never auto-replace a persisted Codex thread here: a continuation thread
+      // has a shorter snapshot and must not be allowed to make an existing
+      // Vesper conversation appear empty.
     } else {
-      const result = await sendRpc("thread/start", { dynamicTools, approvalPolicy: "on-request", summary: "concise" });
-      const thread = (result.result?.thread || {}) as { id?: string };
-      if (!thread.id) throw new Error("Codex did not return a thread id");
-      threadId.current = thread.id;
-      void persistCodexConversation(conversationId, { codexThreadId: thread.id })
-        .catch(() => setHistoryWarning("历史暂未同步"));
+      await startThreadWithTools(dynamicTools, developerInstructions);
     }
   };
   const createReplacementConversation = async () => {
@@ -3585,7 +4224,7 @@ function ConnectedChat({
     }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     try {
-      const result = await sendRpc("thread/start", { dynamicTools: CODEX_DYNAMIC_TOOLS, approvalPolicy: "on-request", summary: "concise" });
+      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
@@ -3598,6 +4237,7 @@ function ConnectedChat({
   };
   const cancelActiveTurn = async () => {
     if (!activeTurnId.current || !threadId.current) return;
+    clearApprovalQueue({ threadId: threadId.current, turnId: activeTurnId.current });
     try {
       await sendRpc("turn/interrupt", { threadId: threadId.current, turnId: activeTurnId.current });
       setError("已请求取消当前回复。");
@@ -3650,7 +4290,7 @@ function ConnectedChat({
     const tombstone = { messageId: item.id, itemId: item.metadata?.itemId || null, threadId: item.metadata?.threadId || threadId.current || null, deletedAt: new Date().toISOString() };
     tombstonesRef.current = [...tombstonesRef.current.filter((entry) => entry.messageId !== tombstone.messageId && (!tombstone.itemId || entry.itemId !== tombstone.itemId)), tombstone];
     window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
-    save(messagesRef.current.filter((message) => !messageIsTombstoned(message, tombstonesRef.current)));
+    save(messagesRef.current.filter((message) => !messageWasDeleted(message, tombstonesRef.current)));
     setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
@@ -3675,12 +4315,16 @@ function ConnectedChat({
     try {
       void persistCodexMessage(userMessage, content.slice(0, 42) || "Attachment")
         .catch(() => setHistoryWarning("历史暂未同步"));
+      void persistMemoryMessage(userMessage).catch(() => {});
       const prepared = await Promise.all(pending.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
-      const input: CodexInput[] = [{ type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." }];
+      const memoryBackground = await recallMemoryBackground(content);
+      const input: CodexInput[] = [
+        { type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
+      ];
       for (const item of prepared) if (item.input) input.push(item.input);
-      await connect();
+      await connect(memoryBackground);
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
       const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
@@ -3734,9 +4378,17 @@ function ConnectedChat({
         tombstonesRef.current = [...(payload.tombstones || []), ...readLocalValue<CodexMessageTombstone[]>(`vesper-codex-tombstones-${conversationId}`, [])]
           .filter((item, index, all) => all.findIndex((candidate) => candidate.messageId === item.messageId && candidate.itemId === item.itemId) === index);
         window.localStorage.setItem(`vesper-codex-tombstones-${conversationId}`, JSON.stringify(tombstonesRef.current));
-        const remote = normalizeCodexMessages(payload.messages || [], conversationId);
+        const rawRemote = payload.messages || [];
+        // Versions that used a faux input item may already have copied that
+        // item into the VPS history through a legacy migration. Remove only
+        // those tagged internal records, then immediately exclude them from
+        // this render even if the cleanup request is temporarily offline.
+        void removeLeakedInternalHistoryMessages(conversationId, rawRemote)
+          .catch(() => setHistoryWarning("历史暂未同步"));
+        const remote = normalizeCodexMessages(rawRemote, conversationId);
         const cached = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId);
-        save(mergeCodexMessages(remote, cached).filter((item) => !messageIsTombstoned(item, tombstonesRef.current)));
+        const backup = normalizeCodexMessages(readLocalValue(`vesper-codex-chat-backup-${conversationId}`, []), conversationId);
+        save(mergeCodexMessages(remote, cached, backup).filter((item) => !messageWasDeleted(item, tombstonesRef.current)));
         threadId.current = payload.conversation?.codexThreadId || "";
       } catch {
         if (!cancelled) setHistoryWarning("历史暂未同步");
@@ -3838,10 +4490,10 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} agentAvatar={agentAvatar} userAvatar={userAvatar} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} /></div>;
         })}
         {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
-        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><AvatarMark src={agentAvatar} label={agentName} kind="agent" /><div><p>{text}</p></div></div></div>)}
+        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div><p>{text}</p></div></div></div>)}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}
@@ -3851,6 +4503,7 @@ function ConnectedChat({
         <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
+      {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={answerApproval} />}
     </div>
   );
 }
@@ -4392,83 +5045,153 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     return value;
   });
   const [testingId, setTestingId] = useState("");
-  const [editingId, setEditingId] = useState("");
+  const [editor, setEditor] = useState<ExternalMcpEntry | null>(null);
+  const [editorMessage, setEditorMessage] = useState("");
+  const syncedConnections = useRef(new Set<string>());
+  const configuredServers = servers.filter(
+    (server) => Boolean(server.name.trim() || server.url.trim()),
+  );
+  const closeEditor = () => {
+    setEditor(null);
+    setEditorMessage("");
+  };
+  const openEditor = (server: ExternalMcpEntry) => {
+    setEditor({ ...server });
+    setEditorMessage("");
+  };
   const add = () => {
-    const id = crypto.randomUUID();
-    setServers((current) => [...current, { id, name: "", url: "", token: "", enabled: true, authMode: "none" }]);
-    setEditingId(id);
+    setEditor({
+      id: crypto.randomUUID(),
+      name: "",
+      url: "",
+      token: "",
+      enabled: true,
+      authMode: "none",
+    });
+    setEditorMessage("");
+  };
+  const updateEditor = (patch: Partial<ExternalMcpEntry>) =>
+    setEditor((current) => (current ? { ...current, ...patch } : current));
+  const saveEditor = () => {
+    if (!editor) return;
+    const next = {
+      ...editor,
+      name: editor.name.trim(),
+      url: editor.url.trim(),
+    };
+    if (!next.name && !next.url) {
+      setEditorMessage("请填写名称或 MCP 服务地址");
+      return;
+    }
+    setServers((current) =>
+      current.some((server) => server.id === next.id)
+        ? current.map((server) => (server.id === next.id ? next : server))
+        : [...current, next],
+    );
+    closeEditor();
   };
   const update = (id: string, patch: Partial<ExternalMcpEntry>) =>
     setServers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  const syncToCodex = async (server: ExternalMcpEntry) => {
+    const response = await fetch(apiUrl("/api/mcp/connections"), {
+      method: "PUT",
+      headers: appHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({
+        id: server.id,
+        name: server.name,
+        url: server.url,
+        authMode: server.authMode || "none",
+        token: server.token,
+        enabled: server.enabled,
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { serverName?: string; toolCount?: number; error?: string };
+    if (!response.ok) throw new Error(result.error || "无法同步 MCP 给 Codex");
+    return result;
+  };
+  useEffect(() => {
+    for (const server of servers) {
+      const signature = `${server.id}:${server.url}:${server.token}:${server.enabled}`;
+      if (!server.enabled || !server.url || !server.token || syncedConnections.current.has(signature)) continue;
+      syncedConnections.current.add(signature);
+      void syncToCodex(server).catch(() => {
+        syncedConnections.current.delete(signature);
+      });
+    }
+  }, [servers]);
   const authorize = async (server: ExternalMcpEntry) => {
     if (!server.url) {
       setMessage("请先填写 MCP 服务地址");
       return;
     }
-    setMessage("正在发现授权服务…");
-    const redirectUri = `${window.location.origin}/?mcp-oauth=1`;
-    const discoveryResponse = await fetch("/api/mcp/oauth/discover", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
-    });
-    const discovered = (await discoveryResponse.json()) as {
-      authorizationUrl?: string;
-      tokenUrl?: string;
-      clientId?: string;
-      clientSecret?: string;
-      scopes?: string;
-      resource?: string;
-      needsClientId?: boolean;
-      error?: string;
-    };
-    if (!discoveryResponse.ok || !discovered.authorizationUrl || !discovered.tokenUrl) {
-      setMessage(discovered.error || "无法自动发现 OAuth 授权页面");
-      return;
-    }
-    if (discovered.needsClientId || !discovered.clientId) {
-      setMessage("该服务不支持自动注册，请只填写它分配给 Vesper 的 Client ID 后重试");
-      return;
-    }
-    update(server.id, {
-      authorizationUrl: discovered.authorizationUrl,
-      tokenUrl: discovered.tokenUrl,
-      clientId: discovered.clientId,
-      clientSecret: discovered.clientSecret || server.clientSecret,
-      scopes: discovered.scopes,
-      resource: discovered.resource,
-    });
-    const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replaceAll("=", "");
-    const state = crypto.randomUUID();
-    window.sessionStorage.setItem(
-      "vesper-mcp-oauth-pending",
-      JSON.stringify({
-        serverId: server.id,
-        state,
-        verifier,
+    try {
+      setMessage("正在打开授权页面…");
+      const redirectUri = `${window.location.origin}/mcp/oauth/callback`;
+      const discoveryResponse = await fetch("/api/mcp/oauth/discover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
+      });
+      const discovered = (await discoveryResponse.json()) as {
+        authorizationUrl?: string;
+        tokenUrl?: string;
+        clientId?: string;
+        clientSecret?: string;
+        scopes?: string;
+        resource?: string;
+        needsClientId?: boolean;
+        error?: string;
+      };
+      if (!discoveryResponse.ok || !discovered.authorizationUrl || !discovered.tokenUrl) {
+        throw new Error(discovered.error || "无法自动发现 OAuth 授权页面");
+      }
+      if (discovered.needsClientId || !discovered.clientId) {
+        throw new Error("该服务不支持自动注册，请填写它分配给 Vesper 的 Client ID 后重试");
+      }
+      update(server.id, {
+        authorizationUrl: discovered.authorizationUrl,
         tokenUrl: discovered.tokenUrl,
         clientId: discovered.clientId,
         clientSecret: discovered.clientSecret || server.clientSecret,
-        redirectUri,
+        scopes: discovered.scopes,
         resource: discovered.resource,
-      }),
-    );
-    update(server.id, { oauthStatus: "pending" });
-    const target = new URL(discovered.authorizationUrl);
-    target.searchParams.set("response_type", "code");
-    target.searchParams.set("client_id", discovered.clientId);
-    target.searchParams.set("redirect_uri", redirectUri);
-    target.searchParams.set("state", state);
-    target.searchParams.set("code_challenge", challenge);
-    target.searchParams.set("code_challenge_method", "S256");
-    if (discovered.scopes) target.searchParams.set("scope", discovered.scopes);
-    target.searchParams.set("resource", discovered.resource || server.url);
-    window.location.assign(target.toString());
+      });
+      const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+      const state = crypto.randomUUID();
+      window.sessionStorage.setItem(
+        "vesper-mcp-oauth-pending",
+        JSON.stringify({
+          serverId: server.id,
+          state,
+          verifier,
+          tokenUrl: discovered.tokenUrl,
+          clientId: discovered.clientId,
+          clientSecret: discovered.clientSecret || server.clientSecret,
+          redirectUri,
+          resource: discovered.resource,
+        }),
+      );
+      update(server.id, { oauthStatus: "pending" });
+      const target = new URL(discovered.authorizationUrl);
+      target.searchParams.set("response_type", "code");
+      target.searchParams.set("client_id", discovered.clientId);
+      target.searchParams.set("redirect_uri", redirectUri);
+      target.searchParams.set("state", state);
+      target.searchParams.set("code_challenge", challenge);
+      target.searchParams.set("code_challenge_method", "S256");
+      if (discovered.scopes) target.searchParams.set("scope", discovered.scopes);
+      target.searchParams.set("resource", discovered.resource || server.url);
+      window.location.assign(target.toString());
+    } catch (reason) {
+      update(server.id, { oauthStatus: undefined });
+      setMessage(reason instanceof Error ? reason.message : "无法打开 OAuth 授权页面");
+    }
   };
   const test = async (server: ExternalMcpEntry) => {
     if (!server.url) {
@@ -4478,14 +5201,8 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     setTestingId(server.id);
     setMessage("");
     try {
-      const response = await fetch("/api/mcp", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: server.url, token: server.token }),
-      });
-      const result = (await response.json()) as { serverName?: string; toolCount?: number; error?: string };
-      if (!response.ok) throw new Error(result.error || "MCP 连接失败");
-      setMessage(`连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}`);
+      const result = await syncToCodex(server);
+      setMessage(`连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}；已同步给 Codex，新建对话后即可使用。`);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "MCP 连接失败");
     } finally {
@@ -4493,47 +5210,64 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     }
   };
   return (
-    <div className="modal-layer settings-subpage-layer">
+    <div className="modal-layer settings-subpage-layer mcp-settings-page">
       <button className="modal-scrim" onClick={onClose} />
-      <section className="connection-modal external-mcp-modal">
-        <div className="modal-head">
-          <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
-          <div><small>TOOL CONNECTIONS</small><h2>MCP 工具</h2></div>
-          <button onClick={add} aria-label="添加 MCP"><Icon name="plus" /></button>
-        </div>
-        <p>在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
-        <div className="mcp-server-list">
-          {!servers.length && <EmptyState text="还没有接入第三方 MCP。" />}
-          {servers.map((server) => (
-            <article className="mcp-server-card" key={server.id}>
-              <div className="mcp-server-summary">
-                <span className={server.enabled ? "mcp-live-dot" : "mcp-live-dot off"} />
-                <div><b>{server.name || "未命名 MCP"}</b><small>{server.url || "尚未填写地址"} · {server.authMode === "oauth" ? `OAuth ${server.oauthStatus === "authorized" ? "已授权" : "待授权"}` : "Bearer / 无授权"}</small></div>
-              </div>
-              <div className="mcp-card-actions">
-                <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中" : "测试"}</button>
-                {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>授权</button>}
-                <button onClick={() => setEditingId(server.id)}>编辑</button>
-                <button onClick={() => setServers((current) => current.filter((item) => item.id !== server.id))}>删除</button>
-              </div>
-            </article>
-          ))}
-        </div>
-        {message && <p className="connection-message">{message}</p>}
-      </section>
-      {editingId && (() => {
-        const server = servers.find((item) => item.id === editingId);
-        if (!server) return null;
-        return <div className="mcp-editor-layer"><button className="modal-scrim" onClick={() => setEditingId("")} /><section className="mcp-editor-modal">
-          <div className="modal-head"><div><small>MCP SERVER</small><h2>{server.name ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h2></div><button onClick={() => setEditingId("")}><Icon name="close" /></button></div>
-          <label className="profile-field"><span>名称</span><input value={server.name} onChange={(event) => update(server.id, { name: event.target.value })} /></label>
-          <label className="profile-field"><span>Streamable HTTP 地址</span><input value={server.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => update(server.id, { url: event.target.value })} /></label>
-          <div className="mcp-auth-choice"><span>OAuth 授权</span><div><button className={(server.authMode || "none") === "none" ? "selected" : ""} onClick={() => update(server.id, { authMode: "none" })}>无</button><button className={server.authMode === "oauth" ? "selected" : ""} onClick={() => update(server.id, { authMode: "oauth" })}>有</button></div></div>
-          {server.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并直接跳转授权；通常无需手填授权地址。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={server.clientId || ""} onChange={(event) => update(server.id, { clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={server.token} onChange={(event) => update(server.id, { token: event.target.value })} /></label>}
-          <button className={server.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => update(server.id, { enabled: !server.enabled })}><span>{server.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
-          <div className="mcp-editor-actions"><button onClick={() => setEditingId("")}>取消</button><button className="save-profile" onClick={() => setEditingId("")}>保存</button></div>
-        </section></div>;
-      })()}
+      {editor ? (
+        <section className="connection-modal external-mcp-modal mcp-editor-modal">
+          <div className="modal-head">
+            <button className="settings-back" onClick={closeEditor} aria-label="返回"><Icon name="chevron" /></button>
+            <div><small>MCP SERVER</small><h2>{editor.name ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h2></div>
+            <span className="mcp-editor-head-spacer" aria-hidden="true" />
+          </div>
+          <div className="mcp-editor-scroll">
+            <label className="profile-field"><span>名称</span><input value={editor.name} onChange={(event) => updateEditor({ name: event.target.value })} /></label>
+            <label className="profile-field"><span>Streamable HTTP 地址</span><input value={editor.url} placeholder="https://example.com/mcp" autoCapitalize="none" autoCorrect="off" onChange={(event) => updateEditor({ url: event.target.value })} /></label>
+            <div className="mcp-auth-choice"><span>OAuth 授权</span><div><button className={(editor.authMode || "none") === "none" ? "selected" : ""} onClick={() => updateEditor({ authMode: "none" })}>无</button><button className={editor.authMode === "oauth" ? "selected" : ""} onClick={() => updateEditor({ authMode: "oauth" })}>有</button></div></div>
+            {editor.authMode === "oauth" ? <><p className="settings-hint">Vesper 会自动发现 OAuth 页面并跳转授权；若服务要求预先登记回调地址，请填写 <code>https://vesper.r-vera.com/mcp/oauth/callback</code>。</p><label className="profile-field"><span>Client ID（服务要求时填写）</span><input value={editor.clientId || ""} onChange={(event) => updateEditor({ clientId: event.target.value })} /></label></> : <label className="profile-field"><span>Bearer Token（可选）</span><input type="password" value={editor.token} onChange={(event) => updateEditor({ token: event.target.value })} /></label>}
+            <button className={editor.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => updateEditor({ enabled: !editor.enabled })}><span>{editor.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
+            {editorMessage && <p className="connection-message">{editorMessage}</p>}
+          </div>
+          <div className="mcp-editor-actions"><button onClick={closeEditor}>取消</button><button className="save-profile" onClick={saveEditor}>保存</button></div>
+        </section>
+      ) : (
+        <section className="connection-modal external-mcp-modal">
+          <div className="modal-head">
+            <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
+            <div><small>TOOL CONNECTIONS</small><h2>MCP 工具</h2></div>
+            <button onClick={add} aria-label="添加 MCP"><Icon name="plus" /></button>
+          </div>
+          <div className="mcp-list-scroll">
+            <p className="mcp-list-intro">在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
+            <div className="mcp-server-list">
+              {!configuredServers.length && <EmptyState text="还没有接入第三方 MCP。" />}
+              {configuredServers.map((server) => (
+                <article className="mcp-server-card" key={server.id}>
+                  <div className="mcp-server-summary">
+                    <span className={server.enabled ? "mcp-live-dot" : "mcp-live-dot off"} />
+                    <div><b>{server.name || "未命名 MCP"}</b><small>{server.url || "尚未填写地址"} · {server.authMode === "oauth" ? `OAuth ${server.oauthStatus === "authorized" ? "已授权" : "待授权"}` : "Bearer / 无授权"}</small></div>
+                  </div>
+                  <div className="mcp-card-actions">
+                    <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "测试中" : "测试"}</button>
+                    {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>授权</button>}
+                    <button onClick={() => openEditor(server)}>编辑</button>
+                    <button onClick={() => void (async () => {
+                      try {
+                        const response = await fetch(`${apiUrl("/api/mcp/connections")}?id=${encodeURIComponent(server.id)}`, { method: "DELETE", headers: appHeaders(true), cache: "no-store" });
+                        const result = await response.json().catch(() => ({})) as { error?: string };
+                        if (!response.ok) throw new Error(result.error || "无法删除服务端 MCP 凭证");
+                        setServers((current) => current.filter((item) => item.id !== server.id));
+                      } catch (reason) {
+                        setMessage(reason instanceof Error ? reason.message : "删除 MCP 失败");
+                      }
+                    })()}>删除</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {message && <p className="connection-message">{message}</p>}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -4967,23 +5701,17 @@ function AppearanceModal({
   onBackground: (value: string) => void;
   onClose: () => void;
 }) {
-  const [color, setColor] = useState("#dfe9ec");
+  const [color, setColor] = useState("#e4e4e0");
   const accents = [
-    ["冰川蓝", "#b8dce8"],
-    ["雾灰", "#b8bec1"],
-    ["冷杉灰", "#aebfba"],
-    ["暮紫灰", "#c3becd"],
+    ["石墨", "#4a4a48"],
+    ["岩灰", "#6b6b68"],
+    ["雾灰", "#878783"],
+    ["浅灰", "#a3a39f"],
   ];
   const backgrounds = [
-    ["冰雾", "linear-gradient(145deg,#f7faf9,#dfe9eb)"],
-    [
-      "月岩",
-      "radial-gradient(circle at 24% 16%,#ffffff 0,transparent 24%),linear-gradient(145deg,#e9e9e6,#c8cccd)",
-    ],
-    [
-      "夜色",
-      "radial-gradient(circle at 72% 10%,#3e454b 0,transparent 25%),linear-gradient(145deg,#23282d,#0f1114)",
-    ],
+    ["暖白", "#f5f5f3"],
+    ["纸灰", "#eeeeeb"],
+    ["雾灰", "#e2e2df"],
   ];
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -5037,7 +5765,7 @@ function AppearanceModal({
             {backgrounds.map(([name, value]) => (
               <button
                 key={name}
-                style={{ backgroundImage: value }}
+                style={{ backgroundColor: value }}
                 onClick={() => onBackground(value)}
               >
                 <span>{name}</span>
@@ -5062,18 +5790,14 @@ function AppearanceModal({
                 onChange={(e) => setColor(e.target.value)}
               />
               <button
-                onClick={() =>
-                  onBackground(
-                    `radial-gradient(circle at 72% 12%,rgba(255,255,255,.8),transparent 28%),linear-gradient(145deg,${color},#f7f7f5)`,
-                  )
-                }
+                onClick={() => onBackground(color)}
               >
                 用颜色生成
               </button>
             </div>
           </div>
           <button className="reset-background" onClick={() => onBackground("")}>
-            恢复 Vesper 大理石背景
+            恢复暖白背景
           </button>
         </div>
         <button className="save-profile" onClick={onClose}>
@@ -5636,193 +6360,37 @@ function ConnectionModal({
   );
 }
 
-function PetPage() {
-  const [pet, setPet] = usePersistentDocument("pet", {
-    mood: 50,
-    energy: 50,
-    lastAction: "",
-  });
-  const act = (kind: "陪伴" | "喂食" | "休息") => {
-    setPet((current) => ({
-      mood: Math.min(100, current.mood + (kind === "陪伴" ? 12 : 5)),
-      energy: Math.min(
-        100,
-        Math.max(
-          0,
-          current.energy + (kind === "休息" ? 20 : kind === "喂食" ? 10 : -4),
-        ),
-      ),
-      lastAction: `${kind} · ${new Date().toLocaleString("zh-CN")}`,
-    }));
-  };
-  return (
-    <div className="page-body">
-      <PageIntro
-        eyebrow="COMPANION"
-        title="桌宠互动"
-        text="互动状态会真实保存。"
-      />
-      <section className="surface pet-tool">
-        <img src="/icon-192-20260823-v8.png" alt="Vesper 桌宠" />
-        <div>
-          <span>心情 {pet.mood}%</span>
-          <progress max="100" value={pet.mood} />
-          <span>精力 {pet.energy}%</span>
-          <progress max="100" value={pet.energy} />
-        </div>
-      </section>
-      <div className="pet-actions">
-        <button onClick={() => act("陪伴")}>陪伴</button>
-        <button onClick={() => act("喂食")}>喂食</button>
-        <button onClick={() => act("休息")}>休息</button>
-      </div>
-      {pet.lastAction && <p className="settings-foot">{pet.lastAction}</p>}
-    </div>
-  );
-}
-function MagicBox() {
-  const [apps, setApps] = usePersistentDocument<BoxApp[]>("magicBox", []);
-  const input = useRef<HTMLInputElement>(null);
-  const importApp = async (file?: File) => {
-    if (!file) return;
-    try {
-      const raw = JSON.parse(await file.text()) as Partial<BoxApp>;
-      if (!raw.name) throw new Error();
-      setApps((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          name: String(raw.name),
-          description: String(raw.description || ""),
-          url: raw.url ? String(raw.url) : undefined,
-          kind: String(raw.kind || "扩展"),
-        },
-      ]);
-    } catch {
-      window.alert("扩展文件格式无效");
-    }
-    if (input.current) input.current.value = "";
-  };
-  return (
-    <div className="page-body magic-page">
-      <PageIntro
-        eyebrow="VESPER BOX"
-        title="魔盒"
-        text="导入并打开自己的应用或游戏扩展。"
-      />
-      <div className="magic-actions">
-        <span>{apps.length} 个扩展</span>
-        <button className="import-app" onClick={() => input.current?.click()}>
-          <Icon name="upload" />
-          导入
-        </button>
-        <input
-          ref={input}
-          hidden
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void importApp(event.target.files?.[0])}
-        />
-      </div>
-      {!apps.length ? (
-        <EmptyState text="还没有扩展。导入包含 name、description、url、kind 的 JSON 文件。" />
-      ) : (
-        <div className="app-grid">
-          {apps.map((app, index) => (
-            <article className="app-tile" key={app.id}>
-              <span className="app-art light">
-                <i>{String(index + 1).padStart(2, "0")}</i>
-              </span>
-              <b>{app.name}</b>
-              <small>{app.description || "无说明"}</small>
-              <em>{app.kind}</em>
-              <div className="tile-actions">
-                {app.url && (
-                  <button
-                    onClick={() =>
-                      window.open(app.url, "_blank", "noopener,noreferrer")
-                    }
-                  >
-                    打开
-                  </button>
-                )}
-                <button
-                  onClick={() =>
-                    setApps((current) =>
-                      current.filter((entry) => entry.id !== app.id),
-                    )
-                  }
-                >
-                  删除
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 function formatPlaybackTime(value: number) {
   if (!Number.isFinite(value) || value < 0) return "0:00";
   return `${Math.floor(value / 60)}:${String(Math.floor(value) % 60).padStart(2, "0")}`;
 }
-function useCoverTint(source?: string) {
-  const [tint, setTint] = useState({ r: 151, g: 184, b: 191 });
+function useTogetherDuration(state: MusicTogetherState) {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!source) return;
-    let active = true;
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = 16; canvas.height = 16;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) return;
-        context.drawImage(image, 0, 0, 16, 16);
-        const pixels = context.getImageData(0, 0, 16, 16).data;
-        let r = 0, g = 0, b = 0, count = 0;
-        for (let index = 0; index < pixels.length; index += 4) {
-          const brightness = (pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3;
-          if (brightness < 24 || brightness > 238) continue;
-          r += pixels[index]; g += pixels[index + 1]; b += pixels[index + 2]; count += 1;
-        }
-        if (active && count) {
-          // Pull the cover colour gently toward Vesper's blue-grey paper palette.
-          setTint({ r: Math.round((r / count + 156) / 2), g: Math.round((g / count + 189) / 2), b: Math.round((b / count + 197) / 2) });
-        }
-      } catch {
-        // Remote artwork without CORS permission keeps the neutral Vesper tint.
-      }
-    };
-    image.src = source;
-    return () => { active = false; };
-  }, [source]);
-  return tint;
+    if (state.status !== "connected") return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [state.status]);
+  const carried = Number.isFinite(state.totalListeningSeconds) ? Math.max(0, Number(state.totalListeningSeconds)) : 0;
+  const started = Date.parse(state.sessionStartedAt || "");
+  const session = state.status === "connected" && Number.isFinite(started) ? Math.max(0, (now - started) / 1000) : 0;
+  return Math.floor(carried + session);
 }
 
-function togetherCopy(state: MusicTogetherState) {
-  const status = state.status || "idle";
-  if (status === "invited") return "已发出一起听邀请 · 等待对方响应";
-  if (status === "offline") return "对方离线 · 共听状态会在连接恢复后更新";
-  if (status !== "connected") return "尚未连接一起听";
-  const parts: string[] = [];
-  if (Number.isFinite(state.distanceKm)) parts.push(`相距 ${Number(state.distanceKm).toFixed(2)} 公里`);
-  if (Number.isFinite(state.totalListeningSeconds)) {
-    const total = Math.max(0, Math.floor(Number(state.totalListeningSeconds)));
-    parts.push(`一起听了 ${Math.floor(total / 3600)} 小时 ${Math.floor(total % 3600 / 60)} 分钟`);
-  }
-  return parts.length ? parts.join(" · ") : "已连接 · 等待共听数据";
+function togetherTimeLabel(state: MusicTogetherState, totalSeconds: number) {
+  if (state.status === "connected") return `一起听了 ${Math.floor(totalSeconds / 3600)} 小时 ${Math.floor(totalSeconds % 3600 / 60)} 分钟`;
+  if (state.status === "invited") return "一起听邀请已发出";
+  if (state.status === "offline") return "对方暂时离线";
+  return "尚未开始一起听";
 }
 
 function MusicPlayerUI({
   queue, onQueue, selected, onTracks, playMode, onCycleMode, toast, adapter,
   userName, agentName, userAvatar, agentAvatar, together, onInvite,
-  annotations, onAddAnnotation, onRemoveAnnotation, favorite, onFavorite, onRemoveQueueItem,
+  onRemoveQueueItem, playlistIntent, onPlaylistIntentConsumed,
 }: {
   queue: Track[];
-  onQueue: (value: Track[]) => void;
+  onQueue: (value: Track[], options?: MusicQueueUpdate) => void;
   selected: number;
   onTracks: (value: Track[]) => void;
   playMode: MusicPlayMode;
@@ -5835,364 +6403,435 @@ function MusicPlayerUI({
   agentAvatar: string;
   together: MusicTogetherState;
   onInvite: () => void;
-  annotations: MusicAnnotation[];
-  onAddAnnotation: (entry: MusicAnnotation) => void;
-  onRemoveAnnotation: (id: string) => void;
-  favorite: boolean;
-  onFavorite: () => void;
   onRemoveQueueItem: (index: number) => void;
+  playlistIntent: MusicPlaylistIntent | null;
+  onPlaylistIntentConsumed: () => void;
 }) {
   const track = queue[selected];
   const state = adapter.getState();
-  const [pane, setPane] = useState<"lyrics" | "queue">("lyrics");
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueDragY, setQueueDragY] = useState(0);
   const [scrubValue, setScrubValue] = useState<number | null>(null);
-  const [annotationOpen, setAnnotationOpen] = useState(false);
-  const [annotationText, setAnnotationText] = useState("");
-  const [annotationAuthor, setAnnotationAuthor] = useState<MusicAnnotation["author"]>("user");
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [neteaseMeta, setNeteaseMeta] = useLocalDocument<Record<string, string>>("music-connection-meta", {});
-  const lyricsPanel = useRef<HTMLDivElement>(null);
-  const tint = useCoverTint(track?.cover);
-  const lyrics = track?.lyrics || [];
-  const activeLyric = lyrics.reduce((active, line, index) => line.time <= state.currentTime ? index : active, -1);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [pendingPlaylistTrack, setPendingPlaylistTrack] = useState<MusicPlaylistIntent | null>(null);
+  const queueDragStart = useRef<number | null>(null);
+  const queueListRef = useRef<HTMLDivElement>(null);
   const canSeek = state.canSeek;
   const displayedTime = scrubValue ?? state.currentTime;
   const modeLabels: Record<MusicPlayMode, string> = { order: "顺序播放", repeat: "列表循环", single: "单曲循环", random: "随机播放" };
   const modeIcons: Record<MusicPlayMode, string> = { order: "menu", repeat: "repeat", single: "one", random: "shuffle" };
-  const songAnnotations = track ? annotations.filter((item) => item.trackId === track.id) : [];
-  const roomStyle = { "--music-tint": `${tint.r}, ${tint.g}, ${tint.b}` } as CSSProperties;
+  const totalTogetherSeconds = useTogetherDuration(together);
+  const playbackProgress = canSeek ? `${Math.max(0, Math.min(100, displayedTime / Math.max(state.duration, 1) * 100))}%` : "0%";
+  const roomStyle = { "--music-tint": "99, 99, 96", "--music-on-tint": "17, 17, 17", "--playback-progress": playbackProgress } as CSSProperties;
 
   useEffect(() => {
-    const openQueue = () => {
-      setPane("queue");
-      window.requestAnimationFrame(() => lyricsPanel.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
-    };
+    const openQueue = () => setQueueOpen(true);
     window.addEventListener("vesper-music-open-queue", openQueue);
     return () => window.removeEventListener("vesper-music-open-queue", openQueue);
   }, []);
   useEffect(() => {
-    if (pane !== "lyrics" || activeLyric < 0) return;
-    const active = lyricsPanel.current?.querySelector<HTMLElement>(`[data-lyric-index="${activeLyric}"]`);
-    active?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [activeLyric, pane]);
+    if (!queueOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      queueListRef.current?.querySelector<HTMLElement>("article.active")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [queueOpen, selected, queue.length]);
+  useEffect(() => {
+    if (!playlistIntent) return;
+    setPendingPlaylistTrack(playlistIntent);
+    setLibraryOpen(true);
+    onPlaylistIntentConsumed();
+  }, [onPlaylistIntentConsumed, playlistIntent]);
   const commitSeek = () => {
     if (scrubValue != null) adapter.seek(scrubValue);
     setScrubValue(null);
   };
-  const addAnnotation = () => {
-    if (!track || !annotationText.trim()) return;
-    onAddAnnotation({ id: crypto.randomUUID(), trackId: track.id, author: annotationAuthor, text: annotationText.trim(), createdAt: new Date().toISOString() });
-    setAnnotationText(""); setAnnotationOpen(false);
-  };
-  return <div className="page-body music-player-ui" style={roomStyle}>
-    <section className="listening-room-top">
-      <div className="together-identities" aria-label={`${agentName} 和 ${userName} 的一起听状态`}>
-        <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
-        <AvatarMark src={userAvatar} label={userName} kind="user" />
-      </div>
-      <div className="together-copy"><small>PRIVATE LISTENING ROOM</small><p>{togetherCopy(together)}</p></div>
-      {together.status === "connected" ? <span className="together-state connected">已连接</span> : <button className="together-invite" onClick={onInvite}>{together.status === "invited" ? "已邀请" : "邀请一起听"}</button>}
-    </section>
-
-    {track ? <>
-      <section className="cover-orbit" aria-label={`正在播放：${track.title}`}>
-        <div className={state.playing ? "cover-stardust rotating" : "cover-stardust"}>
-          <div className="album-disc">
-            {track.cover ? <img src={track.cover} alt={`${track.title} 封面`} /> : <span className="album-fallback">V</span>}
+  return <div className="page-body listening-player" style={roomStyle}>
+    <section className="listening-player-main">
+      <div className="listening-library-bar"><button onClick={() => setLibraryOpen(true)}><Icon name="library" /><span>我的音乐</span></button></div>
+      <button className="listening-together" onClick={together.status === "connected" ? undefined : onInvite} aria-label={together.status === "connected" ? `${agentName} 与 ${userName} 正在一起听` : "邀请一起听"}>
+        <span className="listening-avatars"><AvatarMark src={userAvatar} label={userName} kind="user" /><i /><AvatarMark src={agentAvatar} label={agentName} kind="agent" /></span>
+        <span>{togetherTimeLabel(together, totalTogetherSeconds)}</span>
+      </button>
+      {track ? <>
+        <section className="listening-disc-stage" aria-label={`正在播放：${track.title}`}>
+          <div className={state.playing ? "sound-halo is-playing" : "sound-halo"}>
+            <div className="listening-disc">{track.cover ? <img src={track.cover} alt={`${track.title} 封面`} /> : <span>V</span>}</div>
           </div>
-        </div>
-      </section>
-
-      <section className="music-song-copy">
-        <div><small>NOW PLAYING</small><h2>{track.title}</h2><p>{track.artist || "未知歌手"}{track.album ? ` · ${track.album}` : ""}</p></div>
-        <div className="song-note-actions"><button aria-label={favorite ? "取消收藏" : "收藏歌曲"} className={favorite ? "saved" : ""} onClick={onFavorite}><Icon name="heart" /></button><button aria-label="写下共听批注" onClick={() => setAnnotationOpen((value) => !value)}><Icon name="chat" /></button></div>
-      </section>
-      {annotationOpen && <section className="annotation-editor"><div><button className={annotationAuthor === "user" ? "active" : ""} onClick={() => setAnnotationAuthor("user")}>{userName}</button><button className={annotationAuthor === "agent" ? "active" : ""} onClick={() => setAnnotationAuthor("agent")}>{agentName}</button></div><textarea value={annotationText} maxLength={180} placeholder="留下一句只属于这次共听的话…" onChange={(event) => setAnnotationText(event.target.value)} /><button onClick={addAnnotation} disabled={!annotationText.trim()}>保存批注</button></section>}
-      {songAnnotations.length > 0 && <section className="shared-annotations" aria-label="共听批注">{songAnnotations.map((item) => <article key={item.id}><AvatarMark src={item.author === "agent" ? agentAvatar : userAvatar} label={item.author === "agent" ? agentName : userName} kind={item.author === "agent" ? "agent" : "user"} /><p><b>{item.author === "agent" ? agentName : userName}</b>{item.text}</p><button aria-label="删除批注" onClick={() => onRemoveAnnotation(item.id)}><Icon name="close" /></button></article>)}</section>}
-
-      <section className="immersive-progress" aria-label="播放进度">
-        <input aria-label="播放进度" type="range" min="0" max={Math.max(state.duration, 1)} step="0.1" disabled={!canSeek} value={Math.min(displayedTime, Math.max(state.duration, 1))} onChange={(event) => setScrubValue(Number(event.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} />
-        <div><span>{canSeek ? formatPlaybackTime(displayedTime) : "—"}</span><span>{canSeek ? formatPlaybackTime(state.duration) : "等待音频时长"}</span></div>
-      </section>
-      <section className="immersive-controls">
-        <button className="mode-control" aria-label={modeLabels[playMode]} title={modeLabels[playMode]} onClick={onCycleMode}><Icon name={modeIcons[playMode]} /><small>{modeLabels[playMode]}</small></button>
-        <button aria-label="上一首" onClick={adapter.previous}><Icon name="back" /></button>
-        <button className="immersive-play" aria-label={state.playing ? "暂停" : "播放"} onClick={adapter.toggle}><Icon name={state.playing ? "pause" : "play"} /></button>
-        <button aria-label="下一首" onClick={adapter.next}><Icon name="forward" /></button>
-        <button className="queue-control" aria-label="查看播放队列" onClick={() => setPane("queue")}><Icon name="queue" /><small>{queue.length}</small></button>
-      </section>
-    </> : <section className="music-empty-state"><Icon name="music" /><h2>播放队列为空</h2><p>同步网易云歌单或加入可播放歌曲后，这里才会出现真实播放状态。</p></section>}
-
-    <section className="music-lower-panel" ref={lyricsPanel}>
-      <div className="music-panel-tabs"><button className={pane === "lyrics" ? "active" : ""} onClick={() => setPane("lyrics")}>歌词</button><button className={pane === "queue" ? "active" : ""} onClick={() => setPane("queue")}>队列 <small>{queue.length}</small></button><button className="sync-link" onClick={() => setSyncOpen(true)}>同步歌单</button></div>
-      {pane === "lyrics" ? <div className="lyrics-scroll">{lyrics.length ? lyrics.map((line, index) => <p data-lyric-index={index} className={index === activeLyric ? "active" : ""} key={`${line.time}-${index}`}>{line.text}</p>) : <EmptyState text="这首歌暂时没有可显示的歌词。" />}</div> : <div className="immersive-queue">{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="queue-track" onClick={() => adapter.select(index)}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "—"}</time>{selected === index && <i aria-label="正在播放" />}</button><button className="queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div>}
+        </section>
+        <section className="listening-track-copy"><h2>{track.title}</h2><p>{track.artist || "未知歌手"}{track.album ? ` · ${track.album}` : ""}</p></section>
+        <section className="listening-progress" aria-label="播放进度"><input aria-label="播放进度" type="range" min="0" max={Math.max(state.duration, 1)} step="0.1" disabled={!canSeek} value={Math.min(displayedTime, Math.max(state.duration, 1))} onChange={(event) => setScrubValue(Number(event.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} /><div><span>{canSeek ? formatPlaybackTime(displayedTime) : "--:--"}</span><span>{canSeek ? formatPlaybackTime(state.duration) : "--:--"}</span></div></section>
+        <section className="listening-controls"><button className="listening-mode" aria-label={modeLabels[playMode]} title={modeLabels[playMode]} onClick={onCycleMode}><Icon name={modeIcons[playMode]} /></button><button aria-label="上一首" onClick={adapter.previous}><Icon name="back" /></button><button className="listening-play" aria-label={state.playing ? "暂停" : "播放"} onClick={adapter.toggle}><Icon name={state.playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={adapter.next}><Icon name="forward" /></button><button className="listening-queue-button" aria-label="打开播放队列" onClick={() => setQueueOpen(true)}><Icon name="queue" /><em>{queue.length}</em></button></section>
+      </> : <section className="listening-empty"><Icon name="music" /><h2>还没有播放队列</h2><p>在我的音乐中连接网易云账号，选择歌单或搜索歌曲后即可播放。</p><button onClick={() => setLibraryOpen(true)}>打开我的音乐</button></section>}
     </section>
     {toast && <div className="music-toast" role="status">{toast}</div>}
-    {syncOpen && <div className="music-sync-layer"><button className="modal-scrim" aria-label="关闭同步歌单" onClick={() => setSyncOpen(false)} /><section className="music-sync-modal"><div className="modal-head"><div><small>NETEASE CLOUD MUSIC</small><h2>同步歌单</h2></div><button aria-label="关闭" onClick={() => setSyncOpen(false)}><Icon name="close" /></button></div><NeteaseSyncPanel meta={neteaseMeta} onSync={(items, nextQueue, nextMeta) => { onTracks(items); onQueue(nextQueue); setNeteaseMeta(nextMeta); setSyncOpen(false); }} /></section></div>}
+    {queueOpen && <div className="music-queue-layer"><button className="music-queue-scrim" aria-label="关闭播放队列" onClick={() => setQueueOpen(false)} /><section className="music-queue-sheet" style={{ transform: `translateY(${queueDragY}px)` }}><div className="music-queue-drag-handle" onTouchStart={(event) => { queueDragStart.current = event.touches[0]?.clientY ?? null; }} onTouchMove={(event) => { const start = queueDragStart.current; const current = event.touches[0]?.clientY; if (start != null && current != null && current > start) setQueueDragY(Math.min(240, current - start)); }} onTouchEnd={() => { if (queueDragY > 88) setQueueOpen(false); setQueueDragY(0); queueDragStart.current = null; }} /><header><div><small>正在播放队列</small><h2>{queue.length} 首歌曲</h2></div><div><button className="queue-sync-action" onClick={() => { setQueueOpen(false); setLibraryOpen(true); }}>我的音乐</button><button aria-label="关闭播放队列" onClick={() => setQueueOpen(false)}><Icon name="close" /></button></div></header><div className="music-queue-list" ref={queueListRef}>{queue.length ? queue.map((item, index) => <article className={selected === index ? "active" : ""} key={item.id}><button className="music-queue-track" onClick={() => { adapter.select(index); setQueueOpen(false); }}>{item.cover ? <img src={item.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{item.title}</b><small>{item.artist || "未知歌手"}</small></div><time>{item.duration || "--:--"}</time>{selected === index && <i className="music-queue-eq" aria-label="正在播放" />}</button><button className="music-queue-remove" aria-label={`移除 ${item.title}`} onClick={() => onRemoveQueueItem(index)}><Icon name="close" /></button></article>) : <EmptyState text="播放队列为空。" />}</div></section></div>}
+    {libraryOpen && <NeteaseMusicLibrary onClose={() => { setLibraryOpen(false); setPendingPlaylistTrack(null); }} queue={queue} onQueue={onQueue} onTracks={onTracks} pendingPlaylistTrack={pendingPlaylistTrack} onPendingPlaylistTrackHandled={() => setPendingPlaylistTrack(null)} />}
   </div>;
 }
 
-function NeteaseSyncPanel({ meta, onSync }: { meta: Record<string, string>; onSync: (tracks: Track[], queue: Track[], meta: Record<string, string>) => void }) {
-  const [playlistId, setPlaylistId] = useState(meta.playlistId || "");
-  const [message, setMessage] = useState(meta.lastSyncAt ? `上次同步：${new Date(meta.lastSyncAt).toLocaleString()}` : "");
-  const [syncing, setSyncing] = useState(false);
-  const sync = async () => {
-    if (!playlistId.trim()) { setMessage("请先粘贴网易云歌单 ID"); return; }
-    setSyncing(true); setMessage("正在读取网易云歌单…");
-    try {
-      const response = await fetch(apiUrl("/api/music/sync"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "sync", playlistId: playlistId.trim() }) });
-      const result = await response.json() as { error?: string; tracks?: Track[]; queue?: Track[]; meta?: Record<string, string>; summary?: string };
-      if (!response.ok) throw new Error(result.error || "网易云同步失败");
-      const nextMeta = result.meta || { playlistId: playlistId.trim(), lastSyncAt: new Date().toISOString() };
-      onSync(result.tracks || [], result.queue || [], nextMeta);
-      setMessage(result.summary || "同步完成");
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "同步失败"); }
-    finally { setSyncing(false); }
-  };
-  return <div className="netease-sync-panel"><div className="sync-status-line"><i className={meta.lastSyncAt ? "connected" : "disconnected"} />{meta.lastSyncAt ? `已同步 · ${new Date(meta.lastSyncAt).toLocaleString()}` : "尚未同步"}</div><p>只需粘贴歌单 ID（也可粘贴包含 ID 的歌单链接）。Vesper 会读取公开歌单；没有可播放 URL 的版权歌曲会保留为不可播放状态。</p><label className="profile-field"><span>网易云歌单 ID</span><input inputMode="numeric" autoComplete="off" value={playlistId} placeholder="例如 123456789" onChange={(event) => setPlaylistId(event.target.value)} /></label><div className="sync-strategy"><span>同步策略</span><b>保留本地独有歌曲，不删除</b></div><div className="sync-buttons"><button className="save-profile" disabled={syncing || !playlistId.trim()} onClick={() => void sync()}>{syncing ? "同步中…" : "同步歌单"}</button></div>{message && <p className="connection-message">{message}</p>}</div>;
-}
+function NeteaseMusicLibrary({
+  onClose,
+  queue,
+  onQueue,
+  onTracks,
+  pendingPlaylistTrack,
+  onPendingPlaylistTrackHandled,
+}: {
+  onClose: () => void;
+  queue: Track[];
+  onQueue: (value: Track[], options?: MusicQueueUpdate) => void;
+  onTracks: (value: Track[]) => void;
+  pendingPlaylistTrack: MusicPlaylistIntent | null;
+  onPendingPlaylistTrackHandled: () => void;
+}) {
+  const [meta, setMeta] = useLocalDocument<Record<string, string>>("music-connection-meta", {});
+  const [savedMusicCookie, setSavedMusicCookie] = useLocalDocument("netease-music-u", "");
+  const [account, setAccount] = useState({ uid: meta.uid || "", cookie: savedMusicCookie });
+  const [tab, setTab] = useState<"mine" | "discover">("mine");
+  const [accountOpen, setAccountOpen] = useState(!meta.uid || !savedMusicCookie);
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; trackCount?: number; cover?: string; description?: string }>>([]);
+  const [collection, setCollection] = useState<MusicLibraryResult | null>(null);
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
+  const [activeNeteasePlaylistId, setActiveNeteasePlaylistId] = useState("");
+  const isConnected = Boolean(account.uid.trim() && account.cookie.trim());
 
-function MemoryLibrary() {
-  const [, setDocuments] = useState<
-    Record<string, { value: unknown }>
-  >({});
-  const [connections, setConnections] = useLocalDocument<
-    Record<string, string>
-  >("memory-connection", {});
-  const [localNotes] = usePersistentDocument<NoteItem[]>("notes", []);
-  const [localTodos] = usePersistentDocument<TodoItem[]>("todos", []);
-  const [localAnniversaries] = usePersistentDocument<AnniversaryItem[]>("anniversaries", []);
-  const [localDiary] = usePersistentDocument<DiaryDocument>("diary", {});
-  const [externalMemory, setExternalMemory] = usePersistentDocument<
-    Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>
-  >("externalMemory", []);
-  const [connect, setConnect] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState("");
-  const [memoryPreview, setMemoryPreview] = useState<Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>>([]);
-  const input = useRef<HTMLInputElement>(null);
-  const refresh = () =>
-    fetch(apiUrl("/api/state"), { cache: "no-store", headers: appHeaders() })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data) =>
-        setDocuments(
-          (data as { documents: Record<string, { value: unknown }> }).documents,
-        ),
-      )
-      .catch(() => {});
-  useEffect(() => {
-    void refresh();
-  }, []);
-  const notes = localNotes.length;
-  const todos = localTodos.length;
-  const anniversaries = localAnniversaries.length;
-  const diary = Object.keys(localDiary).length;
-  const external = externalMemory.length;
-  const total = notes + todos + anniversaries + diary + external;
-  const syncExternalMemory = async () => {
-    if (!connections.memoryUrl) {
-      setSyncMessage("请先填写外置记忆库地址");
+  const invoke = async (
+    action: Parameters<typeof requestNeteaseLibrary>[2]["action"],
+    payload: Omit<Parameters<typeof requestNeteaseLibrary>[2], "action" | "uid" | "cookie"> = {},
+  ) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await requestNeteaseLibrary(apiUrl("/api/music/library"), appHeaders(true), {
+        action,
+        uid: account.uid.trim(),
+        cookie: account.cookie.trim(),
+        ...payload,
+      });
+      return result;
+    } catch (reason) {
+      const detail = reason instanceof Error ? reason.message : "网易云音乐服务暂时不可用";
+      const normalized = detail.trim();
+      setMessage(
+        /^(load failed|failed to fetch|networkerror)$/i.test(normalized)
+          ? "暂时无法连接音乐服务，请稍后重试。"
+          : normalized === "Device not paired"
+            ? "请先在 Vesper 设置中连接这台设备，再使用网易云音乐。"
+            : detail,
+      );
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connect = async () => {
+    if (!isConnected) {
+      setMessage("请填写网易云 UID 和 MUSIC_U");
       return;
     }
-    setSyncing(true);
-    setSyncMessage("");
-    try {
-      const response = await fetch("/api/memory/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: connections.memoryUrl, token: connections.memoryToken, toolName: connections.memoryTool || "memory.list" }),
-      });
-      const result = (await response.json()) as {
-        items?: Array<{ id: string; title: string; kind: string; source: string; updatedAt: string }>;
-        count?: number;
-        error?: string;
-      };
-      if (!response.ok || !result.items) throw new Error(result.error || "同步失败");
-      setMemoryPreview(result.items);
-      setSyncMessage(`已从外置记忆库读取 ${result.count || 0} 条；确认后可整理进 Vesper`);
-    } catch (reason) {
-      setSyncMessage(reason instanceof Error ? reason.message : "外置记忆同步失败");
-    } finally {
-      setSyncing(false);
-    }
+    setSavedMusicCookie(account.cookie.trim());
+    setMeta((current) => ({ ...current, uid: account.uid.trim() }));
+    const result = await invoke("playlists");
+    if (!result) return;
+    setPlaylists(result.playlists || []);
+    setAccountOpen(false);
+    setMessage(result.summary || "已连接网易云音乐");
   };
-  const restore = async (file?: File) => {
-    if (!file) return;
-    try {
-      const parsed = JSON.parse(await file.text()) as {
-        documents?: Record<string, { value?: unknown }>;
-      };
-      for (const [key, entry] of Object.entries(parsed.documents || {})) {
-        if (entry && "value" in entry)
-          await fetch(apiUrl("/api/state"), {
-            method: "PUT",
-            headers: appHeaders(true),
-            body: JSON.stringify({ key, value: entry.value }),
-          });
+
+  const showCollection = async (
+    action: Parameters<typeof requestNeteaseLibrary>[2]["action"],
+    payload: Omit<Parameters<typeof requestNeteaseLibrary>[2], "action" | "uid" | "cookie"> = {},
+  ) => {
+    const result = await invoke(action, payload);
+    if (result) {
+      setCollection(result);
+      setActiveNeteasePlaylistId(action === "playlist" ? String((payload as { playlistId?: string }).playlistId || "") : "");
+      // Choosing a remote collection means choosing the active listening list.
+      // Search remains non-destructive, but recommendations and playlist-like
+      // sources replace the queue in their returned order without auto-playing.
+      if (["playlist", "recommendations", "personal-fm", "recent-plays", "play-history", "liked-songs"].includes(action)) {
+        await prepareTracks((result.tracks || []) as Track[], true);
       }
-      await refresh();
-    } catch {
-      window.alert("备份文件无效");
     }
   };
-  return (
-    <div className="page-body memory-page">
-      <PageIntro
-        eyebrow="MEMORY LIBRARY"
-        title="记忆库"
-        text="根据真实数据生成可视化。"
-      />
-      <div className="memory-actions">
-        <button onClick={() => input.current?.click()}>
-          <Icon name="upload" />
-          导入
-        </button>
-        <input
-          ref={input}
-          hidden
-          type="file"
-          accept="application/json,.json"
-          onChange={(event) => void restore(event.target.files?.[0])}
-        />
-        <button onClick={() => void exportVesperData()}>
-          <Icon name="download" />
-          导出
-        </button>
-      </div>
-      <section className="memory-map surface">
-        <div className="map-head">
-          <div>
-            <b>记忆星图</b>
-            <small>共 {total} 个数据节点</small>
-          </div>
-        </div>
-        {total ? (
-          <>
-            <div className="constellation">
-              <i className="orbit one" />
-              <i className="orbit two" />
-              <span className="memory-node center">我</span>
-              {notes > 0 && (
-                <span className="memory-node mood">便笺 {notes}</span>
-              )}
-              {todos > 0 && (
-                <span className="memory-node place">提醒 {todos}</span>
-              )}
-              {diary > 0 && (
-                <span className="memory-node people">日记 {diary}</span>
-              )}
-              {anniversaries > 0 && (
-                <span className="memory-node family">
-                  纪念日 {anniversaries}
-                </span>
-              )}
-              {external > 0 && (
-                <span className="memory-node external">外置 {external}</span>
-              )}
-            </div>
-            <div className="memory-stats">
-              <span>
-                <b>{diary}</b>日记
-              </span>
-              <span>
-                <b>{notes}</b>便笺
-              </span>
-              <span>
-                <b>{todos + anniversaries}</b>事项
-              </span>
-              <span>
-                <b>{external}</b>外置
-              </span>
-            </div>
-          </>
-        ) : (
-          <EmptyState text="还没有可视化数据。" />
-        )}
-      </section>
-      <button className="external-memory" onClick={() => setConnect(true)}>
-        <span>
-          <Icon name="database" />
-        </span>
-        <div>
-          <b>接入外置记忆库</b>
-          <small>
-            {connections.memoryUrl ? connections.memoryUrl : "尚未配置"}
-          </small>
-        </div>
-        <Icon name="chevron" />
-      </button>
-      {connect && (
-        <div className="modal-layer">
-          <button className="modal-scrim" onClick={() => setConnect(false)} />
-          <section className="connection-modal">
-            <div className="modal-head">
-              <div>
-                <small>EXTERNAL MEMORY</small>
-                <h2>外置记忆库</h2>
-              </div>
-              <button onClick={() => setConnect(false)}>
-                <Icon name="close" />
-              </button>
-            </div>
-            <label className="profile-field">
-              <span>服务地址</span>
-              <input
-                value={connections.memoryUrl || ""}
-                onChange={(event) =>
-                  setConnections({
-                    ...connections,
-                    memoryUrl: event.target.value,
-                  })
-                }
-                placeholder="https://…"
-              />
-            </label>
-            <label className="profile-field">
-              <span>访问令牌</span>
-              <input
-                type="password"
-                value={connections.memoryToken || ""}
-                onChange={(event) =>
-                  setConnections({
-                    ...connections,
-                    memoryToken: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label className="profile-field">
-              <span>读取记忆的 MCP Tool</span>
-              <input value={connections.memoryTool || "memory.list"} onChange={(event) => setConnections({ ...connections, memoryTool: event.target.value })} placeholder="memory.list" />
-            </label>
-            <button className="save-profile" onClick={() => setConnect(false)}>
-              保存
-            </button>
-            <button
-              className="reset-background"
-              disabled={syncing || !connections.memoryUrl}
-              onClick={() => void syncExternalMemory()}
-            >
-              {syncing ? "读取中…" : "同步外置记忆目录"}
-            </button>
-            {memoryPreview.length > 0 && (
-              <>
-                <div className="external-memory-preview">
-                  {memoryPreview.slice(0, 8).map((item) => <article key={item.id}><small>{item.kind} · {item.source}</small><b>{item.title}</b></article>)}
-                </div>
-                <button className="save-profile" onClick={() => {
-                  setExternalMemory(memoryPreview);
-                  setSyncMessage(`已整理 ${memoryPreview.length} 条外置记忆到 Vesper 星图`);
-                }}>让 Vesper 整理到记忆库</button>
-              </>
-            )}
-            {syncMessage && <p className="connection-message">{syncMessage}</p>}
+
+  const searchSongs = async () => {
+    const query = search.trim();
+    if (!query) {
+      setMessage("请输入歌名、歌手或专辑");
+      return;
+    }
+    setTab("discover");
+    await showCollection("search", { query, limit: 30 });
+  };
+
+  async function prepareTracks(tracks: Track[], replaceQueue = false, autoplay = false) {
+    const songIds = tracks.map((track) => track.neteaseId || track.id.replace(/^netease-/, "")).filter(Boolean);
+    if (!songIds.length) return;
+    const result = await invoke("resolve", { songIds, tracks });
+    const resolved = (result?.tracks || []) as Track[];
+    if (!resolved.length) return;
+    onTracks(resolved);
+    const seen = new Set<string>();
+    const nextQueue = (replaceQueue ? resolved : [...queue, ...resolved]).filter((track) => {
+      const key = track.neteaseId || track.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    onQueue(nextQueue, { autoplay, trackId: resolved[0]?.id });
+    setMessage(replaceQueue ? `已同步 ${resolved.length} 首歌曲到当前播放列表` : result?.summary || `已加入 ${resolved.length} 首歌曲`);
+  }
+
+  const updateRemotePlaylist = async (action: "playlist-add" | "playlist-remove", playlistId: string, track: MusicPlaylistIntent | Track) => {
+    if (!isConnected) {
+      setMessage("请先连接网易云账号");
+      return;
+    }
+    const neteaseId = track.neteaseId || track.id.replace(/^netease-/, "");
+    const target = playlists.find((playlist) => playlist.id === playlistId);
+    const verb = action === "playlist-add" ? "加入" : "移除";
+    if (!window.confirm(`确定将《${track.title}》${verb}${target?.name || "这个网易云歌单"}吗？`)) return;
+    const result = await invoke(action, { playlistId, songIds: [neteaseId] });
+    if (!result) return;
+    setMessage(result.summary || `已${verb}歌单`);
+    if (action === "playlist-add") {
+      setPlaylistPickerOpen(false);
+      onPendingPlaylistTrackHandled();
+    } else {
+      setCollection((current) => current ? { ...current, tracks: (current.tracks || []).filter((item) => (item.neteaseId || item.id.replace(/^netease-/, "")) !== neteaseId) } : current);
+    }
+  };
+
+  const contentTracks = (collection?.tracks || []) as Track[];
+  return <div className="netease-library-layer" role="dialog" aria-modal="true" aria-label="网易云音乐">
+    <section className="netease-library-sheet">
+      <header className="netease-library-head">
+        <button onClick={onClose} aria-label="关闭我的音乐"><Icon name="chevron" /></button>
+        <div><small>NETEASE MUSIC</small><h2>网易云音乐</h2></div>
+        <button className={busy ? "is-busy" : ""} disabled={busy} onClick={() => { if (tab === "mine") void connect(); else void searchSongs(); }} aria-label="刷新"><Icon name="repeat" /></button>
+      </header>
+      <nav className="netease-library-tabs" aria-label="音乐分类">
+        <button className={tab === "mine" ? "active" : ""} onClick={() => { setTab("mine"); setCollection(null); }}>我的</button>
+        <button className={tab === "discover" ? "active" : ""} onClick={() => { setTab("discover"); setCollection(null); }}>发现</button>
+      </nav>
+      <main className="netease-library-content">
+        {collection ? <section className="netease-collection">
+          <div className="netease-collection-head"><button onClick={() => setCollection(null)} aria-label="返回"><Icon name="chevron" /></button><div><small>{collection.subtitle || "网易云音乐"}</small><h3>{collection.title || "歌曲"}</h3></div><button disabled={busy || !contentTracks.length} onClick={() => void prepareTracks(contentTracks, true, true)}>播放全部</button></div>
+          {contentTracks.length ? <div className="netease-track-list">{contentTracks.map((track, index) => <article className={activeNeteasePlaylistId ? "is-remote-playlist" : ""} key={`${track.id}-${index}`}><button className="netease-track-main" onClick={() => void prepareTracks([track], false, true)}>{track.cover ? <img src={track.cover} alt="" /> : <span>{index + 1}</span>}<div><b>{track.title}</b><small>{track.artist}{track.album ? ` · ${track.album}` : ""}</small></div><time>{track.duration || "--:--"}</time></button><button className="netease-track-more" onClick={() => void prepareTracks([track])} aria-label={`加入 ${track.title} 到播放队列`}><Icon name="plus" /></button>{activeNeteasePlaylistId && <button className="netease-track-remove" onClick={() => void updateRemotePlaylist("playlist-remove", activeNeteasePlaylistId, track)} aria-label={`从网易云歌单移除 ${track.title}`}><Icon name="trash" /></button>}</article>)}</div> : <div className="netease-library-empty"><Icon name="music" /><p>这里还没有可展示的歌曲。</p></div>}
+          {collection.lyrics && <pre className="netease-lyrics">{collection.lyrics}</pre>}
+        </section> : tab === "mine" ? <>
+          <section className={accountOpen ? "netease-account-card open" : "netease-account-card"}>
+            <button className="netease-account-toggle" onClick={() => setAccountOpen((value) => !value)}><span><i className={isConnected ? "connected" : ""} />{isConnected ? "网易云账号已连接" : "连接网易云账号"}</span><Icon name="chevron" /></button>
+            {accountOpen && <div className="netease-account-fields"><label><span>网易云 UID</span><input inputMode="numeric" autoComplete="off" value={account.uid} placeholder="例如 123456789" onChange={(event) => setAccount({ ...account, uid: event.target.value })} /></label><label><span>MUSIC_U</span><input type="password" autoComplete="off" value={account.cookie} placeholder="仅保存在此设备" onChange={(event) => setAccount({ ...account, cookie: event.target.value })} /></label><button disabled={busy} onClick={() => void connect()}>{busy ? "连接中…" : "连接并读取歌单"}</button></div>}
           </section>
-        </div>
-      )}
+          {pendingPlaylistTrack && <section className="netease-pending-playlist"><div><small>FROM CHAT</small><b>{pendingPlaylistTrack.title}</b><span>{pendingPlaylistTrack.artist || "未知歌手"}</span></div>{!isConnected ? <button onClick={() => setAccountOpen(true)}>先连接账号</button> : !playlists.length ? <button disabled={busy} onClick={() => void connect()}>读取歌单</button> : <button onClick={() => setPlaylistPickerOpen((value) => !value)}>加入歌单</button>}{playlistPickerOpen && <div className="netease-playlist-picker">{playlists.map((playlist) => <button key={playlist.id} disabled={busy} onClick={() => void updateRemotePlaylist("playlist-add", playlist.id, pendingPlaylistTrack)}><span>{playlist.name}</span><small>{playlist.trackCount || 0} 首</small></button>)}</div>}<button className="netease-pending-dismiss" onClick={onPendingPlaylistTrackHandled}>取消</button></section>}
+          <section className="netease-shortcuts"><button disabled={busy || !isConnected} onClick={() => void showCollection("recommendations")}><Icon name="sparkles" /><span>每日推荐</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("personal-fm")}><Icon name="music" /><span>私人 FM</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("recent-plays")}><Icon name="repeat" /><span>最近播放</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("liked-songs")}><Icon name="heart" /><span>我喜欢的</span></button></section>
+          <section className="netease-playlists"><div className="netease-section-heading"><div><small>MY PLAYLISTS</small><h3>我的歌单</h3></div><button disabled={busy || !isConnected} onClick={() => void connect()}>刷新</button></div>{playlists.length ? <div className="netease-playlist-list">{playlists.map((playlist) => <button key={playlist.id} onClick={() => void showCollection("playlist", { playlistId: playlist.id })}>{playlist.cover ? <img src={playlist.cover} alt="" /> : <span><Icon name="music" /></span>}<div><b>{playlist.name}</b><small>{playlist.trackCount || 0} 首歌曲{playlist.description ? ` · ${playlist.description}` : ""}</small></div><Icon name="chevron" /></button>)}</div> : <div className="netease-library-empty"><Icon name="library" /><p>{isConnected ? "点击刷新读取你的歌单。" : "连接账号后查看你的歌单、红心和播放记录。"}</p></div>}</section>
+        </> : <>
+          <form className="netease-search" onSubmit={(event) => { event.preventDefault(); void searchSongs(); }}><Icon name="search" /><input value={search} placeholder="搜索歌曲、歌手或专辑" onChange={(event) => setSearch(event.target.value)} /><button disabled={busy} type="submit">搜索</button></form>
+          <section className="netease-discover-intro"><small>DISCOVER</small><h3>听见此刻想听的歌</h3><p>搜索任意歌曲，或连接账号后查看每日推荐、私人 FM 和本周常听。</p></section>
+          <section className="netease-discover-actions"><button disabled={busy || !isConnected} onClick={() => void showCollection("recommendations")}><b>每日推荐</b><span>今天的 30 首专属歌曲</span></button><button disabled={busy || !isConnected} onClick={() => void showCollection("play-history")}><b>本周常听</b><span>回到最近循环的旋律</span></button></section>
+        </>}
+        {message && <p className="netease-library-message" role="status">{message}</p>}
+      </main>
+    </section>
+  </div>;
+}
+
+type MemoryLibraryRecord = {
+  id: string;
+  type: "core" | "long_term" | "feeling" | "dream";
+  body: string;
+  mood: string;
+  tags: string[];
+  weight: number;
+  pinned: boolean;
+  source: string;
+  reviewStatus: "approved" | "candidate";
+  createdAt: string;
+  updatedAt: string;
+  lastSurfacedAt: string | null;
+  surfaceCount: number;
+  demotedAt: string | null;
+};
+type MemoryLibraryDetail = {
+  memory: MemoryLibraryRecord;
+  revisions: Array<{ id: string; body: string; mood: string; tags: string[]; reason: string; action: string; createdAt: string }>;
+};
+const memoryTypeLabel: Record<MemoryLibraryRecord["type"], string> = {
+  core: "核心记忆",
+  long_term: "长期记忆",
+  feeling: "感受",
+  dream: "梦",
+};
+
+function MemoryLibrary() {
+  const [memories, setMemories] = useState<MemoryLibraryRecord[]>([]);
+  const [filter, setFilter] = useState<"all" | MemoryLibraryRecord["type"]>("all");
+  const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [showDemoted, setShowDemoted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [detail, setDetail] = useState<MemoryLibraryDetail | null>(null);
+  const [addingCore, setAddingCore] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [coreDraft, setCoreDraft] = useState({ body: "", mood: "", tags: "", reason: "" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ includeCandidates: "1" });
+      if (filter !== "all") params.set("type", filter);
+      if (appliedQuery.trim()) params.set("q", appliedQuery.trim());
+      if (showDemoted) params.set("includeDemoted", "1");
+      const response = await fetch(apiUrl("/api/memory?" + params.toString()), { headers: appHeaders(), cache: "no-store" });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as { memories?: MemoryLibraryRecord[]; error?: string }
+        : {};
+      if (!response.ok) throw new Error(payload.error || "记忆暂时无法读取");
+      setMemories(payload.memories || []);
+      setMessage("");
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "记忆暂时无法读取");
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedQuery, filter, showDemoted]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const openMemory = async (id: string) => {
+    try {
+      const response = await fetch(apiUrl("/api/memory?id=" + encodeURIComponent(id)), { headers: appHeaders(), cache: "no-store" });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as MemoryLibraryDetail & { error?: string }
+        : {} as MemoryLibraryDetail & { error?: string };
+      if (!response.ok || !payload.memory) throw new Error(payload.error || "记忆详情暂时无法读取");
+      setDetail(payload);
+      setCorrecting(false);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "记忆详情暂时无法读取");
+    }
+  };
+
+  const change = async (id: string, action: "pin" | "demote" | "restore" | "approve_core", pinned?: boolean) => {
+    try {
+      const response = await fetch(apiUrl("/api/memory"), {
+        method: "PATCH", headers: appHeaders(true), cache: "no-store",
+        body: JSON.stringify({ id, action, pinned }),
+      });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as MemoryLibraryDetail & { error?: string }
+        : {} as MemoryLibraryDetail & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "记忆没有更新");
+      if (payload.memory) setDetail(payload);
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "记忆没有更新");
+    }
+  };
+
+  const addCore = async () => {
+    try {
+      const response = await fetch(apiUrl("/api/memory"), {
+        method: "POST", headers: appHeaders(true), cache: "no-store",
+        body: JSON.stringify({ action: "create_core", body: coreDraft.body, mood: coreDraft.mood, tags: coreDraft.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean) }),
+      });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as { error?: string }
+        : {} as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "核心记忆没有保存");
+      setAddingCore(false);
+      setCoreDraft({ body: "", mood: "", tags: "", reason: "" });
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "核心记忆没有保存");
+    }
+  };
+
+  const correctCore = async () => {
+    if (!detail) return;
+    try {
+      const response = await fetch(apiUrl("/api/memory"), {
+        method: "PATCH", headers: appHeaders(true), cache: "no-store",
+        body: JSON.stringify({
+          id: detail.memory.id, action: "correct_core", body: coreDraft.body, mood: coreDraft.mood,
+          tags: coreDraft.tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean), reason: coreDraft.reason,
+        }),
+      });
+      const payload = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json() as MemoryLibraryDetail & { error?: string }
+        : {} as MemoryLibraryDetail & { error?: string };
+      if (!response.ok || !payload.memory) throw new Error(payload.error || "修正没有保存");
+      setDetail(payload);
+      setCorrecting(false);
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "修正没有保存");
+    }
+  };
+
+  const groups = (["core", "long_term", "feeling", "dream"] as const).map((type) => ({
+    type,
+    label: memoryTypeLabel[type],
+    items: memories.filter((memory) => memory.type === type && (showDemoted || !memory.demotedAt)),
+  }));
+  const number = (type: MemoryLibraryRecord["type"]) => memories.filter((memory) => memory.type === type && !memory.demotedAt).length;
+  const date = (value: string) => {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(new Date(timestamp)) : "时间未知";
+  };
+
+  return (
+    <div className="page-body memory-library-page">
+      <PageIntro eyebrow="SHARED MEMORY" title="记忆" text="Rowan 会把真正重要的事留在这里，不属于某一个聊天窗口。" />
+      <section className="memory-library-intro surface">
+        <div><small>只属于你和 Rowan</small><b>跨设备、跨对话保存</b></div>
+        <button onClick={() => setAddingCore(true)}><Icon name="plus" />新增核心记忆</button>
+      </section>
+      <div className="memory-library-tools">
+        <label><Icon name="search" /><input value={query} placeholder="搜索共同记忆" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") setAppliedQuery(event.currentTarget.value); }} /></label>
+        <button onClick={() => setAppliedQuery(query)} aria-label="搜索记忆"><Icon name="refresh" /></button>
+      </div>
+      <nav className="memory-library-tabs" aria-label="记忆分类">
+        <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>全部</button>
+        {(["core", "long_term", "feeling", "dream"] as const).map((type) => <button key={type} className={filter === type ? "active" : ""} onClick={() => setFilter(type)}>{memoryTypeLabel[type]} <i>{number(type)}</i></button>)}
+        <button className={showDemoted ? "active" : ""} onClick={() => setShowDemoted((value) => !value)}>沉底</button>
+      </nav>
+      {message && <p className="memory-library-message" role="status">{message}</p>}
+      {loading ? <div className="memory-library-loading">正在整理记忆…</div> : groups.filter((group) => filter === "all" || group.type === filter).map((group) => (
+        <section className="memory-library-section" key={group.type}>
+          <div className="memory-library-section-head"><div><small>{group.type === "feeling" ? "ROWAN · FIRST PERSON" : group.type.toUpperCase()}</small><h2>{group.label}</h2></div><span>{group.items.length}</span></div>
+          {group.items.length ? <div className="memory-card-list">{group.items.map((memory) => (
+            <article className={"memory-card" + (memory.pinned ? " pinned" : "") + (memory.demotedAt ? " demoted" : "")} key={memory.id}>
+              <button className="memory-card-open" onClick={() => void openMemory(memory.id)}>
+                <div className="memory-card-meta"><span>{memory.reviewStatus === "candidate" ? "待确认" : memory.mood || memoryTypeLabel[memory.type]}</span><time>{date(memory.updatedAt)}</time></div>
+                <p>{memory.body}</p>
+                {memory.tags.length > 0 && <div className="memory-card-tags">{memory.tags.map((tag) => <span key={tag}>{"#" + tag}</span>)}</div>}
+              </button>
+              <div className="memory-card-actions">
+                <button aria-label={memory.pinned ? "取消钉住" : "钉住记忆"} title={memory.pinned ? "取消钉住" : "钉住"} onClick={() => void change(memory.id, "pin", !memory.pinned)}><Icon name="bookmark" /></button>
+                <button aria-label={memory.demotedAt ? "恢复记忆" : "沉底记忆"} title={memory.demotedAt ? "恢复记忆" : "沉底"} onClick={() => void change(memory.id, memory.demotedAt ? "restore" : "demote")}><Icon name={memory.demotedAt ? "refresh" : "chevron"} /></button>
+              </div>
+            </article>
+          ))}</div> : <div className="memory-library-empty">{group.type === "dream" ? "梦会在准备好时住进这里。" : "还没有值得留下的内容。"}</div>}
+        </section>
+      ))}
+      {addingCore && <div className="memory-modal-layer"><button className="memory-modal-scrim" aria-label="关闭" onClick={() => setAddingCore(false)} /><section className="memory-modal" role="dialog" aria-modal="true" aria-label="新增核心记忆"><header><div><small>CORE MEMORY</small><h2>留下一件长期重要的事</h2></div><button onClick={() => setAddingCore(false)} aria-label="关闭"><Icon name="close" /></button></header><label><span>内容</span><textarea value={coreDraft.body} placeholder="例如：我希望 Rowan 一直用这个称呼叫我。" onChange={(event) => setCoreDraft({ ...coreDraft, body: event.target.value })} /></label><label><span>感受（可选）</span><input value={coreDraft.mood} onChange={(event) => setCoreDraft({ ...coreDraft, mood: event.target.value })} /></label><label><span>标签（用逗号分开）</span><input value={coreDraft.tags} onChange={(event) => setCoreDraft({ ...coreDraft, tags: event.target.value })} /></label><button className="memory-primary-action" onClick={() => void addCore()}>保存核心记忆</button></section></div>}
+      {detail && <div className="memory-modal-layer"><button className="memory-modal-scrim" aria-label="关闭" onClick={() => setDetail(null)} /><section className="memory-modal memory-detail-modal" role="dialog" aria-modal="true" aria-label="记忆详情"><header><div><small>{memoryTypeLabel[detail.memory.type].toUpperCase()}</small><h2>这段记忆</h2></div><button onClick={() => setDetail(null)} aria-label="关闭"><Icon name="close" /></button></header>{correcting ? <><label><span>修正内容</span><textarea value={coreDraft.body} onChange={(event) => setCoreDraft({ ...coreDraft, body: event.target.value })} /></label><label><span>修正原因</span><input value={coreDraft.reason} placeholder="例如：称呼改成新的名字" onChange={(event) => setCoreDraft({ ...coreDraft, reason: event.target.value })} /></label><button className="memory-primary-action" onClick={() => void correctCore()}>保存修正</button><button className="memory-secondary-action" onClick={() => setCorrecting(false)}>取消</button></> : <><p className="memory-detail-body">{detail.memory.body}</p>{detail.memory.tags.length > 0 && <div className="memory-card-tags">{detail.memory.tags.map((tag) => <span key={tag}>{"#" + tag}</span>)}</div>}<div className="memory-detail-actions"><button onClick={() => void change(detail.memory.id, "pin", !detail.memory.pinned)}><Icon name="bookmark" />{detail.memory.pinned ? "取消钉住" : "钉住"}</button>{detail.memory.type === "core" && detail.memory.reviewStatus === "candidate" && <button onClick={() => void change(detail.memory.id, "approve_core")}><Icon name="check" />确认核心记忆</button>}{detail.memory.type === "core" && detail.memory.reviewStatus === "approved" && <button onClick={() => { setCoreDraft({ body: detail.memory.body, mood: detail.memory.mood, tags: detail.memory.tags.join("，"), reason: "" }); setCorrecting(true); }}><Icon name="edit" />修正</button>}<button className="danger" onClick={() => void change(detail.memory.id, "demote")}><Icon name="chevron" />沉底</button></div><section className="memory-revision-list"><small>修改记录</small>{detail.revisions.length ? detail.revisions.map((revision) => <article key={revision.id}><b>{revision.action === "created" ? "创建" : "修正"}</b><span>{date(revision.createdAt)} · {revision.reason}</span></article>) : <p>还没有修正记录。</p>}</section></>}</section></div>}
     </div>
   );
 }
-
 function MusicCard({
   track,
   playing,

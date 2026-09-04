@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     });
     if (body.clientSecret) form.set("client_secret", body.clientSecret);
     if (body.resource) form.set("resource", body.resource);
-    const response = await fetch(tokenUrl, {
+    const response = await globalThis.fetch(tokenUrl.toString(), {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",

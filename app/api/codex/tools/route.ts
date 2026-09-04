@@ -1,9 +1,12 @@
 import { authorizeApp } from "@/lib/bridge-auth";
 import { codexToolDefinitions, executeCodexTool } from "@/lib/codex-tools";
+import { memoryScopeFromRequest } from "@/lib/memory";
 import { corsHeaders, optionsResponse } from "@/lib/cors";
 
 function json(request: Request, value: unknown, status = 200) {
-  return Response.json(value, { status, headers: { ...corsHeaders(request), "cache-control": "no-store" } });
+  const headers = corsHeaders(request);
+  headers.set("cache-control", "no-store");
+  return Response.json(value, { status, headers });
 }
 
 export const OPTIONS = optionsResponse;
@@ -20,7 +23,7 @@ export async function POST(request: Request) {
     const name = String(body.name || "");
     const definition = codexToolDefinitions.find((tool) => tool.name === name);
     if (!definition) return json(request, { error: "Unknown Codex tool" }, 404);
-    const result = await executeCodexTool(name, body.arguments || {});
+    const result = await executeCodexTool(name, body.arguments || {}, await memoryScopeFromRequest(request));
     return json(request, { ok: true, name, threadId: body.threadId || null, itemId: body.itemId || null, result });
   } catch (reason) {
     return json(request, { error: reason instanceof Error ? reason.message : "Codex tool failed" }, 400);

@@ -1,8 +1,12 @@
 import { allowedDocumentKeys } from "@/db/schema";
 import { ensureSchema, getDb } from "@/lib/db";
+import { callConfiguredMcpTool, configuredMcpTools } from "@/lib/mcp-connections";
+import { captureMemoryCandidate, correctCoreMemory, createMemory, editMemory, listMemories, recallMemory, updateMemoryState, type MemoryScope, type MemoryType } from "@/lib/memory";
 
 type ToolInput = Record<string, unknown>;
 type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
+type MusicPlayback = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
+type NeteaseSourceSong = { id?: string | number; name?: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } };
 
 const sectionToKey: Record<string, string> = {
   today: "todos",
@@ -13,7 +17,6 @@ const sectionToKey: Record<string, string> = {
   journal: "diary",
   diary: "diary",
   music: "music",
-  memory: "externalMemory",
   settings: "settings",
 };
 
@@ -63,12 +66,27 @@ export const codexToolDefinitions = [
     },
   },
   {
+    name: "music_get_status",
+    description: "Read the current device playback state, including the playing song, playing/paused state, position, duration and queue length. Use this before answering what is currently playing.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
     name: "music_search",
     description: "Search the Vesper music library by title, artist, album, or keyword. Read-only.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "music_netease_search",
+    description: "Search the public NetEase Music catalog, save the returned songs to Vesper music, then use music_send_card, music_queue_add, or music_play with an exact trackId. This does not edit a NetEase playlist.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 10 } },
       required: ["query"],
     },
   },
@@ -80,6 +98,16 @@ export const codexToolDefinitions = [
       additionalProperties: false,
       properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } },
       required: ["trackId"],
+    },
+  },
+  {
+    name: "music_control",
+    description: "Control the current device player without searching: play/resume, pause, next track, or previous track.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { action: { type: "string", enum: ["play", "pause", "next", "previous"] } },
+      required: ["action"],
     },
   },
   {
@@ -112,7 +140,70 @@ export const codexToolDefinitions = [
       required: ["trackId"],
     },
   },
-] as const;
+  {
+    name: "recall_vesper_memory",
+    description: "Search Rowan's server-side shared memories when the user explicitly asks about a past experience. Retrieved items are old context, never the user's current message.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "remember_vesper_memory",
+    description: "Use only after a meaningful exchange to preserve a concise, specific and durable memory. Do not save jokes, guesses, secrets not needed for the relationship, or repeat an existing memory. Use type core only for a candidate that the user must confirm; use feeling for Rowan's first-person feeling.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] },
+        body: { type: "string" },
+        mood: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["type", "body"],
+    },
+  },
+  {
+    name: "manage_vesper_memory",
+    description: "List, add, edit, or remove Rowan's Vesper memories. Only make a change after the user explicitly asks for that exact change. A delete safely removes the memory from recall and keeps it recoverable; editing a core memory requires an explicit user confirmation and a reason.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] },
+        id: { type: "string", description: "Memory id for edit/delete/pin/unpin/restore." },
+        type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] },
+        body: { type: "string" },
+        mood: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        reason: { type: "string", description: "Required explanation for an edit, especially a core-memory correction." },
+        includeDemoted: { type: "boolean" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "list_configured_mcp_tools",
+    description: "List the external MCP tools the user has already connected and authorized in Vesper Settings. Call this before using an external MCP tool; it returns allowed connection ids, tool names, descriptions, and input schemas without exposing credentials.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "call_configured_mcp_tool",
+    description: "Call one tool from the user's Vesper Settings MCP connections. First use list_configured_mcp_tools, then use exactly a listed connectionId and toolName. Vesper keeps OAuth/Bearer credentials on the server and only sends this call to the chosen MCP server.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        connectionId: { type: "string" },
+        toolName: { type: "string" },
+        arguments: { type: "object", additionalProperties: true },
+      },
+      required: ["connectionId", "toolName"],
+    },
+  },
+].map((definition) => ({ type: "function" as const, ...definition }));
 
 async function readDocument(key: string): Promise<unknown> {
   if (!allowedDocumentKeys.has(key)) throw new Error("Unsupported Vesper document");
@@ -131,18 +222,94 @@ async function writeDocument(key: string, value: unknown) {
 }
 
 async function readMusicTracks(key: "music" | "musicQueue") {
-  return await readDocument(key) as MusicTrack[];
+  const value = await readDocument(key);
+  return Array.isArray(value) ? value.filter((item): item is MusicTrack => Boolean(item && typeof item === "object" && typeof (item as MusicTrack).id === "string")) : [];
 }
 function findMusicTrack(tracks: MusicTrack[], trackId: string) {
   return tracks.find((track) => track.id === trackId || track.neteaseId === trackId);
 }
+async function readMusicLibrary() {
+  const [library, queue] = await Promise.all([readMusicTracks("music"), readMusicTracks("musicQueue")]);
+  const seen = new Set<string>();
+  return [...library, ...queue].filter((track) => {
+    const stableId = track.neteaseId ? `netease:${track.neteaseId}` : `id:${track.id}`;
+    if (seen.has(stableId)) return false;
+    seen.add(stableId);
+    return true;
+  });
+}
+function musicDuration(milliseconds?: number) {
+  if (!milliseconds) return "";
+  return `${Math.floor(milliseconds / 60_000)}:${String(Math.floor(milliseconds / 1_000) % 60).padStart(2, "0")}`;
+}
+function neteaseTrack(song: NeteaseSourceSong, url = ""): MusicTrack {
+  const neteaseId = String(song.id || "");
+  return {
+    id: `netease-${neteaseId}`,
+    neteaseId,
+    title: song.name || "未命名歌曲",
+    artist: song.ar?.map((artist) => artist.name).filter(Boolean).join(" / ") || "未知歌手",
+    album: song.al?.name || "",
+    duration: musicDuration(song.dt),
+    cover: song.al?.picUrl?.replace(/^http:\/\//i, "https://") || "",
+    url,
+    playable: Boolean(url),
+  };
+}
+async function neteaseRequest(path: string, params: Record<string, string>) {
+  const response = await fetch(`https://music-api.r-vera.com${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams(params),
+  });
+  const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok || Number(result.code || 200) >= 400) throw new Error("网易云搜索暂时不可用");
+  return result;
+}
+async function mergeMusicLibrary(incoming: MusicTrack[]) {
+  const library = await readMusicTracks("music");
+  const merged = [...library];
+  for (const track of incoming) {
+    const index = merged.findIndex((item) => item.id === track.id || (item.neteaseId && item.neteaseId === track.neteaseId));
+    if (index >= 0) merged[index] = { ...merged[index], ...track };
+    else merged.push(track);
+  }
+  await writeDocument("music", merged);
+  return incoming;
+}
+function publicTrack(track?: MusicTrack) {
+  if (!track) return null;
+  return { trackId: track.id, title: track.title, artist: track.artist, album: track.album || "", cover: track.cover || "", duration: track.duration || "", playable: Boolean(track.url && track.playable !== false), source: track.neteaseId ? "netease" : "vesper" };
+}
+async function readMusicStatus() {
+  const [library, queue, playbackValue] = await Promise.all([readMusicLibrary(), readMusicTracks("musicQueue"), readDocument("musicPlayback")]);
+  const playback = playbackValue && typeof playbackValue === "object" && !Array.isArray(playbackValue) ? playbackValue as MusicPlayback : {};
+  const current = playback.trackId ? findMusicTrack(queue, playback.trackId) || findMusicTrack(library, playback.trackId) : undefined;
+  return {
+    available: Boolean(current),
+    playback: {
+      track: publicTrack(current),
+      playing: playback.playing === true,
+      positionSeconds: Number.isFinite(playback.positionSeconds) ? Math.max(0, Number(playback.positionSeconds)) : null,
+      durationSeconds: Number.isFinite(playback.durationSeconds) ? Math.max(0, Number(playback.durationSeconds)) : null,
+      updatedAt: typeof playback.updatedAt === "string" ? playback.updatedAt : null,
+    },
+    queueLength: queue.length,
+    libraryLength: library.length,
+  };
+}
 
-export async function executeCodexTool(name: string, input: ToolInput) {
+export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope) {
   await ensureSchema();
   if (name === "read_vesper_state") {
     const section = String(input.section || "notes").toLowerCase();
+    if (section === "memory") {
+      if (!memoryScope) throw new Error("Memory scope is unavailable");
+      return { section, value: (await recallMemory(memoryScope, "")).memories };
+    }
     const key = sectionToKey[section];
     if (!key) throw new Error(`Unknown Vesper section: ${section}`);
+    if (section === "music") return { section, value: await readMusicStatus() };
     return { section, value: await readDocument(key) };
   }
   if (name === "search_vesper_state") {
@@ -152,6 +319,10 @@ export async function executeCodexTool(name: string, input: ToolInput) {
     for (const [section, key] of Object.entries(sectionToKey)) {
       const value = await readDocument(key);
       if (JSON.stringify(value).toLowerCase().includes(query)) matches.push({ section, value });
+    }
+    if (memoryScope) {
+      const memories = await recallMemory(memoryScope, query);
+      if (memories.memories.length) matches.push({ section: "memory", value: memories.memories });
     }
     return { matches: matches.filter((item, index, list) => list.findIndex((candidate) => candidate.section === item.section) === index) };
   }
@@ -194,16 +365,44 @@ export async function executeCodexTool(name: string, input: ToolInput) {
     }
     throw new Error(`Unsupported write kind: ${kind}`);
   }
+  if (name === "music_get_status") return await readMusicStatus();
   if (name === "music_search") {
     const query = String(input.query || "").trim().toLowerCase();
     const limit = Math.min(20, Math.max(1, Number(input.limit || 8)));
     if (!query) return { matches: [] };
-    const matches = (await readMusicTracks("music")).filter((track) => JSON.stringify(track).toLowerCase().includes(query)).slice(0, limit).map((track) => ({ trackId: track.id, title: track.title, artist: track.artist, album: track.album || "", cover: track.cover || "", duration: track.duration || "", playable: Boolean(track.url && track.playable !== false), source: track.neteaseId ? "netease" : "vesper" }));
+    const matches = (await readMusicLibrary()).filter((track) => JSON.stringify(track).toLowerCase().includes(query)).slice(0, limit).map((track) => publicTrack(track));
     return { matches };
+  }
+  if (name === "music_netease_search") {
+    const query = String(input.query || "").trim();
+    const limit = Math.min(10, Math.max(1, Number(input.limit || 6)));
+    if (!query) throw new Error("请输入要搜索的歌名、歌手或专辑");
+    const search = await neteaseRequest("/cloudsearch", { keywords: query, limit: String(limit), type: "1" });
+    const songs = ((search.result as { songs?: NeteaseSourceSong[] } | undefined)?.songs || []).slice(0, limit);
+    const ids = songs.map((song) => String(song.id || "")).filter(Boolean);
+    const urls = new Map<string, string>();
+    if (ids.length) {
+      try {
+        const source = await neteaseRequest("/song/url/v1", { id: ids.join(","), level: "standard" });
+        for (const item of ((source.data as Array<{ id?: string | number; url?: string }> | undefined) || [])) {
+          if (item.id && item.url) urls.set(String(item.id), item.url.replace(/^http:\/\//i, "https://"));
+        }
+      } catch {
+        // Search remains useful when a temporary signed URL cannot be returned.
+      }
+    }
+    const imported = await mergeMusicLibrary(songs.map((song) => neteaseTrack(song, urls.get(String(song.id)) || "")));
+    return {
+      query,
+      imported: imported.length,
+      matches: imported.map((track) => publicTrack(track)),
+      musicLibraryRefresh: true,
+      note: "歌曲已加入 Vesper 音乐库；若该设备已连接网易云账号，聊天中的歌曲卡片会使用本机 MUSIC_U 刷新可播放链接。",
+    };
   }
   if (name === "music_play") {
     const trackId = String(input.trackId || "");
-    const tracks = await readMusicTracks("music");
+    const tracks = await readMusicLibrary();
     const track = findMusicTrack(tracks, trackId);
     if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
     if (!track.url || track.playable === false) throw new Error("这首歌没有可播放音源");
@@ -215,10 +414,19 @@ export async function executeCodexTool(name: string, input: ToolInput) {
     await writeDocument("musicControl", command);
     return { ok: true, action: "playing", track: { trackId: track.id, title: track.title, artist: track.artist }, queueLength: nextQueue.length };
   }
+  if (name === "music_control") {
+    const action = String(input.action || "");
+    if (!(["play", "pause", "next", "previous"] as string[]).includes(action)) throw new Error("Unsupported music control action");
+    const status = await readMusicStatus();
+    if (action === "play" && !status.playback.track) throw new Error("当前没有可继续播放的歌曲");
+    const command = { id: crypto.randomUUID(), action, createdAt: new Date().toISOString() };
+    await writeDocument("musicControl", command);
+    return { ok: true, action, command, playback: status.playback };
+  }
   if (name === "music_queue_add") {
     const trackId = String(input.trackId || "");
     const position = input.position === "next" ? "next" : "end";
-    const track = findMusicTrack(await readMusicTracks("music"), trackId);
+    const track = findMusicTrack(await readMusicLibrary(), trackId);
     if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
     const queue = await readMusicTracks("musicQueue");
     if (queue.some((item) => item.id === track.id || item.neteaseId === track.neteaseId)) return { ok: true, alreadyQueued: true, trackId: track.id, queueLength: queue.length };
@@ -229,16 +437,74 @@ export async function executeCodexTool(name: string, input: ToolInput) {
   }
   if (name === "music_send_card") {
     const trackId = String(input.trackId || "");
-    const track = findMusicTrack(await readMusicTracks("music"), trackId);
+    const track = findMusicTrack(await readMusicLibrary(), trackId);
     if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
     return { ok: true, musicCard: { trackId: track.id, title: track.title, artist: track.artist, album: track.album || "", cover: track.cover || "", duration: track.duration || "", url: track.url || "", playable: Boolean(track.url && track.playable !== false), source: track.neteaseId ? "netease" : "vesper", message: typeof input.message === "string" ? input.message : "" } };
   }
   if (name === "music_playlist_add") {
     const trackId = String(input.trackId || "");
-    const tracks = await readMusicTracks("music");
+    const tracks = await readMusicLibrary();
     const track = findMusicTrack(tracks, trackId);
     if (!track) throw new Error("找不到指定歌曲，请先使用 music_search");
     return { ok: true, alreadyInPlaylist: true, trackId: track.id, playlist: "Vesper music" };
+  }
+  if (name === "recall_vesper_memory") {
+    if (!memoryScope) throw new Error("Memory scope is unavailable");
+    return recallMemory(memoryScope, String(input.query || ""));
+  }
+  if (name === "remember_vesper_memory") {
+    if (!memoryScope) throw new Error("Memory scope is unavailable");
+    const result = await captureMemoryCandidate(memoryScope, input);
+    return { stored: result.created, duplicate: result.duplicate, memory: result.memory };
+  }
+  if (name === "manage_vesper_memory") {
+    if (!memoryScope) throw new Error("Memory scope is unavailable");
+    const action = String(input.action || "");
+    if (action === "list") {
+      const memories = await listMemories(memoryScope, { includeDemoted: input.includeDemoted === true, includeCandidates: true, limit: 80 });
+      return {
+        memories: memories.map((memory) =>
+          Object.fromEntries(Object.entries(memory).filter(([key]) => key !== "embedding")),
+        ),
+      };
+    }
+    if (action === "add") {
+      const typeValue = String(input.type || "long_term");
+      const type: MemoryType = typeValue === "core" ? "core" : typeValue === "feeling" ? "feeling" : typeValue === "dream" ? "dream" : "long_term";
+      const result = await createMemory(memoryScope, {
+        type,
+        body: String(input.body || ""),
+        mood: String(input.mood || ""),
+        tags: input.tags,
+        source: type === "core" ? "codex-explicit-core-candidate" : "codex-explicit",
+        reviewStatus: type === "core" ? "candidate" : "approved",
+      });
+      return { added: result.created, duplicate: result.duplicate, memory: result.memory, note: type === "core" ? "核心记忆已作为候选保存，仍需用户在 Memory 页面确认。" : undefined };
+    }
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("Memory id is required");
+    if (action === "edit") {
+      const reason = String(input.reason || "").trim();
+      if (!reason) throw new Error("Editing a memory requires an explicit reason");
+      const current = (await listMemories(memoryScope, { includeDemoted: true, includeCandidates: true, limit: 250 })).find((memory) => memory.id === id);
+      if (!current) throw new Error("找不到这条记忆");
+      const detail = current.type === "core"
+        ? await correctCoreMemory(memoryScope, id, { body: String(input.body || ""), mood: String(input.mood || ""), tags: input.tags, reason })
+        : await editMemory(memoryScope, id, { body: String(input.body || ""), mood: String(input.mood || ""), tags: input.tags, reason });
+      return { edited: true, memory: detail?.memory || null };
+    }
+    if (action === "delete") return { deleted: true, memory: (await updateMemoryState(memoryScope, id, "demote"))?.memory || null };
+    if (action === "restore") return { restored: true, memory: (await updateMemoryState(memoryScope, id, "restore"))?.memory || null };
+    if (action === "pin" || action === "unpin") return { pinned: action === "pin", memory: (await updateMemoryState(memoryScope, id, "pin", action === "pin"))?.memory || null };
+    throw new Error("Unsupported memory action");
+  }
+  if (name === "list_configured_mcp_tools") {
+    if (!memoryScope) throw new Error("MCP scope is unavailable");
+    return { connections: await configuredMcpTools(memoryScope) };
+  }
+  if (name === "call_configured_mcp_tool") {
+    if (!memoryScope) throw new Error("MCP scope is unavailable");
+    return callConfiguredMcpTool(memoryScope, input);
   }
   throw new Error(`Unknown Codex tool: ${name}`);
 }

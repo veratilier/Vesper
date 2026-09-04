@@ -19,11 +19,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!(await authorizeApp(request))) return json(request, { error: "Device not paired" }, 401);
   try {
-    const body = await request.json() as { name?: string; arguments?: Record<string, unknown>; threadId?: string; itemId?: string };
+    const body = await request.json() as { name?: string; arguments?: Record<string, unknown>; threadId?: string; itemId?: string; conversationId?: string; turnId?: string };
     const name = String(body.name || "");
     const definition = codexToolDefinitions.find((tool) => tool.name === name);
     if (!definition) return json(request, { error: "Unknown Codex tool" }, 404);
-    const result = await executeCodexTool(name, body.arguments || {}, await memoryScopeFromRequest(request));
+    const result = await executeCodexTool(name, body.arguments || {}, await memoryScopeFromRequest(request), { conversationId: body.conversationId, turnId: body.turnId });
     return json(request, { ok: true, name, threadId: body.threadId || null, itemId: body.itemId || null, result });
   } catch (reason) {
     return json(request, { error: reason instanceof Error ? reason.message : "Codex tool failed" }, 400);

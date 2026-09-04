@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS messages (
   updated_at TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'codex',
   time_source TEXT NOT NULL DEFAULT 'message'
+  ,message_type TEXT NOT NULL DEFAULT 'text' CHECK(message_type IN ('text', 'sticker'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS messages_item
   ON messages(vesper_conversation_id, item_id) WHERE item_id IS NOT NULL;
@@ -91,6 +92,8 @@ def db() -> sqlite3.Connection:
         connection.execute("ALTER TABLE messages ADD COLUMN source TEXT NOT NULL DEFAULT 'codex'")
     if "time_source" not in message_columns:
         connection.execute("ALTER TABLE messages ADD COLUMN time_source TEXT NOT NULL DEFAULT 'message'")
+    if "message_type" not in message_columns:
+        connection.execute("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'")
     return connection
 
 
@@ -120,6 +123,7 @@ def message(row: sqlite3.Row) -> dict:
         "id": row["id"],
         "conversationId": row["vesper_conversation_id"],
         "role": row["role"],
+        "type": row["message_type"] if "message_type" in row.keys() else "text",
         "content": row["content"],
         "status": row["status"],
         "metadata": metadata,
@@ -255,7 +259,13 @@ class Handler(BaseHTTPRequestHandler):
         message_id = str(body.get("id") or "").strip()
         role = str(body.get("role") or "")
         content = str(body.get("content") or "").strip()
-        if not message_id or role not in {"user", "agent", "system"} or not content or len(content) > 120_000:
+        message_type = str(body.get("type") or "text").strip().lower()
+        metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+        sticker = metadata.get("sticker") if isinstance(metadata.get("sticker"), dict) else {}
+        valid_sticker = bool(sticker.get("assetId") and sticker.get("url") and sticker.get("mimeType"))
+        if (not message_id or role not in {"user", "agent", "system"} or message_type not in {"text", "sticker"}
+                or (message_type == "text" and not content) or (message_type == "sticker" and not valid_sticker)
+                or len(content) > 120_000):
             self.send_json(400, {"error": "Invalid message"})
             return
         if is_internal_context(content):
@@ -264,14 +274,13 @@ class Handler(BaseHTTPRequestHandler):
             # message, and must never be persisted or returned as chat history.
             self.send_json(200, {"ok": True, "skipped": "internal_context"})
             return
-        metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         item_id = str(metadata.get("itemId") or "").strip() or None
         turn_id = str(metadata.get("turnId") or "").strip() or None
         created_at = str(body.get("createdAt") or "")
         timestamp = now()
         conversation_updated_at = created_at if created_at else timestamp
         status = str(body.get("status") or "delivered")[:32]
-        title = str(body.get("title") or content[:42]).strip()[:120] or "新对话"
+        title = str(body.get("title") or content[:42]).strip()[:120] or ("表情包" if message_type == "sticker" else "新对话")
         source = str(body.get("source") or "codex")
         source = source if source in {"legacy-vesper", "codex"} else "codex"
         time_source = str(body.get("timeSource") or metadata.get("timeSource") or ("message" if created_at else "unknown"))[:32]
@@ -295,16 +304,16 @@ class Handler(BaseHTTPRequestHandler):
               (conversation_id, item_id, item_id, message_id)).fetchone()
             target_id = existing["id"] if existing else message_id
             connection.execute("""INSERT INTO messages
-              (id, vesper_conversation_id, role, content, status, item_id, turn_id, metadata_json, created_at, updated_at, source, time_source)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (id, vesper_conversation_id, role, content, status, item_id, turn_id, metadata_json, created_at, updated_at, source, time_source, message_type)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET content = excluded.content, status = excluded.status,
                 item_id = COALESCE(excluded.item_id, messages.item_id),
                 turn_id = COALESCE(excluded.turn_id, messages.turn_id),
                 metadata_json = excluded.metadata_json,
                 created_at = CASE WHEN messages.created_at = '' THEN excluded.created_at ELSE messages.created_at END,
-                source = excluded.source, time_source = excluded.time_source, updated_at = excluded.updated_at""",
+                source = excluded.source, time_source = excluded.time_source, message_type = excluded.message_type, updated_at = excluded.updated_at""",
               (target_id, conversation_id, role, content, status, item_id, turn_id,
-               json.dumps(metadata, ensure_ascii=False), created_at, timestamp, source, time_source))
+               json.dumps(metadata, ensure_ascii=False), created_at, timestamp, source, time_source, message_type))
             row = connection.execute("SELECT * FROM messages WHERE id = ?", (target_id,)).fetchone()
         self.send_json(200, {"message": message(row)})
 

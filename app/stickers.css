@@ -1,0 +1,167 @@
+/* Sticker UI is deliberately scoped: it borrows Vesper's neutral tokens without
+   changing the existing message, attachment, or app-shell geometry. */
+.codex-chat .message > .sticker-bubble {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.sticker-image {
+  display: block;
+  width: auto;
+  max-width: min(180px, 58vw);
+  max-height: min(180px, 36vh);
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--ui-surface-muted);
+}
+
+.sticker-image-placeholder {
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  width: 132px;
+  height: 132px;
+  padding: 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-surface-muted);
+  color: var(--ui-muted);
+  font: 11px/1.3 var(--font-chinese);
+  text-align: center;
+}
+
+.sticker-image-placeholder .ui-icon { width: 22px; height: 22px; }
+
+.image-attachment { position: relative; width: fit-content; max-width: 100%; }
+.image-attachment > a { display: block; }
+.image-attachment .save-as-sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 5px 7px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-ink-secondary);
+  font: 10px/1 var(--font-chinese);
+}
+.image-attachment .save-as-sticker .ui-icon { width: 13px; height: 13px; }
+
+.sticker-sheet-layer,
+.sticker-manager-layer {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sticker-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(17, 17, 17, .24);
+}
+
+.sticker-sheet,
+.sticker-manager {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(700px, 100%);
+  max-height: min(78dvh, 710px);
+  min-height: 280px;
+  padding: 7px 14px calc(14px + env(safe-area-inset-bottom));
+  border: 1px solid var(--ui-line);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  box-shadow: 0 -9px 32px rgba(17, 17, 17, .08);
+}
+
+.sticker-manager { max-height: min(88dvh, 790px); padding: 16px 16px calc(18px + env(safe-area-inset-bottom)); }
+.sticker-sheet-handle { width: 34px; height: 4px; margin: 0 auto 11px; border-radius: 999px; background: var(--ui-line-strong); }
+.sticker-sheet header,
+.sticker-manager header { display: flex; align-items: center; gap: 9px; min-height: 35px; }
+.sticker-sheet header > div,
+.sticker-manager header > div { min-width: 0; flex: 1; }
+.sticker-sheet h2,
+.sticker-manager h2 { margin: 0; color: var(--ui-ink); font: 600 17px/1.2 var(--font-chinese); }
+.sticker-sheet header p,
+.sticker-manager header p { margin: 3px 0 0; color: var(--ui-muted); font: 10px/1.2 var(--font-chinese); letter-spacing: .06em; }
+.sticker-close,
+.sticker-manage-trigger { display: grid; place-items: center; flex: 0 0 auto; height: 32px; padding: 0 9px; border: 1px solid var(--ui-line); border-radius: 9px; background: var(--ui-surface); color: var(--ui-ink-secondary); font: 11px/1 var(--font-chinese); }
+.sticker-close { width: 32px; padding: 0; border: 0; }
+.sticker-close .ui-icon { width: 16px; height: 16px; }
+
+.sticker-picker-controls { display: flex; align-items: center; gap: 8px; margin: 13px 0 9px; }
+.sticker-picker-controls label { display: flex; align-items: center; flex: 1; min-width: 0; height: 34px; padding: 0 9px; border: 1px solid var(--ui-line); border-radius: 10px; color: var(--ui-muted); }
+.sticker-picker-controls label .ui-icon { flex: none; width: 14px; height: 14px; }
+.sticker-picker-controls input { width: 100%; min-width: 0; height: 100%; padding: 0 7px; border: 0; outline: 0; background: transparent; color: var(--ui-ink); font: 12px/1 var(--font-chinese); }
+.sticker-picker-tabs { display: inline-flex; border: 1px solid var(--ui-line); border-radius: 10px; overflow: hidden; }
+.sticker-picker-tabs button { height: 32px; padding: 0 7px; border: 0; border-left: 1px solid var(--ui-line); background: transparent; color: var(--ui-muted); font: 10px/1 var(--font-chinese); }
+.sticker-picker-tabs button:first-child { border-left: 0; }
+.sticker-picker-tabs button.active,
+.sticker-category-strip button.active,
+.sticker-manager-category button.active { background: var(--ui-ink); color: var(--ui-on-inverse); }
+.sticker-category-strip { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+.sticker-category-strip::-webkit-scrollbar { display: none; }
+.sticker-category-strip button,
+.sticker-manager-category button { flex: none; min-height: 27px; padding: 0 9px; border: 1px solid var(--ui-line); border-radius: 999px; background: var(--ui-surface); color: var(--ui-ink-secondary); font: 10px/1 var(--font-chinese); white-space: nowrap; }
+.sticker-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; min-height: 0; overflow-y: auto; padding: 2px 1px 8px; }
+.sticker-grid-item { display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ui-muted); text-align: left; }
+.sticker-grid-item .sticker-image { width: 100%; max-width: none; height: 58px; max-height: none; border-radius: 9px; object-fit: contain; }
+.sticker-grid-item span { display: block; overflow: hidden; margin: 4px 1px 0; font: 9px/1.25 var(--font-chinese); text-overflow: ellipsis; white-space: nowrap; }
+.sticker-empty { display: grid; place-items: center; align-content: center; flex: 1; gap: 8px; color: var(--ui-muted); font: 12px/1.4 var(--font-chinese); }
+.sticker-empty .ui-icon { width: 25px; height: 25px; }
+.sticker-empty p { margin: 0; }
+.sticker-empty button { padding: 7px 9px; border: 1px solid var(--ui-line); border-radius: 8px; background: var(--ui-surface); color: var(--ui-ink-secondary); font: 11px/1 var(--font-chinese); }
+.sticker-sheet-error { margin: 8px 0; color: var(--ui-danger); font: 11px/1.4 var(--font-chinese); }
+
+.sticker-manager-upload { display: flex; align-items: center; gap: 9px; margin: 15px 0 11px; padding: 11px; border: 1px dashed var(--ui-line-strong); border-radius: 11px; background: var(--ui-surface-muted); }
+.sticker-manager-upload button { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 32px; padding: 0 10px; border: 1px solid var(--ui-line); border-radius: 8px; background: var(--ui-surface); color: var(--ui-ink); font: 11px/1 var(--font-chinese); }
+.sticker-manager-upload button .ui-icon { width: 14px; height: 14px; }
+.sticker-manager-upload span { color: var(--ui-muted); font: 10px/1.45 var(--font-chinese); }
+.sticker-manager-category { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 10px; }
+.sticker-manager-category > span { flex: none; padding-top: 7px; color: var(--ui-muted); font: 11px/1 var(--font-chinese); }
+.sticker-manager-category > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.sticker-collect-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--ui-line); border-bottom: 1px solid var(--ui-line); }
+.sticker-collect-toggle span { display: grid; gap: 3px; }
+.sticker-collect-toggle b { color: var(--ui-ink-secondary); font: 500 11px/1.2 var(--font-chinese); }
+.sticker-collect-toggle small { color: var(--ui-muted); font: 9px/1.4 var(--font-chinese); }
+.sticker-collect-toggle input { width: 32px; height: 18px; accent-color: var(--ui-ink); }
+.sticker-manager-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, .54fr); gap: 13px; min-height: 0; flex: 1; margin-top: 12px; overflow: hidden; }
+.sticker-manager-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; gap: 8px; overflow-y: auto; }
+.sticker-manager-grid > button { position: relative; padding: 0; border: 1px solid transparent; border-radius: 9px; background: var(--ui-surface-muted); overflow: hidden; }
+.sticker-manager-grid > button.selected { border-color: var(--ui-ink); }
+.sticker-manager-grid .sticker-image { width: 100%; max-width: none; height: 74px; max-height: none; border-radius: 8px; object-fit: contain; }
+.sticker-manager-grid i { position: absolute; top: 3px; right: 4px; color: var(--ui-ink); font-style: normal; font-size: 10px; }
+.sticker-detail { display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-y: auto; }
+.sticker-detail > .sticker-image { width: 100%; max-width: none; height: 105px; max-height: none; border-radius: 10px; }
+.sticker-detail label { display: grid; gap: 4px; color: var(--ui-muted); font: 10px/1.2 var(--font-chinese); }
+.sticker-detail textarea,
+.sticker-detail select,
+.sticker-detail input { width: 100%; box-sizing: border-box; border: 1px solid var(--ui-line); border-radius: 8px; background: var(--ui-surface); color: var(--ui-ink); font: 10px/1.4 var(--font-chinese); }
+.sticker-detail textarea { min-height: 58px; padding: 6px; resize: vertical; }
+.sticker-detail select { height: 30px; padding: 0 6px; }
+.sticker-detail input { height: 30px; padding: 0 6px; }
+.sticker-detail > div { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.sticker-detail > div button { min-height: 29px; padding: 0 5px; border: 1px solid var(--ui-line); border-radius: 7px; background: var(--ui-surface); color: var(--ui-ink-secondary); font: 10px/1 var(--font-chinese); }
+.sticker-detail > div .danger { color: var(--ui-danger); }
+.sticker-detail > div .danger:last-child { grid-column: 1 / -1; }
+
+@media (max-width: 390px) {
+  .sticker-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sticker-picker-tabs button { padding: 0 5px; }
+  .sticker-manager-content { grid-template-columns: minmax(0, 1fr) minmax(130px, .5fr); gap: 8px; }
+}
+
+@media (min-width: 700px) {
+  .sticker-sheet, .sticker-manager { border-radius: 20px; margin-bottom: 18px; border-bottom: 1px solid var(--ui-line); }
+}

@@ -7,6 +7,7 @@ import "./settings.css";
 import "./theme.css";
 import "./home.css";
 import "./memory.css";
+import "./stickers.css";
 import "./typography.css";
 
 const pinyonScript = Pinyon_Script({

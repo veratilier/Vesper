@@ -392,6 +392,7 @@ Object.assign(iconPaths, {
   ],
   refresh: ["M20 11a8 8 0 1 0-2 5", "M20 4v7h-7"],
   trash: ["M4 7h16", "M9 3h6l1 4H8z", "M7 7l1 14h8l1-14", "M10 11v6", "M14 11v6"],
+  sticker: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 9h.01", "M16 9h.01", "M8 14c1.1 1.3 2.4 2 4 2s2.9-.7 4-2", "M16 3v4h4"],
   mic: [
     "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z",
     "M5 10v2a7 7 0 0 0 14 0v-2",
@@ -615,6 +616,18 @@ type ChatAttachment = {
   type: string;
   size: number;
 };
+type StickerMessageData = {
+  assetId: string;
+  url: string;
+  width: number;
+  height: number;
+  mimeType: string;
+  alt: string;
+  description?: string;
+  category?: string;
+};
+type StickerCatalogItem = StickerMessageData & { name?: string; categoryId?: string | null; favorite?: boolean; createdAt?: string; lastUsedAt?: string | null; useCount?: number; status?: string };
+type StickerCategoryItem = { id: string; name: string; description: string; sortOrder: number };
 type EnvironmentSnapshot = {
   permission: "unknown" | "granted" | "denied";
   latitude?: number;
@@ -1567,6 +1580,10 @@ async function uploadMedia(file: File) {
   });
   if (!response.ok) throw new Error("附件上传失败");
   return (await response.json()) as ChatAttachment;
+}
+async function fileSha256(file: File) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, "0")).join("");
 }
 function usePersistentDocument<T>(key: string, initial: T) {
   const storageKey = `vesper-document-${key}`;
@@ -2671,10 +2688,12 @@ type BridgeChatMessage = {
     showTurnStatus?: boolean;
     blockType?: string;
     musicCard?: MusicCardData;
+    sticker?: StickerMessageData;
     timeSource?: "message" | "turn" | "thread" | "unknown";
   };
   createdAt: string;
   source?: "legacy-vesper" | "codex";
+  type?: "text" | "sticker";
   timeSource?: "message" | "turn" | "thread" | "unknown";
 };
 type BridgeSnapshot = {
@@ -3279,6 +3298,8 @@ const CODEX_DYNAMIC_TOOLS = [
   { name: "recall_vesper_memory", description: "Read Rowan's relevant server-side memories. Returned entries are old background, not the user's current message.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "remember_vesper_memory", description: "Only after a meaningful exchange, preserve one concise and durable memory. Never save a joke, guess, duplicate, or transient detail. Core items are candidates and require the user's confirmation; feelings must be Rowan's first-person feeling.", inputSchema: { type: "object", additionalProperties: false, properties: { type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["type", "body"] } },
   { name: "manage_vesper_memory", description: "List, add, edit, or remove Vesper memories only after the user explicitly requests that exact change. Core edits require explicit confirmation and a reason.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] }, id: { type: "string" }, type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } }, reason: { type: "string" }, includeDemoted: { type: "boolean" } }, required: ["action"] } },
+  { name: "sticker_search", description: "Search Vera's private sticker catalog by emotion, situation, category, or description. Read-only. Use only when a sticker would naturally add to a reply, never for every reply.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 12 } }, required: ["query"] } },
+  { name: "sticker_send", description: "Send exactly one sticker returned by sticker_search. Pass only its assetId. Vesper validates it and appends a structured sticker message; use sparingly.", inputSchema: { type: "object", additionalProperties: false, properties: { assetId: { type: "string" } }, required: ["assetId"] } },
   { name: "list_configured_mcp_tools", description: "List the user's enabled Vesper Settings MCP connections and their allowed tools before calling one. Credentials are never returned.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
   { name: "call_configured_mcp_tool", description: "Call exactly one tool returned by list_configured_mcp_tools. Vesper holds the connection credentials securely on the server.", inputSchema: { type: "object", additionalProperties: false, properties: { connectionId: { type: "string" }, toolName: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["connectionId", "toolName"] } },
 ].map((definition) => ({ type: "function" as const, ...definition }));
@@ -3384,9 +3405,10 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
     // a restore from local cache, the VPS history service, or a legacy import.
     if (isVesperInternalContextText(item.content)) return [];
     const isMusicCard = item.metadata?.blockType === "musicCard";
-    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
-    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !item.content.trim()) return [];
-    return [{ ...item, conversationId: item.conversationId || conversationId }];
+    const isSticker = item.type === "sticker" && Boolean(item.metadata?.sticker?.assetId);
+    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !isSticker && !CODEX_ASSISTANT_ITEM_TYPES.has(item.metadata.blockType)) return [];
+    if (item.role === "agent" && item.metadata?.blockType && !isMusicCard && !isSticker && !item.content.trim()) return [];
+    return [{ ...item, type: isSticker ? "sticker" : "text", conversationId: item.conversationId || conversationId }];
   });
 }
 
@@ -3614,6 +3636,76 @@ async function videoPoster(file: File) {
   }
 }
 
+function StickerImage({ sticker, className = "" }: { sticker: StickerMessageData; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <div className={`sticker-image-placeholder ${className}`} role="img" aria-label="表情包已不可用"><Icon name="sticker" /><span>表情包已不可用</span></div>;
+  return <img className={`sticker-image ${className}`} src={sticker.url} alt={sticker.alt || "表情包"} loading="lazy" onError={() => setFailed(true)} />;
+}
+
+function StickerPickerSheet({ open, onClose, onSelect, onManage }: { open: boolean; onClose: () => void; onSelect: (sticker: StickerCatalogItem) => void; onManage: () => void }) {
+  const [view, setView] = useState<"recent" | "favorites" | "all">("recent");
+  const [query, setQuery] = useState("");
+  const [stickers, setStickers] = useState<StickerCatalogItem[]>([]);
+  const [categories, setCategories] = useState<StickerCategoryItem[]>([]);
+  const [category, setCategory] = useState("");
+  const [error, setError] = useState("");
+  const load = async () => {
+    if (!open) return;
+    try {
+      setError("");
+      const search = new URLSearchParams();
+      if (view !== "all") search.set("view", view);
+      if (query.trim()) search.set("q", query.trim());
+      if (category) search.set("category", category);
+      const response = await fetch(apiUrl(`/api/stickers?${search}`), { headers: appHeaders(), cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { stickers?: StickerCatalogItem[]; categories?: StickerCategoryItem[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "无法读取表情包");
+      setStickers(payload.stickers || []); setCategories(payload.categories || []);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取表情包"); }
+  };
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [open, view, category]);
+  useEffect(() => { if (!open) return; const timer = window.setTimeout(() => void load(), 220); return () => window.clearTimeout(timer); }, [query]);
+  if (!open) return null;
+  return <div className="sticker-sheet-layer" role="presentation"><button className="sticker-sheet-scrim" aria-label="关闭表情包" onClick={onClose} /><section className="sticker-sheet" role="dialog" aria-modal="true" aria-label="表情包">
+    <div className="sticker-sheet-handle" />
+    <header><div><h2>表情包</h2><p>只发送给这段对话</p></div><button className="sticker-manage-trigger" onClick={onManage}>管理</button><button className="sticker-close" aria-label="关闭" onClick={onClose}><Icon name="close" /></button></header>
+    <div className="sticker-picker-controls"><label><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索表情或场景" /></label><div className="sticker-picker-tabs"><button className={view === "recent" ? "active" : ""} onClick={() => setView("recent")}>最近</button><button className={view === "favorites" ? "active" : ""} onClick={() => setView("favorites")}>收藏</button><button className={view === "all" ? "active" : ""} onClick={() => setView("all")}>全部</button></div></div>
+    {categories.length > 0 && <div className="sticker-category-strip"><button className={!category ? "active" : ""} onClick={() => setCategory("")}>全部</button>{categories.map((item) => <button key={item.id} className={category === item.id ? "active" : ""} onClick={() => setCategory(item.id)}>{item.name}</button>)}</div>}
+    {error ? <p className="sticker-sheet-error">{error}</p> : stickers.length ? <div className="sticker-grid">{stickers.map((sticker) => <button key={sticker.assetId} className="sticker-grid-item" title={sticker.description || sticker.name || "表情包"} onClick={() => onSelect(sticker)}><StickerImage sticker={sticker} /><span>{sticker.description || sticker.category || "表情包"}</span></button>)}</div> : <div className="sticker-empty"><Icon name="sticker" /><p>这里还没有表情包。</p><button onClick={onManage}>去添加</button></div>}
+  </section></div>;
+}
+
+function StickerManagerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [stickers, setStickers] = useState<StickerCatalogItem[]>([]); const [categories, setCategories] = useState<StickerCategoryItem[]>([]);
+  const [selected, setSelected] = useState<StickerCatalogItem | null>(null); const [name, setName] = useState(""); const [description, setDescription] = useState(""); const [categoryId, setCategoryId] = useState("");
+  const [autoCollect, setAutoCollect] = useState(false); const [visionAvailable, setVisionAvailable] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const uploadRef = useRef<HTMLInputElement>(null);
+  const load = async () => {
+    if (!open) return;
+    try { const [catalog, settings] = await Promise.all([fetch(apiUrl("/api/stickers?view=all"), { headers: appHeaders(), cache: "no-store" }), fetch(apiUrl("/api/stickers/settings"), { headers: appHeaders(), cache: "no-store" })]);
+      const catalogData = await catalog.json() as { stickers?: StickerCatalogItem[]; categories?: StickerCategoryItem[]; error?: string }; const settingsData = await settings.json().catch(() => ({})) as { settings?: { enabled?: boolean; visionAvailable?: boolean } };
+      if (!catalog.ok) throw new Error(catalogData.error || "无法读取表情包"); setStickers(catalogData.stickers || []); setCategories(catalogData.categories || []); setAutoCollect(Boolean(settingsData.settings?.enabled)); setVisionAvailable(Boolean(settingsData.settings?.visionAvailable));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取表情包"); }
+  };
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [open]);
+  const selectSticker = (sticker: StickerCatalogItem | null) => { setSelected(sticker); setName(sticker?.name || ""); setDescription(sticker?.description || ""); setCategoryId(sticker?.categoryId || ""); };
+  const upload = async (files: FileList | File[]) => { const list = Array.from(files); if (!list.length) return; setBusy(true); setError(""); try { for (const file of list) { const form = new FormData(); form.append("file", file); if (categoryId) form.append("categoryId", categoryId); const response = await fetch(apiUrl("/api/stickers"), { method: "POST", headers: appHeaders(), body: form }); const payload = await response.json().catch(() => ({})) as { error?: string }; if (!response.ok) throw new Error(payload.error || `${file.name} 上传失败`); } await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "上传失败"); } finally { setBusy(false); } };
+  const save = async () => { if (!selected) return; setBusy(true); try { const response = await fetch(apiUrl(`/api/stickers/${encodeURIComponent(selected.assetId)}`), { method: "PATCH", headers: appHeaders(true), body: JSON.stringify({ name, description, categoryId: categoryId || null }) }); const payload = await response.json().catch(() => ({})) as { sticker?: StickerCatalogItem; error?: string }; if (!response.ok) throw new Error(payload.error || "保存失败"); selectSticker(payload.sticker || null); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败"); } finally { setBusy(false); } };
+  const remove = async () => { if (!selected || !window.confirm("删除这张表情包？聊天历史中的旧消息会显示为不可用占位。")) return; setBusy(true); try { const response = await fetch(apiUrl(`/api/stickers/${encodeURIComponent(selected.assetId)}`), { method: "DELETE", headers: appHeaders(true) }); const payload = await response.json().catch(() => ({})) as { error?: string }; if (!response.ok) throw new Error(payload.error || "删除失败"); selectSticker(null); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "删除失败"); } finally { setBusy(false); } };
+  const favorite = async () => { if (!selected) return; const response = await fetch(apiUrl(`/api/stickers/${encodeURIComponent(selected.assetId)}`), { method: "PATCH", headers: appHeaders(true), body: JSON.stringify({ favorite: !selected.favorite }) }); const payload = await response.json().catch(() => ({})) as { sticker?: StickerCatalogItem; error?: string }; if (!response.ok) return setError(payload.error || "收藏失败"); selectSticker(payload.sticker || null); await load(); };
+  const createCategory = async () => { const name = window.prompt("新分类名称")?.trim(); if (!name) return; const response = await fetch(apiUrl("/api/stickers/categories"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ name }) }); const payload = await response.json().catch(() => ({})) as { category?: StickerCategoryItem; error?: string }; if (!response.ok) return setError(payload.error || "无法创建分类"); await load(); if (payload.category) setCategoryId(payload.category.id); };
+  const editCategory = async () => { const current = categories.find((item) => item.id === categoryId); if (!current) return setError("先选择一个分类"); const nextName = window.prompt("分类名称", current.name)?.trim(); if (!nextName) return; const description = window.prompt("分类说明（可留空）", current.description); if (description === null) return; const response = await fetch(apiUrl(`/api/stickers/categories/${encodeURIComponent(current.id)}`), { method: "PATCH", headers: appHeaders(true), body: JSON.stringify({ name: nextName, description }) }); const payload = await response.json().catch(() => ({})) as { error?: string }; if (!response.ok) return setError(payload.error || "无法编辑分类"); await load(); };
+  const setCollection = async (enabled: boolean) => { const response = await fetch(apiUrl("/api/stickers/settings"), { method: "PATCH", headers: appHeaders(true), body: JSON.stringify({ enabled }) }); const payload = await response.json().catch(() => ({})) as { settings?: { enabled?: boolean }; error?: string }; if (!response.ok) return setError(payload.error || "设置失败"); setAutoCollect(Boolean(payload.settings?.enabled)); };
+  if (!open) return null;
+  return <div className="sticker-manager-layer" role="presentation"><button className="sticker-sheet-scrim" aria-label="关闭表情包管理" onClick={onClose} /><section className="sticker-manager" role="dialog" aria-modal="true" aria-label="管理表情包" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void upload(event.dataTransfer.files); }}>
+    <header><div><p>VERA&apos;S STICKERS</p><h2>管理表情包</h2></div><button className="sticker-close" aria-label="关闭" onClick={onClose}><Icon name="close" /></button></header>
+    <div className="sticker-manager-upload"><input ref={uploadRef} hidden type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp" onChange={(event) => { if (event.target.files) void upload(event.target.files); event.target.value = ""; }} /><button onClick={() => uploadRef.current?.click()} disabled={busy}><Icon name="upload" />{busy ? "正在保存…" : "添加图片"}</button><span>可拖进 PNG、JPG、GIF 或 WebP，单张不超过 12MB。</span></div>
+    <div className="sticker-manager-category"><span>分类</span><div>{categories.map((item) => <button key={item.id} className={categoryId === item.id ? "active" : ""} onClick={() => setCategoryId(item.id)}>{item.name}</button>)}<button onClick={createCategory}>＋ 新建</button><button onClick={editCategory}>编辑当前</button></div></div>
+    <label className="sticker-collect-toggle"><span><b>自动收集聊天图片</b><small>{visionAvailable ? "仅在识别为表情包后保存，可随时关闭。" : "需要在服务端配置视觉识别后才能开启；不会默认保存普通照片。"}</small></span><input type="checkbox" checked={autoCollect} disabled={!visionAvailable} onChange={(event) => void setCollection(event.target.checked)} /></label>
+    {error && <p className="sticker-sheet-error">{error}</p>}
+    <div className="sticker-manager-content"><div className="sticker-manager-grid">{stickers.map((sticker) => <button key={sticker.assetId} className={selected?.assetId === sticker.assetId ? "selected" : ""} onClick={() => selectSticker(sticker)}><StickerImage sticker={sticker} /><i>{sticker.favorite ? "★" : ""}</i></button>)}</div>{selected && <aside className="sticker-detail"><StickerImage sticker={selected} /><label>名称<input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} /></label><label>使用场景<textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={280} placeholder="例如：害羞地答应、晚安、撒娇" /></label><label>分类<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">未分类</option>{categories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div><button onClick={() => void favorite()}>{selected.favorite ? "取消收藏" : "收藏"}</button><button onClick={() => void save()} disabled={busy}>保存</button><button className="danger" onClick={() => void remove()} disabled={busy}>删除</button></div></aside>}</div>
+  </section></div>;
+}
+
 function CodexChatMessage({
   item,
   agentName,
@@ -3628,6 +3720,7 @@ function CodexChatMessage({
   onQueueMusic,
   onOpenMusic,
   onAddMusicToPlaylist,
+  onSaveAttachmentAsSticker,
 }: {
   item: BridgeChatMessage;
   agentName: string;
@@ -3642,6 +3735,7 @@ function CodexChatMessage({
   onQueueMusic: (trackId: string) => void;
   onOpenMusic: () => void;
   onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
+  onSaveAttachmentAsSticker?: (attachment: ChatAttachment, item: BridgeChatMessage) => void;
 }) {
   const assistant = item.role === "agent";
   const timestamp = visibleMessageTimestamp(item.createdAt);
@@ -3651,6 +3745,7 @@ function CodexChatMessage({
   const status = item.metadata?.turnStatus;
   const statusText = status === "thinking" ? "Thinking…" : status === "tool" ? "Using a tool…" : status === "error" ? "Failed" : "Done";
   const statusLabel = `${stamp}  ${statusText}`;
+  const sticker = item.type === "sticker" ? item.metadata?.sticker : undefined;
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
       {assistant && item.metadata?.showTurnStatus !== false && (
@@ -3663,10 +3758,10 @@ function CodexChatMessage({
         )
       )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
-        <div>
+        {sticker ? <div className="sticker-bubble"><StickerImage sticker={sticker} /></div> : <div>
           {item.content && <p>{item.content}</p>}
           {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
-        </div>
+        </div>}
       </div>
       <div className="message-actions">
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
@@ -3675,7 +3770,7 @@ function CodexChatMessage({
         {!assistant && <button className="message-action" aria-label="编辑" title="编辑" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
         <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
       </div>
-      <MessageAttachments items={item.metadata?.attachments || []} />
+      <MessageAttachments items={item.metadata?.attachments || []} onSaveAsSticker={onSaveAttachmentAsSticker ? (attachment) => onSaveAttachmentAsSticker(attachment, item) : undefined} />
     </div>
   );
 }
@@ -3784,6 +3879,8 @@ function ConnectedChat({
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
   const [approvalQueue, setApprovalQueue] = useState<PendingCodexApproval[]>([]);
+  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [stickerManagerOpen, setStickerManagerOpen] = useState(false);
   const socket = useRef<WebSocket | null>(null);
   const messagesRef = useRef(messages);
   const rpcId = useRef(1);
@@ -3803,6 +3900,7 @@ function ConnectedChat({
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
   const approvalQueueRef = useRef<PendingCodexApproval[]>([]);
   const approvalResponses = useRef(new Map<string, { result: Record<string, unknown>; expiresAt: number }>());
+  const pendingAgentStickers = useRef<StickerMessageData[]>([]);
 
   const updateApprovalQueue = (update: (current: PendingCodexApproval[]) => PendingCodexApproval[]) => {
     setApprovalQueue((current) => {
@@ -3857,7 +3955,7 @@ function ConnectedChat({
       method: "POST",
       headers: appHeaders(true),
       cache: "no-store",
-      body: JSON.stringify({ name, arguments: args, threadId: threadId.current, itemId }),
+      body: JSON.stringify({ name, arguments: args, threadId: threadId.current, itemId, conversationId, turnId: activeTurnId.current }),
     });
     const payload = await response.json().catch(() => ({})) as { result?: unknown; error?: string };
     if (!response.ok) throw new Error(payload.error || `Tool ${name} failed`);
@@ -3897,6 +3995,10 @@ function ConnectedChat({
       }
       if (result && typeof result === "object" && (result as { musicLibraryRefresh?: unknown }).musicLibraryRefresh === true) {
         window.dispatchEvent(new CustomEvent("vesper-music-library-refresh"));
+      }
+      if (result && typeof result === "object" && "stickerMessage" in result) {
+        const sticker = (result as { stickerMessage?: unknown }).stickerMessage;
+        if (sticker && typeof sticker === "object" && typeof (sticker as StickerMessageData).assetId === "string") pendingAgentStickers.current.push(sticker as StickerMessageData);
       }
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true } }));
     } catch (reason) {
@@ -4056,6 +4158,21 @@ function ConnectedChat({
             thoughtSummary: reasoningSummaries.current.length ? reasoningSummaries.current.join("\n") : undefined,
           },
         }));
+      }
+      const stickers = pendingAgentStickers.current.splice(0, pendingAgentStickers.current.length);
+      if (stickers.length) {
+        const stickerMessages = stickers.map((sticker, index) => ({
+          id: `${completedTurnId || crypto.randomUUID()}:sticker:${index}`,
+          conversationId,
+          role: "agent" as const,
+          type: "sticker" as const,
+          content: "",
+          status: "delivered",
+          metadata: { sticker, turnId: completedTurnId, threadId: threadId.current, itemId: `${completedTurnId}:sticker:${index}`, blockType: "sticker", showTurnStatus: false },
+          createdAt: new Date().toISOString(),
+        } satisfies BridgeChatMessage));
+        save(mergeCodexMessages(messagesRef.current, stickerMessages));
+        void Promise.all(stickerMessages.map((item) => persistCodexMessage(item))).catch(() => setHistoryWarning("历史暂未同步"));
       }
       setStreamingItems({});
       streamBuffers.current.clear();
@@ -4254,7 +4371,7 @@ function ConnectedChat({
   };
   const copyMessage = async (item: BridgeChatMessage) => {
     try {
-      await navigator.clipboard.writeText(item.content);
+      await navigator.clipboard.writeText(item.content || item.metadata?.sticker?.description || item.metadata?.sticker?.alt || "表情包");
       setError("Copied");
       window.setTimeout(() => setError((current) => current === "Copied" ? "" : current), 1200);
     } catch {
@@ -4303,27 +4420,49 @@ function ConnectedChat({
     if (file.type.startsWith("text/") || /\.(json|html?|md|csv|tsx?|jsx?)$/i.test(file.name)) return { attachment, text: `[File: ${file.name}]\n${(await file.text()).slice(0, 120000)}` };
     return { attachment, text: `[File attached: ${file.name} (${file.type || "unknown"}, ${file.size} bytes).]` };
   };
-  const send = async () => {
+  const stickerInputForModel = async (sticker: StickerCatalogItem): Promise<CodexInput | null> => {
+    try {
+      const response = await fetch(sticker.url, { cache: "no-store" });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return { type: "image", url: await localImage(new File([blob], sticker.name || "sticker", { type: sticker.mimeType || blob.type })) };
+    } catch { return null; }
+  };
+  const send = async (selectedSticker?: StickerCatalogItem) => {
     const content = draft.trim();
-    if ((!content && !pending.length) || busy) return;
+    if ((!content && !pending.length && !selectedSticker) || busy) return;
     setBusy(true); setError(""); setDraft("");
+    pendingAgentStickers.current = [];
     nearBottomRef.current = true;
-    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", content: content || "Attachment", status: "thinking", metadata: { attachments: [], turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
+    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", type: selectedSticker ? "sticker" : "text", content: content || (selectedSticker ? "" : "Attachment"), status: "thinking", metadata: { attachments: [], sticker: selectedSticker ? { assetId: selectedSticker.assetId, url: selectedSticker.url, width: selectedSticker.width, height: selectedSticker.height, mimeType: selectedSticker.mimeType, alt: selectedSticker.alt || selectedSticker.description || selectedSticker.name || "表情包", description: selectedSticker.description, category: selectedSticker.category } : undefined, turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
     activeTurnUserId.current = userMessage.id;
     save([...messagesRef.current, userMessage]);
-    rememberConversation(conversationId, content.slice(0, 28) || "Attachment");
+    if (selectedSticker) void fetch(apiUrl(`/api/stickers/${encodeURIComponent(selectedSticker.assetId)}`), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "use" }) }).catch(() => {});
+    rememberConversation(conversationId, content.slice(0, 28) || (selectedSticker ? "表情包" : "Attachment"));
     try {
-      void persistCodexMessage(userMessage, content.slice(0, 42) || "Attachment")
+      void persistCodexMessage(userMessage, content.slice(0, 42) || (selectedSticker ? "表情包" : "Attachment"))
         .catch(() => setHistoryWarning("历史暂未同步"));
-      void persistMemoryMessage(userMessage).catch(() => {});
+      if (userMessage.content) void persistMemoryMessage(userMessage).catch(() => {});
       const prepared = await Promise.all(pending.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
-      const memoryBackground = await recallMemoryBackground(content);
+      // Opt-in automatic collection is server-owned and classification-gated.
+      // This notification deliberately remains non-blocking so an ordinary
+      // photo never delays a chat turn or silently turns into a sticker.
+      for (const [index, item] of prepared.entries()) {
+        const source = pending[index]?.file;
+        if (!source?.type.startsWith("image/")) continue;
+        void fileSha256(source).then((sha256) => fetch(apiUrl("/api/stickers/collect"), {
+          method: "POST", headers: appHeaders(true), body: JSON.stringify({ key: item.attachment.key, messageId: userMessage.id, conversationId, sha256 }),
+        })).catch(() => {});
+      }
+      const stickerText = selectedSticker ? `[Vesper sticker sent by Vera. This is a private catalog asset, not a user text message. category: ${selectedSticker.category || "未分类"}; description: ${selectedSticker.description || selectedSticker.alt || "无"}; assetId: ${selectedSticker.assetId}]` : "";
+      const memoryBackground = await recallMemoryBackground(content || stickerText);
       const input: CodexInput[] = [
-        { type: "text", text: [content, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
+        { type: "text", text: [content, stickerText, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
       ];
       for (const item of prepared) if (item.input) input.push(item.input);
+      if (selectedSticker) { const image = await stickerInputForModel(selectedSticker); if (image) input.push(image); }
       await connect(memoryBackground);
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
@@ -4341,6 +4480,16 @@ function ConnectedChat({
       updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
       setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false);
     }
+  };
+  const saveAttachmentAsSticker = async (attachment: ChatAttachment, item: BridgeChatMessage) => {
+    const description = window.prompt("这张表情适合什么时候用？（可留空）", "") ?? null;
+    if (description === null) return;
+    try {
+      const response = await fetch(apiUrl("/api/stickers/from-message"), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ key: attachment.key, name: attachment.name, type: attachment.type, conversationId: item.conversationId, messageId: item.id, description }) });
+      const payload = await response.json().catch(() => ({})) as { duplicate?: boolean; error?: string };
+      if (!response.ok) throw new Error(payload.error || "保存失败");
+      setError(payload.duplicate ? "这张图片已经在表情包里了" : "已保存到表情包");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "保存为表情包失败"); }
   };
   const selectFiles = (files: FileList | null) => {
     if (!files) return;
@@ -4490,7 +4639,7 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
         {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
         {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div><p>{text}</p></div></div></div>)}
@@ -4500,23 +4649,26 @@ function ConnectedChat({
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
+        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><button aria-label="选择表情包" onClick={() => setStickerPickerOpen(true)}><Icon name="sticker" /></button><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
       {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={answerApproval} />}
+      <StickerPickerSheet open={stickerPickerOpen} onClose={() => setStickerPickerOpen(false)} onSelect={(sticker) => { setStickerPickerOpen(false); void send(sticker); }} onManage={() => { setStickerPickerOpen(false); setStickerManagerOpen(true); }} />
+      <StickerManagerModal open={stickerManagerOpen} onClose={() => setStickerManagerOpen(false)} />
     </div>
   );
 }
 
-function MessageAttachments({ items }: { items: ChatAttachment[] }) {
+function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[]; onSaveAsSticker?: (item: ChatAttachment) => void }) {
   if (!items.length) return null;
   return (
     <div className="message-attachments">
       {items.map((item) =>
         item.type.startsWith("image/") ? (
-          <a href={item.url} target="_blank" rel="noreferrer" key={item.key}>
-            <img src={item.url} alt={item.name} />
-          </a>
+          <div className="image-attachment" key={item.key}>
+            <a href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt={item.name} /></a>
+            {onSaveAsSticker && <button className="save-as-sticker" onClick={() => onSaveAsSticker(item)}><Icon name="sticker" />保存为表情包</button>}
+          </div>
         ) : item.type.startsWith("video/") ? (
           <video src={item.url} controls playsInline key={item.key} />
         ) : item.type.startsWith("audio/") ? (

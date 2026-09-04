@@ -2,11 +2,13 @@ import { allowedDocumentKeys } from "@/db/schema";
 import { ensureSchema, getDb } from "@/lib/db";
 import { callConfiguredMcpTool, configuredMcpTools } from "@/lib/mcp-connections";
 import { captureMemoryCandidate, correctCoreMemory, createMemory, editMemory, listMemories, recallMemory, updateMemoryState, type MemoryScope, type MemoryType } from "@/lib/memory";
+import { claimAgentSticker, listStickers, stickerForUse } from "@/lib/stickers";
 
 type ToolInput = Record<string, unknown>;
 type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
 type MusicPlayback = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
 type NeteaseSourceSong = { id?: string | number; name?: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } };
+export type CodexToolContext = { conversationId?: string; turnId?: string };
 
 const sectionToKey: Record<string, string> = {
   today: "todos",
@@ -185,6 +187,23 @@ export const codexToolDefinitions = [
     },
   },
   {
+    name: "sticker_search",
+    description: "Search Vera's private Vesper sticker catalog by situation, emotion, category, or description. Read-only. Use this only when a sticker would naturally add to a reply; do not use it for every response.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 12 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "sticker_send",
+    description: "Send exactly one sticker selected from sticker_search. Pass only its assetId; Vesper validates ownership and appends a structured sticker message. Use sparingly and never send a sticker repeatedly or as a substitute for an answer.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: { assetId: { type: "string" } }, required: ["assetId"],
+    },
+  },
+  {
     name: "list_configured_mcp_tools",
     description: "List the external MCP tools the user has already connected and authorized in Vesper Settings. Call this before using an external MCP tool; it returns allowed connection ids, tool names, descriptions, and input schemas without exposing credentials.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
@@ -299,7 +318,7 @@ async function readMusicStatus() {
   };
 }
 
-export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope) {
+export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope, context: CodexToolContext = {}) {
   await ensureSchema();
   if (name === "read_vesper_state") {
     const section = String(input.section || "notes").toLowerCase();
@@ -497,6 +516,24 @@ export async function executeCodexTool(name: string, input: ToolInput, memorySco
     if (action === "restore") return { restored: true, memory: (await updateMemoryState(memoryScope, id, "restore"))?.memory || null };
     if (action === "pin" || action === "unpin") return { pinned: action === "pin", memory: (await updateMemoryState(memoryScope, id, "pin", action === "pin"))?.memory || null };
     throw new Error("Unsupported memory action");
+  }
+  if (name === "sticker_search") {
+    if (!memoryScope) throw new Error("Sticker scope is unavailable");
+    const query = String(input.query || "").trim();
+    if (!query) return { stickers: [] };
+    const stickers = await listStickers(memoryScope, { query, limit: Math.min(12, Math.max(1, Number(input.limit || 8))) });
+    return { stickers: stickers.map((sticker) => ({ assetId: sticker.id, category: sticker.category, description: sticker.description, name: sticker.name, width: sticker.width, height: sticker.height, mimeType: sticker.mimeType })) };
+  }
+  if (name === "sticker_send") {
+    if (!memoryScope) throw new Error("Sticker scope is unavailable");
+    const assetId = String(input.assetId || "").trim();
+    if (!assetId) throw new Error("assetId is required");
+    // Validate the selected catalog record before consuming this turn's one
+    // sticker allowance. A stale/cross-scope id must not spend the rate limit.
+    await stickerForUse(memoryScope, assetId, false);
+    await claimAgentSticker(memoryScope, String(context.conversationId || ""), String(context.turnId || ""));
+    const sticker = await stickerForUse(memoryScope, assetId);
+    return { ok: true, stickerMessage: { type: "sticker", assetId: sticker.id, url: sticker.url, width: sticker.width, height: sticker.height, mimeType: sticker.mimeType, alt: sticker.description || sticker.name, description: sticker.description, category: sticker.category } };
   }
   if (name === "list_configured_mcp_tools") {
     if (!memoryScope) throw new Error("MCP scope is unavailable");

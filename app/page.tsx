@@ -11,7 +11,7 @@ import {
   type CSSProperties,
 } from "react";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
-import { mergeCodexMessages } from "./codex-message-merge";
+import { codexBubbleIdentity, hasCodexChatBubbles, mergeCodexMessages } from "./codex-message-merge";
 import {
   approvalResultFor,
   approvalWasResolved,
@@ -3873,7 +3873,7 @@ function ConnectedChat({
   onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<BridgeChatMessage[]>(() => normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId));
+  const [messages, setMessages] = useState<BridgeChatMessage[]>(() => mergeCodexMessages(normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId)));
   const [pending, setPending] = useState<CodexPendingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(false);
@@ -3929,7 +3929,7 @@ function ConnectedChat({
   };
 
   const save = (next: BridgeChatMessage[]) => {
-    const sanitized = normalizeCodexMessages(next, conversationId).filter((item) => !messageWasDeleted(item, tombstonesRef.current));
+    const sanitized = mergeCodexMessages(normalizeCodexMessages(next, conversationId)).filter((item) => !messageWasDeleted(item, tombstonesRef.current));
     // A thread snapshot is only one source of a Vesper conversation.  Keep a
     // separate, union-only local recovery copy so a short/empty snapshot (or a
     // temporarily incomplete history response) can never replace old messages.
@@ -4149,7 +4149,10 @@ function ConnectedChat({
         const bubbles = splitAssistantChatBubbles(content);
         const agentMessages = bubbles.map((bubble, index) => {
           const bubbleItemId = index === 0 ? itemId : `${itemId}:bubble:${index}`;
-          const existing = current.find((candidate) => candidate.metadata?.itemId === bubbleItemId);
+          const existing = current.find((candidate) => {
+            const identity = codexBubbleIdentity(candidate);
+            return identity?.parentId === itemId && identity.index === index;
+          });
           return {
             id: existing?.id || (itemId ? `${itemId}:bubble:${index}` : crypto.randomUUID()),
             conversationId,
@@ -4260,8 +4263,7 @@ function ConnectedChat({
       // Vesper may have saved it as two or three chat bubbles. The persisted
       // bubbles are authoritative here; do not merge the original full text
       // back into their first bubble on a later resume.
-      if (role === "agent" && item.id && messagesRef.current.some((candidate) =>
-        candidate.metadata?.itemId?.startsWith(`${item.id}:bubble:`))) return [];
+      if (role === "agent" && item.id && hasCodexChatBubbles(messagesRef.current, item.id)) return [];
       const existing = messagesRef.current.find((candidate) =>
         (item.id && candidate.metadata?.itemId === item.id) ||
         (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && candidate.content === content.trim()));

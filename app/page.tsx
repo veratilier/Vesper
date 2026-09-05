@@ -22,6 +22,8 @@ import {
   type PendingCodexApproval,
 } from "@/lib/codex-approval";
 import { requestNeteaseLibrary, type MusicLibraryResult } from "@/lib/music-service";
+import { CodexModelPicker } from "./codex-model-picker";
+import { startCodexTurnWithModel, effortLabel, listCodexModels, selectionFromThread, type CodexModel, type CodexModelSelection } from "@/lib/codex-models";
 function Notes() {
   const [notes, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
   const add = () =>
@@ -3883,6 +3885,15 @@ function ConnectedChat({
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
   const [approvalQueue, setApprovalQueue] = useState<PendingCodexApproval[]>([]);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [models, setModels] = useState<CodexModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const [currentModel, setCurrentModel] = useState<CodexModelSelection | null>(null);
+  const [nextModel, setNextModel] = useState<CodexModelSelection | null>(null);
+  const modelCatalog = useRef<CodexModel[]>([]);
+  const nextModelRef = useRef<CodexModelSelection | null>(null);
+  const modelLoadId = useRef(0);
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [stickerManagerOpen, setStickerManagerOpen] = useState(false);
   const socket = useRef<WebSocket | null>(null);
@@ -4011,13 +4022,38 @@ function ConnectedChat({
       setError(text);
     }
   };
-  const sendRpc = (method: string, params: Record<string, unknown>) => new Promise<CodexSocketMessage>((resolve, reject) => {
+  const sendRpc = (method: string, params: Record<string, unknown>, timeoutMs = 0) => new Promise<CodexSocketMessage>((resolve, reject) => {
     const current = socket.current;
     if (!current || current.readyState !== WebSocket.OPEN) return reject(new Error("Codex socket is not open"));
     const id = rpcId.current++;
-    rpc.current.set(id, { resolve, reject });
+    const timer = timeoutMs ? window.setTimeout(() => {
+      rpc.current.delete(id);
+      reject(new Error("Codex 请求超时，请重试"));
+    }, timeoutMs) : undefined;
+    rpc.current.set(id, {
+      resolve: (value) => { window.clearTimeout(timer); resolve(value); },
+      reject: (reason) => { window.clearTimeout(timer); reject(reason); },
+    });
     current.send(JSON.stringify({ id, method, params }));
   });
+  const refreshModels = async () => {
+    const loadId = ++modelLoadId.current;
+    setModelsLoading(true);
+    setModelError("");
+    try {
+      const catalog = await listCodexModels((method, params) => sendRpc(method, params, 15000));
+      if (loadId !== modelLoadId.current) return;
+      modelCatalog.current = catalog;
+      setModels(catalog);
+    } catch {
+      if (loadId === modelLoadId.current) setModelError("暂时无法同步模型，请重试。");
+    } finally {
+      if (loadId === modelLoadId.current) setModelsLoading(false);
+    }
+  };
+  const syncThreadModel = (message: CodexSocketMessage) => {
+    setCurrentModel(selectionFromThread(message.result));
+  };
   const answerApproval = (approval: PendingCodexApproval, action: "allow" | "deny") => {
     const current = socket.current;
     if (!current || current.readyState !== WebSocket.OPEN) {
@@ -4266,6 +4302,7 @@ function ConnectedChat({
     const thread = (result.result?.thread || {}) as { id?: string };
     if (!thread.id) throw new Error("Codex did not return a thread id");
     threadId.current = thread.id;
+    syncThreadModel(result);
     appliedDeveloperInstructions.current = developerInstructions;
     void persistCodexConversation(conversationId, { codexThreadId: thread.id })
       .catch(() => setHistoryWarning("历史暂未同步"));
@@ -4274,6 +4311,7 @@ function ConnectedChat({
   const resumeThread = async (developerInstructions: string) => {
     try {
       const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions });
+      syncThreadModel(resumed);
       hydrateThreadSnapshot(resumed);
       appliedDeveloperInstructions.current = developerInstructions;
       setResumeError("");
@@ -4284,6 +4322,7 @@ function ConnectedChat({
       if (developerInstructions) {
         try {
           const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
+          syncThreadModel(resumed);
           hydrateThreadSnapshot(resumed);
           appliedDeveloperInstructions.current = "";
           setResumeError("");
@@ -4315,9 +4354,12 @@ function ConnectedChat({
       try { handleSocketMessage(JSON.parse(String(event.data)) as CodexSocketMessage); } catch { setError("Invalid message from Codex app-server"); }
     };
     ws.onclose = () => {
+      if (socket.current !== ws) return;
       const hadPendingApproval = approvalQueueRef.current.length > 0;
       setOnline(false);
       socket.current = null;
+      for (const request of rpc.current.values()) request.reject(new Error("Codex 连接已断开"));
+      rpc.current.clear();
       clearApprovalQueue();
       approvalResponses.current.clear();
       if (hadPendingApproval) setError("Codex 连接已断开，待处理的审批没有被发送。");
@@ -4330,6 +4372,7 @@ function ConnectedChat({
     setOnline(true);
     await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
     ws.send(JSON.stringify({ method: "initialized" }));
+    void refreshModels();
     const dynamicTools = await loadDynamicTools();
     if (threadId.current) {
       await resumeThread(developerInstructions);
@@ -4473,7 +4516,14 @@ function ConnectedChat({
       await connect(memoryBackground);
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
-      const started = await sendRpc("turn/start", { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" });
+      const requestedModel = nextModelRef.current;
+      const started = await startCodexTurnWithModel(sendRpc, { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" }, requestedModel, modelCatalog.current);
+      // A rejected RPC must retain the pending selection, not pretend it applied.
+      if (requestedModel) {
+        setCurrentModel(requestedModel);
+        nextModelRef.current = null;
+        setNextModel(null);
+      }
       const turn = (started.result?.turn || {}) as { id?: string };
       activeTurnId.current = turn.id || `turn-${userMessage.id}`;
       updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
@@ -4631,6 +4681,8 @@ function ConnectedChat({
     return () => window.clearTimeout(timer);
   }, [focusMessageId, messages.length]);
   const liveStatusStamp = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const displayedModel = nextModel || currentModel;
+  const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
@@ -4656,10 +4708,13 @@ function ConnectedChat({
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><button aria-label="选择表情包" onClick={() => setStickerPickerOpen(true)}><Icon name="sticker" /></button><span className="composer-status"><i className={online ? "online" : ""} /> {busy ? "Sending…" : listening ? "Listening…" : "Codex"}</span>{busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
+        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><button aria-label="选择表情包" onClick={() => setStickerPickerOpen(true)}><Icon name="sticker" /></button>
+          <span className="composer-status"><i className={online ? "online" : ""} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
+          {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
       {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={answerApproval} />}
+      {modelPickerOpen && <CodexModelPicker models={models} current={displayedModel} loading={modelsLoading} error={modelError} online={online} onRefresh={() => void refreshModels()} onClose={() => setModelPickerOpen(false)} onSelect={(selection) => { nextModelRef.current = selection; setNextModel(selection); setModelPickerOpen(false); }} />}
       <StickerPickerSheet open={stickerPickerOpen} onClose={() => setStickerPickerOpen(false)} onSelect={(sticker) => { setStickerPickerOpen(false); void send(sticker); }} onManage={() => { setStickerPickerOpen(false); setStickerManagerOpen(true); }} />
       <StickerManagerModal open={stickerManagerOpen} onClose={() => setStickerManagerOpen(false)} />
     </div>

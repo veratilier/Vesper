@@ -10,6 +10,8 @@ import {
   type SetStateAction,
   type CSSProperties,
 } from "react";
+import { useMobileViewport } from "./use-mobile-viewport";
+import "./mobile-navigation.css";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
 import { codexBubbleIdentity, hasCodexChatBubbles, mergeCodexMessages } from "./codex-message-merge";
 import {
@@ -686,7 +688,13 @@ export default function Home() {
     () => false,
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [active, setActive] = useState("今日");
+  const [active, setActiveSection] = useState("今日");
+  const [visitedSections, setVisitedSections] = useState(["今日"]);
+  const setActive = useCallback((section: string) => {
+    setVisitedSections((sections) => sections.includes(section) ? sections : [...sections, section]);
+    setActiveSection(section);
+  }, []);
+  useMobileViewport();
   const [profileOpen, setProfileOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
@@ -1148,14 +1156,17 @@ export default function Home() {
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
-    if (label === "聊天") setConversationId(latestLocalConversationId());
-    if (label !== active) window.setTimeout(() => setActive(label), 290);
+    if (label !== active) setActive(label);
   };
+  const chatInitialized = useRef(false);
   useEffect(() => {
-    if (active !== "聊天") return;
+    if (active !== "聊天" || chatInitialized.current) return;
     let cancelled = false;
     void resolveLatestConversationId().then((id) => {
-      if (!cancelled) setConversationId(id);
+      if (!cancelled) {
+        chatInitialized.current = true;
+        setConversationId(id);
+      }
     });
     return () => {
       cancelled = true;
@@ -1334,8 +1345,9 @@ export default function Home() {
             </button>
           )}
         </header>
-        <div className={`scroll-view${active === "音乐" ? " music-scroll-view" : ""}${historyOpen ? " history-host-shift" : ""}`} key={active}>
-          {active === "今日" ? (
+        {visitedSections.map((section) => (
+        <div className={`scroll-view${section === "音乐" ? " music-scroll-view" : ""}${historyOpen ? " history-host-shift" : ""}`} key={section} hidden={active !== section} data-section={section}>
+          {section === "今日" ? (
             <Today
               track={currentTrack}
               playing={playing}
@@ -1344,7 +1356,7 @@ export default function Home() {
               userName={userName}
               onOpenSection={(section) => setActive(section)}
             />
-          ) : active === "聊天" ? (
+          ) : section === "聊天" ? (
               <ConnectedChat
                 key={conversationId}
                 conversationId={conversationId}
@@ -1366,15 +1378,15 @@ export default function Home() {
                   setActive("音乐");
                 }}
               />
-          ) : active === "日记" ? (
+          ) : section === "日记" ? (
             <Diary />
-          ) : active === "便笺" ? (
+          ) : section === "便笺" ? (
             <Notes />
-          ) : active === "提醒" ? (
+          ) : section === "提醒" ? (
             <Todos />
-          ) : active === "纪念日" ? (
+          ) : section === "纪念日" ? (
             <Anniversaries />
-          ) : active === "音乐" ? (
+          ) : section === "音乐" ? (
             <MusicPlayerUI
               queue={activeTracks}
               onQueue={replaceMusicQueue}
@@ -1400,9 +1412,9 @@ export default function Home() {
                 if (!nextQueue.length) setPlaying(false);
               }}
             />
-          ) : active === "记忆库" ? (
+          ) : section === "记忆库" ? (
             <MemoryLibrary />
-          ) : active === "设置" ? (
+          ) : section === "设置" ? (
             <SettingsPage
               accent={accent}
               background={customBackground}
@@ -1412,9 +1424,19 @@ export default function Home() {
               onEnvironment={setEnvironment}
             />
           ) : (
-            <Placeholder title={active} />
+            <Placeholder title={section} />
           )}
         </div>
+        ))}
+        <nav className="mobile-navigation" aria-label="常用导航">
+          {nav.filter(({ label }) => ["今日", "聊天", "音乐"].includes(label)).map(({ label, icon }) => (
+            <button key={label} type="button" aria-current={active === label ? "page" : undefined}
+              onClick={() => navigateTo(label)}>
+              <NavIcon name={icon} />
+              <span>{label === "今日" ? "首页" : label}</span>
+            </button>
+          ))}
+        </nav>
         <div
           className={drawerOpen ? "drawer-layer visible" : "drawer-layer"}
           aria-hidden={!drawerOpen}
@@ -1447,6 +1469,7 @@ export default function Home() {
                 <button
                   key={label}
                   className={active === label ? "nav-row active" : "nav-row"}
+                  aria-current={active === label ? "page" : undefined}
                   onClick={() => navigateTo(label)}
                 >
                   <NavIcon name={icon} />

@@ -12,6 +12,7 @@ import "./typography.css";
 import "./refinement.css";
 import "./anniversary.css";
 import "./home-cards.css";
+import "./floating-interface.css";
 
 const pinyonScript = Pinyon_Script({
   variable: "--font-pinyon-script",

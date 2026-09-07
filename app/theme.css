@@ -5,9 +5,9 @@
   /* Broad, still pools of light: no image download, animation or glass filter. */
   --vesper-mist:
     radial-gradient(ellipse at 8% 35%, rgba(255,255,255,.86), transparent 52%),
-    radial-gradient(ellipse at 100% 55%, rgba(170,192,216,.30), transparent 56%),
-    radial-gradient(ellipse at 30% 100%, rgba(223,225,243,.48), transparent 58%),
-    linear-gradient(180deg, #eaf0f5 0%, #eaf0f5 6%, #e4edf4 58%, #edf2f7 100%);
+    radial-gradient(ellipse at 100% 55%, rgba(145,177,211,.52), transparent 64%),
+    radial-gradient(ellipse at 30% 100%, rgba(193,195,230,.46), transparent 62%),
+    linear-gradient(180deg, #eaf0f5 0%, #eaf0f5 6%, #dbe8f3 48%, #e8e8f3 78%, #eaf2f8 100%);
   --ui-surface: #f5f8fb;
   --ui-surface-muted: #e2eaf1;
   --ui-surface-strong: #d5e0e9;

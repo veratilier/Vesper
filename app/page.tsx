@@ -351,8 +351,28 @@ Object.assign(iconPaths, {
     "M12 19v3",
   ],
 });
+// Deliberately open contours rather than dashed outlines; small controls keep their shape.
+const brokenIconPaths: Record<string, string[]> = {
+  home: ["M3 10 12 3l9 7", "M4 13v6a2 2 0 0 0 2 2h3v-7h6v7h3a2 2 0 0 0 2-2v-6"],
+  chat: ["M21 10V7a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v10l5-3h9a4 4 0 0 0 4-4", "M8 8h8"],
+  note: ["M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6", "M14 3v6h6"],
+  diary: ["M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12V5a2 2 0 0 0-2-2h-2", "M3 8h3M3 12h3M3 16h3", "M10 9h5M10 13h5"],
+  calendar: ["M9 5h9a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8", "M7 3v4M17 3v4M3 11h18"],
+  music: ["M10 14V5l10-2v12", "M10 17a3 3 0 1 1-3-3", "M20 17a3 3 0 1 1-3-3", "M10 9l10-2"],
+  check: ["M21 12a9 9 0 1 1-7-8.8", "m9 11 3 3 8-8"],
+  box: ["m3 7 9-5 9 5-9 5-9-5v10l9 5 9-5v-6", "M12 12v6"],
+  library: ["M4 4v16h4V8M12 4v12M12 19v1M16 5l4 15"],
+  settings: ["M3 6h4M11 6h10M3 12h10M17 12h4M3 18h4M11 18h10", "M7 4v4M17 10v4M7 16v4"],
+  trash: ["M3 7h18M9 3h6l1 4", "M5 10l1 9a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-9", "M10 11v6M14 11v6"],
+  copy: ["M14 8h6v12H8V8h2", "M4 15H3V3h12v1"],
+  bookmark: ["M10 3H6v18l6-4 6 4V3h-4"],
+  search: ["M18 10a7 7 0 1 0-2 6", "m16 16 5 5"],
+  bell: ["M6 9v2c0 3-3 4-3 6h18c0-2-3-3-3-6V8a6 6 0 0 0-10-4", "M10 21h4"],
+  play: ["M8 9V5l11 7-11 7v-6"],
+  menu: ["M4 6h16M4 12h10M18 12h2M4 18h16"],
+};
 function Icon({ name }: { name: string }) {
-  const paths = iconPaths[name] || iconPaths.sparkles;
+  const paths = brokenIconPaths[name] || iconPaths[name] || iconPaths.sparkles;
   return (
     <svg
       className="ui-icon"
@@ -363,11 +383,6 @@ function Icon({ name }: { name: string }) {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <g className="icon-depth">
-        {paths.map((d, i) => (
-          <path d={d} key={`d${i}`} />
-        ))}
-      </g>
       <g>
         {paths.map((d, i) => (
           <path d={d} key={i} />
@@ -456,9 +471,8 @@ const navIconPaths: Record<string, string[]> = {
   settings: ["M3 5h14M3 10h14M3 15h14", "M7 3v4M13 8v4M9 13v4"],
 };
 function NavIcon({ name }: { name: string }) {
-  return <svg className="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">{(navIconPaths[name] || navIconPaths.sparkles || []).map((d, i) => <path d={d} key={i} />)}</svg>;
+  return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">{(brokenIconPaths[name] || iconPaths[name] || []).map((d, i) => <path d={d} key={i} />)}</svg>;
 }
-
 const nav = [
   { label: "今日", english: "Today", icon: "home" },
   { label: "聊天", english: "Letters", icon: "chat" },
@@ -1412,7 +1426,7 @@ export default function Home() {
             aria-label="关闭目录"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="drawer">
+          <aside className="drawer" aria-label="主导航">
             <div className="drawer-head">
               <div className="drawer-brand">
                 <span className="drawer-app-mark">

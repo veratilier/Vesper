@@ -18,6 +18,7 @@ import {
 } from "react";
 import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
+import { syncCodexThread, createConnectionQueue } from "@/lib/codex-thread-lifecycle";
 import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
 import { attachmentInputText } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
@@ -3819,6 +3820,7 @@ function ConnectedChat({
   const rpcId = useRef(1);
   const rpc = useRef(new Map<number, { resolve: (value: CodexSocketMessage) => void; reject: (reason: Error) => void }>());
   const threadId = useRef("");
+  const connectionQueue = useRef(createConnectionQueue());
   const streamBuffers = useRef(new Map<string, string>());
   const reasoningBuffers = useRef(new Map<string, string>());
   const reasoningSummaries = useRef<string[]>([]);
@@ -4366,15 +4368,15 @@ function ConnectedChat({
       throw new Error("原会话暂时无法继续，可新建替代会话。 ");
     }
   };
-  const connect = async (memoryBackground = "") => {
+  const connectInternal = async (memoryBackground = "", createIfMissing = false) => {
     const developerInstructions = vesperDeveloperInstructions(memoryBackground);
     if (socket.current?.readyState === WebSocket.OPEN) {
-      // `thread/resume` is the protocol-supported way to update developer
-      // instructions for an existing thread. This keeps recalled memory out of
-      // the durable user-item timeline.
-      if (threadId.current && appliedDeveloperInstructions.current !== developerInstructions) {
-        await resumeThread(developerInstructions);
-      }
+      await syncCodexThread({
+        hasThread: !!threadId.current, newConnection: false, createIfMissing,
+        instructionsChanged: appliedDeveloperInstructions.current !== developerInstructions,
+        start: async () => { await startThreadWithTools(await loadDynamicTools(), developerInstructions); },
+        resume: () => resumeThread(developerInstructions),
+      });
       return;
     }
     const ws = new WebSocket(codexSocketUrl());
@@ -4407,15 +4409,12 @@ function ConnectedChat({
       await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
       ws.send(JSON.stringify({ method: "initialized" }));
       void refreshModels();
-      if (threadId.current) {
-        await resumeThread(developerInstructions);
-        // Older app-server versions may reject tool updates; resumeThread falls back.
-        // Never auto-replace a persisted Codex thread here: a continuation thread
-        // has a shorter snapshot and must not be allowed to make an existing
-        // Vesper conversation appear empty.
-      } else {
-        await startThreadWithTools(await loadDynamicTools(), developerInstructions);
-      }
+      await syncCodexThread({
+        hasThread: !!threadId.current, newConnection: true, createIfMissing,
+        instructionsChanged: appliedDeveloperInstructions.current !== developerInstructions,
+        start: async () => { await startThreadWithTools(await loadDynamicTools(), developerInstructions); },
+        resume: () => resumeThread(developerInstructions),
+      });
       setOnline(true);
       setError("");
     } catch (reason) {
@@ -4424,6 +4423,8 @@ function ConnectedChat({
       throw reason;
     }
   };
+  const connect = (memoryBackground = "", createIfMissing = false) =>
+    connectionQueue.current(() => connectInternal(memoryBackground, createIfMissing));
   const createReplacementConversation = async () => {
     if (busy) return;
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
@@ -4553,7 +4554,7 @@ function ConnectedChat({
       updateMessage(userMessage.id, () => userMessage);
       for (const item of prepared) if (item.input) input.push(item.input);
       if (selectedSticker) { const image = await stickerInputForModel(selectedSticker); if (image) input.push(image); }
-      await connect(memoryBackground);
+      await connect(memoryBackground, true);
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
       const requestedModel = nextModelRef.current;

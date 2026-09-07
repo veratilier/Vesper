@@ -1,5 +1,6 @@
 "use client";
 import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
+import { ChatActivity } from './chat-activity';
 import { ExecutionCard } from './execution-card';
 import { PhotoAlbum } from './photo-album';
 import { AttachmentGallery } from './attachment-gallery';
@@ -3984,6 +3985,10 @@ function ConnectedChat({
       return;
     }
     setTurnStatus("tool");
+    const activityId = itemId || String(message.id);
+    const activityThread = threadId.current;
+    const activityTurn = activeTurnId.current;
+    observeExecution("item/started", { threadId: activityThread, turnId: activityTurn, item: { id: activityId, type: "dynamicToolCall", name, status: "inProgress" } });
     try {
       const result = await callServerTool(name, argumentsValue, itemId);
       if (['send_chat_file', 'album_send_photos'].includes(name) && result && typeof result === 'object' && 'attachments' in result) {
@@ -4004,9 +4009,11 @@ function ConnectedChat({
         const sticker = (result as { stickerMessage?: unknown }).stickerMessage;
         if (sticker && typeof sticker === "object" && typeof (sticker as StickerMessageData).assetId === "string") pendingAgentStickers.current.push(sticker as StickerMessageData);
       }
+      observeExecution("item/completed", { threadId: activityThread, turnId: activityTurn, item: { id: activityId, type: "dynamicToolCall", name, status: "completed", result: "工具已返回结果。" } });
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true } }));
     } catch (reason) {
       const text = reason instanceof Error ? reason.message : "Tool failed";
+      observeExecution("item/completed", { threadId: activityThread, turnId: activityTurn, item: { id: activityId, type: "dynamicToolCall", name, status: "failed", error: text } });
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text }], success: false, error: text } }));
       setError(text);
     }
@@ -4144,6 +4151,7 @@ function ConnectedChat({
     if (message.method === "item/reasoning/summaryTextDelta") {
       const id = String(params.itemId || "reasoning");
       reasoningBuffers.current.set(id, `${reasoningBuffers.current.get(id) || ""}${String(params.delta || "")}`);
+      refreshActivity(value => value + 1);
     }
     if (message.method === "item/started" && CODEX_TOOL_ITEM_TYPES.has(String((params.item as CodexItem | undefined)?.type || ""))) setTurnStatus("tool");
     if (message.method === "item/completed") {
@@ -4767,6 +4775,8 @@ function ConnectedChat({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
     });
   };
+  const [, refreshActivity] = useState(0);
+  const activityTurnId = activeTurnId.current || [...messages].reverse().find(item => item.metadata?.turnId)?.metadata?.turnId;
   const liveTurnStatus = messages.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus;
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
@@ -4786,7 +4796,7 @@ function ConnectedChat({
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
           return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
-        {busy && <div className="reply-progress" role="status" aria-live="polite"><i aria-hidden="true" /><span>{liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"}</span></div>}
+        {(busy || activityTurnId) && <ChatActivity busy={busy} online={online} label={liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"} executions={messages.filter(item => item.metadata?.turnId === activityTurnId && item.metadata?.execution && !item.metadata.execution.id.startsWith("turn:")).map(item => item.metadata!.execution!)} summary={[...new Set([...(busy ? [...reasoningSummaries.current, ...Array.from(reasoningBuffers.current.values())] : []), ...messages.filter(item => item.metadata?.turnId === activityTurnId).map(item => item.metadata?.thoughtSummary || "")])].filter(Boolean).join("\n")} />}
         <div ref={streamEnd} />
       </div>
       {showScrollToBottom && <button className="chat-scroll-to-bottom" type="button" aria-label="回到最新消息" title="回到最新消息" onClick={scrollToLatest}>

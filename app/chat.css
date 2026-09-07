@@ -492,3 +492,12 @@
   .app-shell .codex-chat .compose-actions { gap: 2px; }
   .app-shell .codex-chat .codex-model-trigger { font-size: 11px !important; }
 }
+
+.chat-activity { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--ui-line); border-radius: 16px; background: var(--ui-surface); }
+.chat-activity > summary { cursor: pointer; min-height: 32px; font-size: 13px; color: var(--ui-ink); }
+.chat-activity > summary span { display: inline-block; margin-left: 10px; font-size: 11px; color: var(--ui-muted); }
+.chat-activity section { display: grid; gap: 10px; padding-top: 10px; }
+.chat-activity h3 { margin: 0; font-size: 13px; }
+.chat-activity p { margin: 0; font-size: 12px; line-height: 1.6; }
+.chat-activity .activity-summary { white-space: pre-wrap; overflow-wrap: anywhere; font-style: normal; }
+.chat-activity > summary:focus-visible { outline: 2px solid var(--ui-ink-secondary); outline-offset: 3px; }

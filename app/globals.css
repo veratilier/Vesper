@@ -4971,3 +4971,25 @@ body {
 .app-shell .drawer-bottom { flex: none; margin-top: auto; padding-top: 12px; }
 .app-shell .drawer-bottom > .nav-row { width: 100%; }
 .app-shell .drawer-bottom .drawer-footer { width: 100%; margin-top: 10px; }
+
+/* Center the remove icon independently of composer button padding/baselines. */
+.app-shell .compose-preview > button {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  line-height: 1;
+  aspect-ratio: 1;
+}
+.app-shell .compose-preview > button > svg {
+  display: block;
+  width: 9px;
+  height: 9px;
+  margin: 0;
+  padding: 0;
+  transform: none;
+}

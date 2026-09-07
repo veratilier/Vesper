@@ -1821,7 +1821,7 @@ function Today({
   onToggle: () => void;
   environment: EnvironmentSnapshot;
   userName: string;
-  onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐") => void;
+  onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐" | "日记") => void;
 }) {
   const [notes] = usePersistentDocument<NoteItem[]>("notes", []);
   const [todos, setTodos] = usePersistentDocument<TodoItem[]>("todos", []);
@@ -1829,6 +1829,9 @@ function Today({
     "anniversaries",
     [],
   );
+  const [diary] = usePersistentDocument<DiaryDocument>("diary", {});
+  const latestDiary = Object.entries(diary).filter(([, entry]) => entry.user?.trim() || entry.agent?.trim()).sort(([a], [b]) => b.localeCompare(a))[0];
+  const diaryPreview = latestDiary ? (latestDiary[1].user?.trim() || latestDiary[1].agent?.trim() || "").split(/\n/)[0] : "留下一点今天的事。";
   const now = new Date();
   const dateText = new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -1909,19 +1912,22 @@ function Today({
         <span className="home-date-footer">{featured ? featured.target.toLocaleDateString("zh-CN") : "添加纪念日"}<Icon name="chevron" /></span>
       </button>
       <div className="home-quick-grid">
-        <button className="home-stat" onClick={() => onOpenSection("提醒")}><span className="home-card-label">To do<Icon name="check" /></span><b>{pendingTodos.length}</b><span>{pendingTodos.length ? "件待办，慢慢完成" : "暂时没有待办"}</span></button>
-        <button className="home-stat" onClick={() => onOpenSection("便笺")}><span className="home-card-label">Notes<Icon name="note" /></span><b>{realNotes.length}</b><span>{realNotes.length ? "张便笺，留住日常" : "等你留下第一张"}</span></button>
-      </div>
+        <button className="home-stat home-diary" onClick={() => onOpenSection("日记")}>
+          <span className="home-card-label">Diary<Icon name="chevron" /></span>
+          <b>{latestDiary ? latestDiary[0].slice(5).replace("-", ".") : "今天"}</b>
+          <span className="home-diary-preview">{diaryPreview}</span>
+        </button>
       <section className="home-reminders-card">
         <button className="home-panel-heading" onClick={() => onOpenSection("提醒")}><span className="home-card-label">Little things</span><span>全部提醒<Icon name="chevron" /></span></button>
-        {todos.slice(0, 4).map((item) => (
+        {pendingTodos.slice(0, 1).map((item) => (
           <button className="reminder-row" key={item.id} aria-pressed={item.done} onClick={() => setTodos((items) => items.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>
             <span className={item.done ? "round-check checked" : "round-check"}>{item.done && <Icon name="check" />}</span>
             <span className={item.done ? "reminder-copy crossed" : "reminder-copy"}>{item.title}<small>{item.done ? "已完成" : item.due || item.tag}</small></span>
           </button>
         ))}
-        {!todos.length && <p className="home-card-empty">今天想做什么？留一件小事给自己。</p>}
+        {!pendingTodos.length && <p className="home-card-empty">今天想做什么？留一件小事给自己。</p>}
       </section>
+      </div>
       <section className="home-music-card">
         <button className="home-panel-heading" onClick={() => onOpenSection("音乐")}><span className="home-card-label">Vesper FM</span><span>{playing ? "正在播放" : "一起听"}<Icon name="chevron" /></span></button>
         {track ? <div className="home-music-content">

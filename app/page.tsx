@@ -3737,6 +3737,7 @@ function formatTurnTimestamp(value: string) {
 
 function CodexChatMessage({
   item,
+  turnInProgress = false,
   agentName,
   userName,
   onEdit,
@@ -3752,6 +3753,7 @@ function CodexChatMessage({
   onSaveAttachmentAsSticker,
 }: {
   item: BridgeChatMessage;
+  turnInProgress?: boolean;
   agentName: string;
   userName: string;
   onEdit: (item: BridgeChatMessage) => void;
@@ -3792,7 +3794,7 @@ function CodexChatMessage({
           {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
         </div>}
       </div>
-      {item.status !== "streaming" && <div className="message-actions">
+      {item.status !== "streaming" && !(assistant && turnInProgress) && <div className="message-actions">
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
         <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
         <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>
@@ -4766,7 +4768,7 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
         {busy && <div className="reply-progress" role="status" aria-live="polite"><i aria-hidden="true" /><span>{liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"}</span></div>}
         <div ref={streamEnd} />

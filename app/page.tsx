@@ -1099,10 +1099,24 @@ export default function Home() {
     window.setTimeout(() => setMusicToast(""), 1600);
   };
   const isPhotoBackground = customBackground.includes("url(");
+  const canvasColor = isPhotoBackground ? DEFAULT_APP_BACKGROUND : customBackground || DEFAULT_APP_BACKGROUND;
+  const defaultCanvas = canvasColor === DEFAULT_APP_BACKGROUND && !isPhotoBackground;
+  // Keep Safari chrome and the overscroll canvas in step with the saved appearance.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--ui-canvas", canvasColor);
+    const metas = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+    const previous = metas.map((meta) => meta.content);
+    metas.forEach((meta) => { meta.content = canvasColor; });
+    return () => {
+      root.style.removeProperty("--ui-canvas");
+      metas.forEach((meta, index) => { meta.content = previous[index]; });
+    };
+  }, [canvasColor]);
   const shellStyle = {
     "--theme-accent": accent,
-    backgroundColor: isPhotoBackground ? DEFAULT_APP_BACKGROUND : customBackground || DEFAULT_APP_BACKGROUND,
-    backgroundImage: isPhotoBackground ? customBackground : "none",
+    backgroundColor: canvasColor,
+    backgroundImage: isPhotoBackground ? customBackground : defaultCanvas ? "var(--vesper-mist)" : "none",
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);

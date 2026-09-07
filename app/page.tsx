@@ -20,7 +20,7 @@ import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nex
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
 import { syncCodexThread, createConnectionQueue } from "@/lib/codex-thread-lifecycle";
 import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
-import { attachmentInputText } from "./codex-attachment-input";
+import { attachmentInputText, imageAttachmentInput } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
@@ -4503,7 +4503,7 @@ function ConnectedChat({
     const { file } = item;
     const attachment = await uploadMedia(file);
     const downloadText = attachmentInputText(attachment);
-    if (file.type.startsWith("image/")) return { attachment, input: { type: "image", url: await localImage(file, 1600, 0.84) } };
+    if (file.type.startsWith("image/")) return imageAttachmentInput(attachment, await localImage(file, 1600, 0.84));
     if (file.type.startsWith("audio/")) return { attachment, input: { type: "audio", url: await readDataUrl(file) } };
     if (file.type.startsWith("video/")) return { attachment, input: { type: "image", url: await videoPoster(file) }, text: `${downloadText}\nA representative frame is included.` };
     if (file.type.startsWith("text/") || /\.(json|html?|md|csv|tsx?|jsx?)$/i.test(file.name)) return { attachment, text: `${downloadText}\nFile preview:\n${(await file.text()).slice(0, 120000)}` };

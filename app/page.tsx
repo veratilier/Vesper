@@ -937,7 +937,7 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=25", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=26", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
   }, []);
   useEffect(() => {

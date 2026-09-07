@@ -19,7 +19,7 @@ const pinyonScript = Pinyon_Script({
 export const metadata: Metadata = {
   title: "Vesper — 私人生活角落",
   description: "天气、便笺、纪念日、提醒与音乐，在晚风般安静的空间里相遇。",
-  manifest: "/manifest.webmanifest?v=10",
+  manifest: "/manifest.webmanifest?v=11",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -28,14 +28,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/favicon-20260901-v1.png",
+        url: "/favicon-20260907-moon-v1.png",
         sizes: "64x64",
         type: "image/png",
       },
     ],
     apple: [
       {
-        url: "/apple-touch-icon-20260901-v1.png",
+        url: "/apple-touch-icon-20260907-moon-v1.png",
         sizes: "180x180",
         type: "image/png",
       },

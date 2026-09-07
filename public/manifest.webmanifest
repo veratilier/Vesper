@@ -12,19 +12,19 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon-192-20260901-v1.png",
+      "src": "/icon-192-20260907-moon-v1.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512-20260901-v1.png",
+      "src": "/icon-512-20260907-moon-v1.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-maskable-512-20260901-v1.png",
+      "src": "/icon-maskable-512-20260907-moon-v1.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

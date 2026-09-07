@@ -53,5 +53,14 @@ assert.equal((await post(nonce, 'synthetic-owner-token-for-test')).status, 403, 
 const refresh = await request('/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: client.client_id, refresh_token: tokens.refresh_token, resource: origin + '/mcp' }) });
 assert.equal(refresh.status, 200); assert.ok((await refresh.json()).access_token);
 assert.equal((await exchange({})).status, 400, 'authorization code cannot be replayed');
+const cancelConsent = await request(authPath());
+const cancelCookie = cancelConsent.headers.get('set-cookie').split(';')[0];
+const cancelNonce = cancelCookie.split('=')[1];
+const cancelRequest = { method: 'POST', headers: { origin, cookie: cancelCookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: cancelNonce, decision: 'deny' }) };
+const cancelled = await request('/authorize', cancelRequest);
+assert.equal(cancelled.status, 303);
+assert.equal(new URL(cancelled.headers.get('location')).searchParams.get('error'), 'access_denied');
+assert.equal(new URL(cancelled.headers.get('location')).searchParams.get('state'), 'test-state');
+assert.equal((await request('/authorize', cancelRequest)).status, 403, 'cancel consumes consent');
 await Promise.all(pending);
 console.log('OAuth: discovery, consent, CSRF, callback restriction, owner authentication, PKCE, token use, replay rejection and refresh passed');

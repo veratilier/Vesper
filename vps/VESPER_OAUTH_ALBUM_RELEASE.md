@@ -7,7 +7,7 @@ This change extends the external Vesper MCP server. It does not change the separ
 - Preserve the existing release workflow and dashboard variables.
 - API and MCP must share the existing D1 database and R2 bucket `vesper-media`.
 - Verify MCP `VESPER_MEMORY_USER_ID` matches the paired API account, or retain the same `VESPER_APP_TOKEN` fallback as the API. Do not rotate tokens or reassign existing data.
-- Provision a persistent KV namespace for MCP `OAUTH_KV`; record its real ID in the existing deployment configuration. The checked-in binding deliberately has no fabricated namespace ID. Reuse this namespace on subsequent deployments.
+- Provision a persistent KV namespace for MCP `OAUTH_KV`; record its real ID in the existing deployment configuration. The checked-in binding uses the dedicated `vesper-mcp-oauth` namespace. Reuse this namespace on subsequent deployments.
 - Keep the `global_fetch_strictly_public` compatibility flag; the OAuth provider requires it for public CIMD discovery.
 - Build and release API/frontend and MCP together through the existing Cloudflare setup. Frontend-only publication does not enable OAuth.
 - OAuth authorization uses the canonical origin `https://mcp.vesper.r-vera.com`. Use `https://mcp.vesper.r-vera.com/mcp` in ChatGPT.
@@ -51,3 +51,5 @@ npx wrangler deploy --dry-run --config mcp-server/wrangler.jsonc
 The OAuth test mocks the public CIMD document and KV rather than contacting ChatGPT or Cloudflare. Real ChatGPT consent, cross-origin image display and mobile layout require production/device verification. Repository-wide tsc still reports pre-existing music typing and test import-extension errors.
 
 After deployment verify both well-known documents, complete ChatGPT OAuth consent, list tools, archive one synthetic test photo, search/select it and confirm the intended chat displays it. Verify API/MCP owner identity before any real archive operation. Record actual results; do not report dry-run as deployed.
+
+Release review: local browser checks passed at 320/375/390/430/1280 widths, including custom backgrounds, transparent chrome, composer menu, keyboard viewport, scroll-to-latest, and reconnect without deleted-message replay. Actual local Workers sharing D1/R2 verified image bytes, explicit archive, search/edit, and API/MCP owner consistency. Fixed album online retry (with manual retry) and theme-aware editor surfaces. Consent cancellation and nonce reuse are covered. Browser scenarios use synthetic account data and simulated network/keyboard events; physical iPhone and actual ChatGPT consent remain separate checks.

@@ -20,6 +20,6 @@
     }
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "vesper-media" }],
-  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "fd9e9eb960e94c5587a327fc33ed89b0" }],
   "observability": { "enabled": true }
 }

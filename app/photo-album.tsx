@@ -22,7 +22,13 @@ export function PhotoAlbum({ apiUrl, headers, active }: { active: boolean; apiUr
     } catch (e) { if (id === generation.current) setMessage(e instanceof Error ? e.message : '读取失败'); }
     finally { if (id === generation.current) setBusy(false); }
   }, [apiUrl, headers, search, filter]);
-  useEffect(() => { if (active) void load(); return () => { generation.current++; }; }, [load, active]);
+  useEffect(() => {
+    if (!active) return;
+    const retry = () => { void load(); };
+    retry();
+    window.addEventListener('online', retry);
+    return () => { generation.current++; window.removeEventListener('online', retry); };
+  }, [load, active]);
   async function save(key: string, category: string, caption: string) {
     const response = await fetch(apiUrl('/api/photos'), { method: 'POST', headers: headers(true), body: JSON.stringify({ key, category, caption }) });
     const data = await response.json() as { error?: string }; if (!response.ok) throw new Error(data.error || '保存失败');
@@ -52,6 +58,7 @@ export function PhotoAlbum({ apiUrl, headers, active }: { active: boolean; apiUr
     </form>
     <nav className="album-filters" aria-label="照片分类">{['', ...result.categories].map(category => <button key={category} type="button" aria-pressed={filter === category} disabled={busy} onClick={() => setFilter(category)}>{category || '全部'}</button>)}</nav>
     <p role="status">{message || (busy ? '正在整理照片…' : '')}</p>
+    {message && !busy && <button type="button" onClick={() => void load()}>重新加载相册</button>}
     {!busy && !message && !result.photos.length && <p className="album-empty">这里还没有照片。可以导入，也可以在聊天中把想留下的照片交给我。</p>}
     <div className="album-grid">{result.photos.map(photo => <article key={photo.id}><AttachmentGallery items={[photo]} /><p>{photo.caption || photo.name}</p><button type="button" onClick={() => setEditing(photo)}>{photo.category} · 编辑</button></article>)}</div>
     {result.nextOffset !== null && <button type="button" disabled={busy} onClick={() => void load(result.nextOffset!)}>更多照片</button>}

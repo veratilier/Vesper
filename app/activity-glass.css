@@ -86,3 +86,29 @@
 .app-shell .terminal-lights i:nth-child(2) { background: #febc2e; }
 .app-shell .terminal-lights i:nth-child(3) { background: #28c840; }
 .app-shell :is(.execution-card, .execution-dialog) :focus-visible { outline: 2px solid #a4cafa; outline-offset: -2px; }
+
+/* Reserve image geometry before download and center the native top-layer viewer. */
+.app-shell .attachment-gallery { width: min(290px, 100%); box-sizing: border-box; flex: none; }
+.app-shell .message.user .attachment-gallery { margin-left: auto; }
+.app-shell .photo-stack, .app-shell .single-photo { aspect-ratio: 4 / 3; }
+.app-shell .attachment-gallery .photo-open { width: 100%; height: 100%; }
+.app-shell .attachment-gallery .photo-open img { width: 100%; height: 100%; max-height: none; object-fit: cover; animation: none; }
+.app-shell dialog.gallery-dialog { position: fixed; inset: 0; margin: auto; width: min(960px, calc(100vw - 24px)); max-width: calc(100vw - 24px); height: min(850px, calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); max-height: calc(100dvh - 40px); padding: 12px; overflow: auto; }
+.app-shell dialog.gallery-dialog[open] { display: flex; flex-direction: column; gap: 8px; }
+.app-shell .gallery-dialog header { flex: none; }
+.app-shell .gallery-dialog .gallery-full-image { flex: 1; min-height: 0; width: 100%; height: 0; max-width: 100%; object-fit: contain; margin: 0; }
+.app-shell .gallery-dialog nav { flex: none; }
+.app-shell .gallery-dialog .save-as-sticker { align-self: flex-start; font-size: 12px; }
+.app-shell .codex-input-dialog { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(540px,calc(100vw - 24px)); max-height: 85dvh; overflow: auto; padding: 20px; border: 1px solid var(--ui-line); border-radius: 18px; background: var(--ui-surface); color: var(--ui-ink); }
+.codex-input-dialog::backdrop { background: #15253599; }
+.codex-input-dialog fieldset { margin: 14px 0; padding: 12px; }
+.codex-input-dialog label { display: block; margin: 10px 0; }
+.codex-input-dialog small { display: block; }
+.codex-input-dialog textarea { width: 100%; min-height: 100px; }
+.codex-input-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+.codex-input-dialog footer { display: flex; gap: 12px; justify-content: flex-end; }
+.codex-input-dialog button { min-height: 44px; padding: 8px 14px; }
+.app-shell .codex-chat :is(.sent-turn,.agent-turn) > .message-attachments:has(.attachment-gallery) { width: min(290px, calc(100% - 16px)); min-width: 0; }
+.app-shell .sent-turn .attachment-gallery { margin-left: auto; }
+.app-shell .gallery-dialog .gallery-full-image { max-height: none; background: transparent; }
+.app-shell .attachment-gallery .stack-under { max-height: none; }

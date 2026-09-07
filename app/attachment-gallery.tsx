@@ -1,8 +1,14 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 export type GalleryAttachment = { key: string; url: string; name: string; type: string; size: number };
 export function AttachmentGallery({ items, onSaveAsSticker }: { items: GalleryAttachment[]; onSaveAsSticker?: (item: GalleryAttachment) => void }) {
   const [index, setIndex] = useState(0);
+  const [retry, setRetry] = useState(0);
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const previews = items.map(item => { const image = new Image(); image.src = item.url; return image; });
+    return () => { previews.forEach(image => { image.onload = null; }); };
+  }, [items]);
   const dialog = useRef<HTMLDialogElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const swiped = useRef(false);
@@ -13,8 +19,9 @@ export function AttachmentGallery({ items, onSaveAsSticker }: { items: GalleryAt
   return <div className="attachment-gallery">
     <div className={items.length > 1 ? 'photo-stack' : 'single-photo'} onTouchStart={e => { start.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; swiped.current = false; }} onTouchEnd={e => { if (!start.current) return; const dx = e.changedTouches[0].clientX - start.current.x; const dy = e.changedTouches[0].clientY - start.current.y; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) { swiped.current = true; move(dx < 0 ? 1 : -1); } start.current = null; }}>
       {items.length > 1 && [2, 1].filter(n => n < items.length).map(n => <img className={`stack-under stack-under-${n}`} key={n} src={items[(active + n) % items.length].url} alt="" loading="lazy" aria-hidden="true" />)}
-      <button className="photo-open" type="button" onClick={() => { if (!swiped.current) dialog.current?.showModal(); swiped.current = false; }} aria-label={`查看图片 ${active + 1}/${items.length}：${item.name}`}><img key={item.key} src={item.url} alt={item.name} loading="lazy" /></button>
+      <button className="photo-open" type="button" onClick={() => { if (!swiped.current) dialog.current?.showModal(); swiped.current = false; }} aria-label={`查看图片 ${active + 1}/${items.length}：${item.name}`}><img key={`${item.key}:${retry}`} src={item.url} alt={item.name} loading="eager" onError={() => setFailed(current => ({ ...current, [item.url]: true }))} /></button>
     </div>
+    {failed[item.url] && <button type="button" onClick={() => { setFailed(current => ({ ...current, [item.url]: false })); setRetry(value => value + 1); }}>图片加载失败，请打开原图或重试</button>}
     {items.length > 1 && <div className="gallery-controls"><button type="button" aria-label="上一张" onClick={() => move(-1)}>‹</button><button type="button" onClick={() => dialog.current?.showModal()} aria-label="打开整组图片">{active + 1} / {items.length}</button><button type="button" aria-label="下一张" onClick={() => move(1)}>›</button></div>}
     <dialog className="gallery-dialog" ref={dialog} onClick={e => { if (e.target === e.currentTarget) e.currentTarget.close(); }}>
       <header><span>{active + 1} / {items.length}</span><a href={item.url} download={item.name} target="_blank" rel="noreferrer">打开原图</a><button autoFocus type="button" aria-label="关闭图片" onClick={() => dialog.current?.close()}>×</button></header>

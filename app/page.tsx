@@ -3843,6 +3843,7 @@ function ConnectedChat({
   const executionFlush = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nearBottomRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const jumpingToBottomRef = useRef(false);
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
   const approvalQueueRef = useRef<PendingCodexApproval[]>([]);
   const approvalResponses = useRef(new Map<string, { result: Record<string, unknown>; expiresAt: number }>());
@@ -4680,16 +4681,23 @@ function ConnectedChat({
     const updateNearBottom = () => {
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       nearBottomRef.current = distance <= 96;
-      setShowScrollToBottom(!nearBottomRef.current);
+      // An explicit jump stays visible until arrival; manual scrolling keeps
+      // the normal near-bottom threshold while the long smooth animation runs.
+      if (distance <= 1) jumpingToBottomRef.current = false;
+      setShowScrollToBottom(jumpingToBottomRef.current || !nearBottomRef.current);
     };
     updateNearBottom();
     scroller.addEventListener("scroll", updateNearBottom, { passive: true });
+    const cancelJump = () => { jumpingToBottomRef.current = false; updateNearBottom(); };
+    scroller.addEventListener("wheel", cancelJump, { passive: true });
+    scroller.addEventListener("touchstart", cancelJump, { passive: true });
     const resizeObserver = new ResizeObserver(() => {
       if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
       updateNearBottom();
     });
     resizeObserver.observe(scroller);
     nearBottomRef.current = true;
+    jumpingToBottomRef.current = false;
     setShowScrollToBottom(false);
     const frame = requestAnimationFrame(() => {
       scroller.scrollTop = scroller.scrollHeight;
@@ -4699,6 +4707,8 @@ function ConnectedChat({
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       scroller.removeEventListener("scroll", updateNearBottom);
+      scroller.removeEventListener("wheel", cancelJump);
+      scroller.removeEventListener("touchstart", cancelJump);
     };
   }, [conversationId]);
   useLayoutEffect(() => {
@@ -4744,6 +4754,7 @@ function ConnectedChat({
   const scrollToLatest = () => {
     const scroller = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
     if (!scroller) return;
+    jumpingToBottomRef.current = true;
     scroller.scrollTo({
       top: scroller.scrollHeight,
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",

@@ -10,6 +10,7 @@ import {
   type SetStateAction,
   type CSSProperties,
 } from "react";
+import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { attachmentInputText } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
@@ -149,47 +150,14 @@ function appHeaders(json = false) {
     "x-vesper-device-token": deviceToken(),
   };
 }
-function anniversaryTarget(item: AnniversaryItem) {
-  const base = new Date(`${item.date}T12:00:00`);
-  if (!item.repeats) return base;
-  const now = new Date();
-  const target = new Date(
-    now.getFullYear(),
-    base.getMonth(),
-    base.getDate(),
-    12,
-  );
-  if (target.getTime() < now.getTime())
-    target.setFullYear(target.getFullYear() + 1);
-  return target;
-}
-function daysUntil(item: AnniversaryItem) {
-  return Math.max(
-    0,
-    Math.ceil((anniversaryTarget(item).getTime() - Date.now()) / 86400000),
-  );
-}
-function anniversaryDayLabel(item: AnniversaryItem) {
-  const target = anniversaryTarget(item);
-  if (!item.repeats && target.getTime() < Date.now()) {
-    return `过了 ${Math.max(1, Math.ceil((Date.now() - target.getTime()) / 86400000))} 天`;
-  }
-  return `距离 ${daysUntil(item)} 天`;
-}
-function nextAnniversary(items: AnniversaryItem[]) {
-  return [...items].sort(
-    (a, b) => anniversaryTarget(a).getTime() - anniversaryTarget(b).getTime(),
-  )[0];
-}
 function AnniversaryCard({ item }: { item: AnniversaryItem }) {
   const target = anniversaryTarget(item);
-  const nowMs = new Date().getTime();
-  const pastDays = Math.max(1, Math.ceil((nowMs - target.getTime()) / 86400000));
+  const days = anniversaryDays(item);
   return (
     <article className="surface anniversary">
       <div className="days">
-        <small>{item.repeats || target.getTime() >= nowMs ? "距离" : "过了"}</small>
-        <b>{item.repeats || target.getTime() >= nowMs ? daysUntil(item) : pastDays}</b>
+        <small>{days >= 0 ? "距离" : "过了"}</small>
+        <b>{days >= 0 ? daysUntil(item) : -days}</b>
         <small>天</small>
       </div>
       <div className="anniversary-copy">
@@ -203,98 +171,76 @@ function AnniversaryCard({ item }: { item: AnniversaryItem }) {
     </article>
   );
 }
-function Anniversaries() {
-  const [items, setItems] = usePersistentDocument<AnniversaryItem[]>(
-    "anniversaries",
-    [],
-  );
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({
-    title: "",
-    date: new Date().toLocaleDateString("en-CA"),
-    repeats: true,
-  });
-  const add = () => {
-    if (!draft.title.trim() || !draft.date) return;
-    setItems((current) => [...current, {
-      id: crypto.randomUUID(),
-      title: draft.title.trim(),
-      date: draft.date,
-      repeats: draft.repeats,
-    }]);
-    setDraft({ title: "", date: new Date().toLocaleDateString("en-CA"), repeats: true });
-    setAdding(false);
-  };
-  const next = nextAnniversary(items);
-  const nowMs = new Date().getTime();
-  return (
-    <div className="page-body">
-      <PageIntro
-        eyebrow="DAYS MATTER"
-        title="纪念日"
-        text="记录重要日期并自动计算天数。"
-      />
-      {next ? (
-        <div className="days-hero">
-          <span>NEXT ANNIVERSARY</span>
-          <h2>{next.title}</h2>
-          <div>
-            <small>{next.repeats || anniversaryTarget(next).getTime() >= nowMs ? "还有" : "已过"}</small>
-            <b>{next.repeats || anniversaryTarget(next).getTime() >= nowMs ? daysUntil(next) : Math.max(1, Math.ceil((nowMs - anniversaryTarget(next).getTime()) / 86400000))}</b>
-            <small>天</small>
-          </div>
-          <footer>
-            {anniversaryTarget(next).toLocaleDateString("zh-CN")} ·{" "}
-            {next.repeats ? "每年重复" : "仅一次"}
-          </footer>
-        </div>
-      ) : (
-        <EmptyState text="还没有纪念日。" />
-      )}
-      <div className="anniv-list">
-        {items.map((item) => (
-          <article className="surface anniv-row" key={item.id}>
-            <time>{item.date.slice(5).replace("-", ".")}</time>
-            <div>
-              <b>{item.title}</b>
-              <small>{item.repeats ? "每年重复" : "仅一次"}</small>
-            </div>
-              <span>{anniversaryDayLabel(item)}</span>
-            <button
-              aria-label="删除纪念日"
-              onClick={() =>
-                setItems((current) =>
-                  current.filter((entry) => entry.id !== item.id),
-                )
-              }
-            >
-              <Icon name="close" />
-            </button>
-          </article>
-        ))}
-      </div>
-      <button className="primary-action" onClick={() => setAdding(true)}>
-        <Icon name="plus" />
-        添加纪念日
-      </button>
-      {adding && (
-        <div className="modal-layer">
-          <button className="modal-scrim" aria-label="关闭" onClick={() => setAdding(false)} />
-          <section className="connection-modal anniversary-editor">
-            <div className="modal-head">
-              <div><small>NEW ANNIVERSARY</small><h2>添加纪念日</h2></div>
-              <button aria-label="关闭" onClick={() => setAdding(false)}><Icon name="close" /></button>
-            </div>
-            <label className="profile-field"><span>名称</span><input value={draft.title} autoFocus placeholder="值得记住的日子" onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-            <label className="profile-field"><span>日期</span><input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
-            <button className={draft.repeats ? "repeat-choice selected" : "repeat-choice"} onClick={() => setDraft({ ...draft, repeats: !draft.repeats })}><span>每年重复</span><b>{draft.repeats ? "✓" : ""}</b></button>
-            <button className="save-profile" disabled={!draft.title.trim() || !draft.date} onClick={add}>保存纪念日</button>
-          </section>
-        </div>
-      )}
-    </div>
-  );
+function anniversaryBackgroundStyle(background?: AnniversaryBackground) {
+  if (background?.mode === "image" && background.image) return { backgroundImage: `linear-gradient(0deg, rgba(0,0,0,.62), rgba(0,0,0,.56)), url(${JSON.stringify(background.image)})`, color: "#fff" };
+  if (background?.mode === "color" && /^#[0-9a-f]{6}$/i.test(background.color || "")) {
+    const color = background.color!;
+    const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16) / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+    const luminance = .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+    return { background: color, color: luminance > .179 ? "#000000" : "#ffffff" };
+  }
+  return undefined;
 }
+function Anniversaries() {
+  const [items, setItems] = usePersistentDocument<AnniversaryItem[]>("anniversaries", []);
+  const [editing, setEditing] = useState(false);
+  const [selectedId, setSelectedId] = useState("");
+  const blank = (): AnniversaryItem => ({ id: "", title: "", date: new Date().toLocaleDateString("en-CA"), repeats: false, background: { mode: "theme" } });
+  const [draft, setDraft] = useState<AnniversaryItem>(blank);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const uploadGeneration = useRef(0);
+  const openEditor = (item?: AnniversaryItem) => { uploadGeneration.current++; setUploading(false); setUploadError(""); setDraft(item ? { ...item } : blank()); setEditing(true); };
+  const closeEditor = () => { uploadGeneration.current++; setEditing(false); setUploading(false); };
+  const saveDate = () => {
+    if (!draft.title.trim() || !draft.date || uploading) return;
+    const saved = { ...draft, id: draft.id || crypto.randomUUID(), title: draft.title.trim() };
+    setItems((current) => draft.id ? current.map((item) => item.id === draft.id ? saved : item) : [...current, saved]);
+    setSelectedId(saved.id); closeEditor();
+  };
+  const uploadBackground = async (file?: File) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) || file.size > 10 * 1024 * 1024) { setUploadError("请选择 10 MB 以内的 JPG、PNG、WebP 或 GIF 图片。"); return; }
+    const generation = ++uploadGeneration.current;
+    setUploading(true); setUploadError("");
+    try { const { url } = await uploadImage(file); if (generation === uploadGeneration.current) setDraft((current) => ({ ...current, background: { ...current.background, mode: "image", image: url } })); }
+    catch (reason) { if (generation === uploadGeneration.current) setUploadError(reason instanceof Error ? reason.message : "上传失败，请重试。"); }
+    finally { if (generation === uploadGeneration.current) setUploading(false); }
+  };
+  const featured = items.find((item) => item.id === selectedId) || nextAnniversary(items);
+  const card = (item: AnniversaryItem, preview = false) => {
+    const days = anniversaryDays(item);
+    const past = days < 0;
+    const count = Math.abs(days);
+    return <article className="anniversary-keepsake" style={anniversaryBackgroundStyle(item.background)}>
+      <span className="keepsake-label">{past ? "Days remembered · 日子在累积" : "A day to remember · 值得期待"}</span>
+      <h2>{item.title || "纪念日名称"}</h2>
+      <div className="keepsake-count"><small>{past ? "已经走过" : "还有"}</small><b>{count}</b><small>天</small></div>
+      <footer><span>{past ? "始于" : "日期"} {item.date}<small>{item.repeats ? "每年纪念" : "记录这一天"}</small></span>{!preview && <button onClick={() => openEditor(item)}><Icon name="edit" />编辑与背景</button>}</footer>
+    </article>;
+  };
+  return <div className="page-body anniversary-page">
+    <header className="anniversary-heading"><span>OUR DAYS</span><h1>值得记住的日子</h1></header>
+    {featured ? card(featured) : <EmptyState text="把第一个重要的日子留在这里。" />}
+    {items.length > 1 && <div className="anniv-list">{items.filter((item) => item.id !== featured?.id).map((item) => <button className="anniversary-mini" key={item.id} onClick={() => setSelectedId(item.id)}><time>{item.date.slice(5).replace("-", ".")}</time><strong>{item.title}</strong><span>{anniversaryDayLabel(item)}</span><Icon name="chevron" /></button>)}</div>}
+    <button className="primary-action anniversary-add" onClick={() => openEditor()}><Icon name="plus" />添加纪念日</button>
+    {editing && <div className="modal-layer"><button className="modal-scrim" aria-label="关闭" onClick={closeEditor} /><section className="connection-modal anniversary-editor" role="dialog" aria-modal="true" aria-labelledby="anniversary-editor-title">
+      <div className="modal-head"><h2 id="anniversary-editor-title">{draft.id ? "编辑纪念日" : "添加纪念日"}</h2><button aria-label="关闭" onClick={closeEditor}><Icon name="close" /></button></div>
+      <label className="profile-field"><span>名称</span><input autoFocus value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+      <label className="profile-field"><span>日期</span><input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
+      <button className={draft.repeats ? "repeat-choice selected" : "repeat-choice"} aria-pressed={draft.repeats} onClick={() => setDraft({ ...draft, repeats: !draft.repeats })}><span>每年重复</span><b>{draft.repeats ? "✓" : ""}</b></button>
+      <fieldset className="anniversary-background-options"><legend>卡片背景</legend><div>{([ ["theme", "跟随主题"], ["color", "纯色"], ["image", "图片"] ] as const).map(([mode, label]) => <button key={mode} aria-pressed={(draft.background?.mode || "theme") === mode} onClick={() => { uploadGeneration.current++; setUploading(false); setUploadError(""); setDraft({ ...draft, background: { color: "#466b7b", ...draft.background, mode } }); }}>{label}</button>)}</div>
+      {draft.background?.mode === "color" && <label>选择颜色<input type="color" value={draft.background.color || "#466b7b"} onChange={(event) => setDraft({ ...draft, background: { ...draft.background, mode: "color", color: event.target.value } })} /></label>}
+      {draft.background?.mode === "image" && <label>上传背景图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading} onChange={(event) => { void uploadBackground(event.target.files?.[0]); event.target.value = ""; }} /></label>}
+      <p>选择“跟随主题”即可恢复默认背景。</p></fieldset>
+      {uploading && <p role="status">正在上传图片…</p>}{uploadError && <p role="alert">{uploadError}</p>}
+      {draft.date && <div className="anniversary-preview">{card(draft, true)}</div>}
+      <button className="save-profile" disabled={!draft.title.trim() || !draft.date || uploading || (draft.background?.mode === "image" && !draft.background.image)} onClick={saveDate}>保存纪念日</button>
+      {draft.id && <button className="anniversary-delete" onClick={() => { if (window.confirm("删除这个纪念日？")) { setItems((current) => current.filter((item) => item.id !== draft.id)); closeEditor(); } }}>删除纪念日</button>}
+    </section></div>}
+  </div>;
+}
+
 const iconPaths: Record<string, string[]> = {
   archive: ["M3 5h18v5H3z", "M5 10v10h14V10", "M10 14h4"],
   box: ["M3 8l9-5 9 5v8l-9 5-9-5z", "m3 8 9 5 9-5", "M12 13v8"],
@@ -538,11 +484,13 @@ type TodoItem = {
   due: string;
   createdAt: string;
 };
+type AnniversaryBackground = { mode: "theme" | "color" | "image"; color?: string; image?: string };
 type AnniversaryItem = {
   id: string;
   title: string;
   date: string;
   repeats: boolean;
+  background?: AnniversaryBackground;
 };
 type DiaryEntry = { user: string; agent: string; updatedAt: string };
 type DiaryDocument = Record<string, DiaryEntry>;
@@ -1937,19 +1885,8 @@ function Today({
         minute: "2-digit",
       }).format(new Date(latestNote.createdAt))
     : "";
-  // Compare calendar days so today's date remains today after noon and across DST.
-  const calendarDay = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
-  const today = calendarDay(now);
-  const upcoming = anniversaries.map((item) => {
-    const target = new Date(`${item.date}T12:00:00`);
-    if (item.repeats) {
-      target.setFullYear(now.getFullYear());
-      if (calendarDay(target) < today) target.setFullYear(target.getFullYear() + 1);
-    }
-    return { item, target, days: calendarDay(target) - today };
-  }).filter(({ days }) => Number.isFinite(days)).sort((a, b) => a.days - b.days);
-  const featured = upcoming.find(({ days }) => days >= 0) || upcoming.at(-1);
-  const featuredDate = featured?.item;
+  const featuredDate = nextAnniversary(anniversaries, now);
+  const featured = featuredDate ? { item: featuredDate, target: anniversaryTarget(featuredDate, now), days: anniversaryDays(featuredDate, now) } : undefined;
   const pendingTodos = todos.filter((item) => !item.done);
   const featuredIsPast = featured ? featured.days < 0 : false;
   const featuredDays = featured ? Math.abs(featured.days) : null;

@@ -156,24 +156,29 @@
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin: 0 8px 2px;
+  gap: 10px;
+  margin: 2px 8px 10px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--ui-muted);
-  font: 10px/1.25 var(--font-chinese);
+  font: 14px/1.5 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+  flex-wrap: wrap;
 }
 
-.codex-chat .turn-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--ui-ink-secondary); box-shadow: none; }
-.codex-chat .message-actions { display: flex; align-items: center; gap: 0; min-height: 32px; margin: -1px 8px 0; }
+.codex-chat .turn-status i { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--ui-ink-secondary); box-shadow: none; }
+.codex-chat .message-actions { display: flex; align-items: center; gap: 0; min-height: 32px; margin: -3px 4px 0; }
 .codex-chat .sent-turn .message-actions { justify-content: flex-end; }
 .codex-chat .message-actions time { color: var(--ui-muted); font: 10px/1.2 var(--font-chinese); }
-.codex-chat .message-action { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ui-muted); }
+.codex-chat .message-action { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ui-muted); }
 .codex-chat .message-action:active { background: var(--ui-surface-strong); color: var(--ui-ink); }
 .codex-chat .message-action.active { color: var(--ui-ink); }
 .codex-chat .message-action.danger { color: var(--ui-danger); }
-.codex-chat .message-action .ui-icon { width: 14px; height: 14px; stroke-width: 1.65; }
+.codex-chat .message-action .ui-icon { width: 19px; height: 19px; stroke-width: 1.8; }
+.codex-chat .turn-status time { font: inherit; color: var(--ui-ink); white-space: nowrap; }
+.codex-chat .turn-progress { font: 12px/1.4 var(--font-chinese); letter-spacing: 0; }
 .codex-chat .agent-turn .message-attachments { align-self: flex-start; margin-left: 8px; }
 .codex-chat .sent-turn .message-attachments { align-self: flex-end; margin-right: 8px; }
 

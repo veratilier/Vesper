@@ -34,7 +34,7 @@
 .home-overview .empty-state { padding: 24px 16px; }
 .home-overview .empty-state p { font-size: .875rem; color: var(--vesper-muted); }
 .home-overview .note-stack > .empty-state { grid-column: 1 / -1; border: 1px dashed var(--vesper-border); border-radius: 16px; }
-.codex-chat .chat-stream { gap: 22px; padding-inline: 12px; }
+.codex-chat .chat-stream { gap: 14px; padding-inline: 12px; }
 .codex-chat .message > div { padding: 10px 14px; border-color: var(--vesper-border); background: rgba(255,255,255,.24); box-shadow: none; border-radius: 18px; }
 .codex-chat .message.mine > div { background: rgba(207,225,234,.38); border-color: rgba(80,117,134,.18); }
 .codex-chat .message p { font-size: 1rem; line-height: 1.75; color: var(--vesper-text); }

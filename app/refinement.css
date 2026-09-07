@@ -34,10 +34,10 @@
 .home-overview .empty-state { padding: 24px 16px; }
 .home-overview .empty-state p { font-size: .875rem; color: var(--vesper-muted); }
 .home-overview .note-stack > .empty-state { grid-column: 1 / -1; border: 1px dashed var(--vesper-border); border-radius: 16px; }
-.codex-chat .chat-stream { gap: 14px; padding-inline: 12px; }
-.codex-chat .message > div { padding: 10px 14px; border-color: var(--vesper-border); background: rgba(255,255,255,.24); box-shadow: none; border-radius: 18px; }
+.codex-chat .chat-stream { gap: 10px; padding-inline: 12px; }
+.codex-chat .message > div { padding: 6px 12px; border-color: var(--vesper-border); background: rgba(255,255,255,.24); box-shadow: none; border-radius: 18px; }
 .codex-chat .message.mine > div { background: rgba(207,225,234,.38); border-color: rgba(80,117,134,.18); }
-.codex-chat .message p { font-size: 1rem; line-height: 1.75; color: var(--vesper-text); }
+.codex-chat .message p { font-size: 1rem; line-height: 1.55; color: var(--vesper-text); }
 .codex-chat .message pre, .codex-chat .message code { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; }
 .codex-chat .message pre { font-size: .8125rem; line-height: 1.6; }
 .codex-chat .message-actions time { font-size: .75rem; color: var(--vesper-muted); }
@@ -53,3 +53,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Compact prose without shrinking the readable body text or action icons. */
+.codex-chat .agent-turn, .codex-chat .sent-turn { gap: 2px; }
+.codex-chat .message.assistant > .assistant-message-content { min-height: 0; padding-block: 2px; }
+.codex-chat .turn-status { margin-block: 0 4px; }
+.codex-chat .message-actions { margin-top: 0; }

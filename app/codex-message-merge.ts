@@ -74,7 +74,7 @@ export function mergeCodexMessages<T extends MergeableCodexMessage>(...groups: T
   const byTurnContent = new Map<string, number>();
   const scoped = (item: T, id: string) => JSON.stringify([scopeKey(item), item.role, id]);
   // Distinct assistant items/bubbles may intentionally say the same thing.
-  const semanticKey = (item: T) => item.metadata?.turnId && !(item.role === "agent" && item.metadata?.itemId)
+  const semanticKey = (item: T) => item.metadata?.turnId && !(item.role !== "user" && item.metadata?.itemId)
     ? JSON.stringify([scopeKey(item), item.metadata.turnId, item.role, item.role === "user" ? item.metadata?.modelInputText || item.content : item.content])
     : "";
   const indexMessage = (item: T, index: number) => {

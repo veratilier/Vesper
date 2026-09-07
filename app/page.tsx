@@ -1413,7 +1413,7 @@ export default function Home() {
             <button key={label} type="button" aria-current={active === label ? "page" : undefined}
               onClick={() => navigateTo(label)}>
               <NavIcon name={icon} />
-              <span>{label === "今日" ? "首页" : label}</span>
+              <span>{label === "今日" ? "Home" : label === "聊天" ? "Chat" : "Music"}</span>
             </button>
           ))}
         </nav>

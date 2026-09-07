@@ -10,6 +10,7 @@ import {
   type SetStateAction,
   type CSSProperties,
 } from "react";
+import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { attachmentInputText } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
@@ -149,47 +150,14 @@ function appHeaders(json = false) {
     "x-vesper-device-token": deviceToken(),
   };
 }
-function anniversaryTarget(item: AnniversaryItem) {
-  const base = new Date(`${item.date}T12:00:00`);
-  if (!item.repeats) return base;
-  const now = new Date();
-  const target = new Date(
-    now.getFullYear(),
-    base.getMonth(),
-    base.getDate(),
-    12,
-  );
-  if (target.getTime() < now.getTime())
-    target.setFullYear(target.getFullYear() + 1);
-  return target;
-}
-function daysUntil(item: AnniversaryItem) {
-  return Math.max(
-    0,
-    Math.ceil((anniversaryTarget(item).getTime() - Date.now()) / 86400000),
-  );
-}
-function anniversaryDayLabel(item: AnniversaryItem) {
-  const target = anniversaryTarget(item);
-  if (!item.repeats && target.getTime() < Date.now()) {
-    return `过了 ${Math.max(1, Math.ceil((Date.now() - target.getTime()) / 86400000))} 天`;
-  }
-  return `距离 ${daysUntil(item)} 天`;
-}
-function nextAnniversary(items: AnniversaryItem[]) {
-  return [...items].sort(
-    (a, b) => anniversaryTarget(a).getTime() - anniversaryTarget(b).getTime(),
-  )[0];
-}
 function AnniversaryCard({ item }: { item: AnniversaryItem }) {
   const target = anniversaryTarget(item);
-  const nowMs = new Date().getTime();
-  const pastDays = Math.max(1, Math.ceil((nowMs - target.getTime()) / 86400000));
+  const days = anniversaryDays(item);
   return (
     <article className="surface anniversary">
       <div className="days">
-        <small>{item.repeats || target.getTime() >= nowMs ? "距离" : "过了"}</small>
-        <b>{item.repeats || target.getTime() >= nowMs ? daysUntil(item) : pastDays}</b>
+        <small>{days >= 0 ? "距离" : "过了"}</small>
+        <b>{days >= 0 ? daysUntil(item) : -days}</b>
         <small>天</small>
       </div>
       <div className="anniversary-copy">
@@ -204,12 +172,12 @@ function AnniversaryCard({ item }: { item: AnniversaryItem }) {
   );
 }
 function anniversaryBackgroundStyle(background?: AnniversaryBackground) {
-  if (background?.mode === "image" && background.image) return { backgroundImage: `linear-gradient(0deg, rgba(0,0,0,.62), rgba(0,0,0,.3)), url(${JSON.stringify(background.image)})`, color: "#fff" };
+  if (background?.mode === "image" && background.image) return { backgroundImage: `linear-gradient(0deg, rgba(0,0,0,.62), rgba(0,0,0,.56)), url(${JSON.stringify(background.image)})`, color: "#fff" };
   if (background?.mode === "color" && /^#[0-9a-f]{6}$/i.test(background.color || "")) {
     const color = background.color!;
     const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16) / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
     const luminance = .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
-    return { background: color, color: luminance > .179 ? "#111111" : "#ffffff" };
+    return { background: color, color: luminance > .179 ? "#000000" : "#ffffff" };
   }
   return undefined;
 }
@@ -241,8 +209,9 @@ function Anniversaries() {
   };
   const featured = items.find((item) => item.id === selectedId) || nextAnniversary(items);
   const card = (item: AnniversaryItem, preview = false) => {
-    const past = !item.repeats && anniversaryTarget(item).getTime() < Date.now();
-    const count = past ? Math.max(1, Math.ceil((Date.now() - anniversaryTarget(item).getTime()) / 86400000)) : daysUntil(item);
+    const days = anniversaryDays(item);
+    const past = days < 0;
+    const count = Math.abs(days);
     return <article className="anniversary-keepsake" style={anniversaryBackgroundStyle(item.background)}>
       <span className="keepsake-label">{past ? "Days remembered · 日子在累积" : "A day to remember · 值得期待"}</span>
       <h2>{item.title || "纪念日名称"}</h2>
@@ -1916,19 +1885,8 @@ function Today({
         minute: "2-digit",
       }).format(new Date(latestNote.createdAt))
     : "";
-  // Compare calendar days so today's date remains today after noon and across DST.
-  const calendarDay = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
-  const today = calendarDay(now);
-  const upcoming = anniversaries.map((item) => {
-    const target = new Date(`${item.date}T12:00:00`);
-    if (item.repeats) {
-      target.setFullYear(now.getFullYear());
-      if (calendarDay(target) < today) target.setFullYear(target.getFullYear() + 1);
-    }
-    return { item, target, days: calendarDay(target) - today };
-  }).filter(({ days }) => Number.isFinite(days)).sort((a, b) => a.days - b.days);
-  const featured = upcoming.find(({ days }) => days >= 0) || upcoming.at(-1);
-  const featuredDate = featured?.item;
+  const featuredDate = nextAnniversary(anniversaries, now);
+  const featured = featuredDate ? { item: featuredDate, target: anniversaryTarget(featuredDate, now), days: anniversaryDays(featuredDate, now) } : undefined;
   const pendingTodos = todos.filter((item) => !item.done);
   const featuredIsPast = featured ? featured.days < 0 : false;
   const featuredDays = featured ? Math.abs(featured.days) : null;

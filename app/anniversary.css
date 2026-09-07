@@ -19,7 +19,9 @@
 .anniversary-mini strong { font-size: 1rem; font-weight: 500; overflow-wrap: anywhere; }
 .anniversary-mini > span { font-size: .75rem; color: var(--ui-muted); }
 .anniversary-page .anniversary-add { margin-top: 18px; background: var(--ui-surface-muted); color: var(--ui-ink); border: 1px dashed var(--ui-line); min-height: 48px; }
-.anniversary-editor { max-height: 86dvh; overflow-y: auto; }
+.anniversary-editor { width: min(100%, 760px); margin-inline: auto; max-height: min(86dvh, 100%); overflow-y: auto; }
+.anniversary-editor .profile-field input { font-size: 16px; }
+.anniversary-mini > .ui-icon { width: 16px; height: 16px; }
 .anniversary-background-options { margin: 18px 0; padding: 0; border: 0; }
 .anniversary-background-options legend { font-size: 1rem; margin-bottom: 10px; }
 .anniversary-background-options > div { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -21,7 +21,7 @@
 }
 .app-shell :is(.page-intro p, .setting-row b, .note-toolbar, .note-toolbar button,
   .anniversary-add, .anniversary-keepsake footer button, .anniversary-mini strong,
-  .sticky p, .sticky textarea, .home-card-empty, .reminder-copy, .home-diary-preview,
+  .sticky p, .home-card-empty, .reminder-copy, .home-diary-preview,
   .letter-copy b, .home-track-link strong, .home-return-signal) {
   font-size: var(--text-body) !important;
   line-height: 1.5 !important;

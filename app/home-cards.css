@@ -88,13 +88,31 @@
 .home-cards .home-track-link small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width:767px) {
   .app-shell > .scroll-view[data-section="今日"] { padding-left: 16px; padding-right: 16px; }
-  .home-cards.home-overview { min-height: 0; height: 100%; grid-template-rows: minmax(max-content,1fr) repeat(4,max-content); align-content: start; align-items: stretch; }
-  .home-cards.home-overview .welcome { align-self: center; padding: 0; }
+  .home-cards.home-overview { min-height: 0; height: 100%; grid-template-rows: repeat(5,max-content); row-gap: clamp(14px, 2.2svh, 22px); align-content: start; align-items: stretch; }
+  .home-cards.home-overview .welcome { align-self: start; padding: 8px 0 0; margin-bottom: -6px; }
   .home-cards.home-overview .welcome h1 { font-size: clamp(30px,8.3vw,42px) !important; margin: 7px 0; }
   .home-cards .date-row > span:first-child { font: .875rem/1.4 var(--font-chinese),sans-serif; }
   .home-cards .home-return-signal { margin: 4px 0 0; }
 }
 /* Short windows and enlarged text retain natural scrolling instead of clipping cards. */
 @media (max-height:700px) and (max-width:767px) {
-  .home-cards.home-overview { height: auto; gap: 7px; }
+  .home-cards.home-overview { height: auto; gap: 12px; }
 }
+
+/* Handwritten headings, quieter body copy; keep glyphs at their natural proportions. */
+.home-cards .home-card-label {
+  font-family: var(--font-pinyon-script), "Pinyon Script", cursive !important;
+  font-size: 1.45rem; font-weight: 400; line-height: 1.15; letter-spacing: .01em;
+}
+.home-cards .home-date-number, .home-cards .home-diary > b {
+  font-family: Georgia, "Times New Roman", serif !important;
+  font-weight: 400;
+}
+.home-cards .home-diary > b { font-size: 1.125rem; }
+.home-cards .letter-copy b, .home-cards .home-track-link strong { font-size: .875rem; font-weight: 400; line-height: 1.4; }
+.home-cards .letter-copy > span, .home-cards .home-track-link small { font-size: .75rem; }
+.home-cards .home-diary-preview { font-size: .8125rem !important; line-height: 1.5 !important; }
+.home-cards .home-card-empty, .home-cards .reminder-copy { font-size: .8125rem; line-height: 1.5; }
+.home-cards .home-quick-grid { gap: 16px; }
+.home-cards .home-quick-grid .home-panel-heading { gap: 6px; }
+.home-cards .home-letter { min-height: 72px; }

@@ -1974,6 +1974,8 @@ body {
   width: 12px;
 }
 .profile-field {
+  min-width: 0;
+  max-width: 100%;
   display: block;
   margin-top: 13px;
 }
@@ -4927,3 +4929,29 @@ body {
 .codex-connection-pill { flex: 0 0 auto !important; display: inline-flex; align-items: center; gap: 5px; margin: 0 8px; color: #688084; font: 700 10px/1 var(--font-chinese); }
 .codex-connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: #aab4b4; }
 .codex-connection-pill i.online { background: #80a98d; box-shadow: 0 0 0 3px rgba(128, 169, 141, .14); }
+
+/* Constrain native date/time controls, including Safari's internal value box. */
+.app-shell input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]) {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  margin-inline: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  font-size: 16px;
+  text-align: left;
+}
+.app-shell input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"])::-webkit-date-and-time-value {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 1.2em;
+  text-align: left;
+}
+.app-shell input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"])::-webkit-datetime-edit {
+  min-width: 0;
+  padding: 0;
+}

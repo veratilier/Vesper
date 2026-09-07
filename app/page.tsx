@@ -1463,7 +1463,7 @@ export default function Home() {
               </button>
             </div>
             <nav>
-              {nav.map(({ label, english, icon }) => (
+              {nav.filter(item => item.label !== "设置").map(({ label, english, icon }) => (
                 <button
                   key={label}
                   className={active === label ? "nav-row active" : "nav-row"}
@@ -1476,6 +1476,16 @@ export default function Home() {
                 </button>
               ))}
             </nav>
+            <div className="drawer-bottom">
+              <button
+                className={active === "设置" ? "nav-row active" : "nav-row"}
+                aria-current={active === "设置" ? "page" : undefined}
+                onClick={() => navigateTo("设置")}
+              >
+                <NavIcon name="settings" />
+                <span>Settings</span>
+                {active === "设置" && <i />}
+              </button>
             <button
               className="drawer-footer"
               onClick={() => {
@@ -1490,6 +1500,7 @@ export default function Home() {
               </span>
               <Icon name="chevron" />
             </button>
+            </div>
           </aside>
         </div>
         {profileOpen && (

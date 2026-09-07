@@ -12,6 +12,7 @@ export function executionEvent(method: string, params: Record<string, unknown>, 
   const id = String(item.id || params.itemId || '');
   const delta = method === 'item/commandExecution/outputDelta' || method === 'item/fileChange/outputDelta';
   if (!id || (!delta && !(['item/started', 'item/completed'].includes(method) && types.has(String(item.type))))) return null;
+  if (delta && previous && !['inProgress', 'running', 'unknown'].includes(previous.status)) return previous;
   const type = String(item.type || previous?.type || 'commandExecution');
   const command = (display(item.command) || previous?.command || '').slice(0, 3000) || undefined;
   let output = previous?.output || '';

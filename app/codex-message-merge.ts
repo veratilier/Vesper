@@ -6,7 +6,7 @@ export type MergeableCodexMessage = {
   conversationId?: string;
   type?: string;
   status?: string;
-  metadata?: { modelInputText?: string; itemId?: string; turnId?: string; threadId?: string; showTurnStatus?: boolean; blockType?: string };
+  metadata?: { execution?: { status: string; updatedAt: string }; modelInputText?: string; itemId?: string; turnId?: string; threadId?: string; showTurnStatus?: boolean; blockType?: string };
 };
 
 // The first legacy bubble keeps the original itemId, but its message id has
@@ -113,6 +113,14 @@ export function mergeCodexMessages<T extends MergeableCodexMessage>(...groups: T
       indexMessage(duplicate, targetIndex);
       merged[index] = undefined;
     }
+    const previousExecution = next.metadata?.execution;
+    const incomingExecution = item.metadata?.execution;
+    const running = (status: string) => ["inProgress", "running", "unknown"].includes(status);
+    const keepExecution = previousExecution && incomingExecution && (
+      (!running(previousExecution.status) && running(incomingExecution.status)) ||
+      (running(previousExecution.status) === running(incomingExecution.status) && Date.parse(previousExecution.updatedAt) > Date.parse(incomingExecution.updatedAt))
+    );
+    const executionSource = keepExecution ? next : item;
     next = {
       ...next,
       ...item,
@@ -121,6 +129,10 @@ export function mergeCodexMessages<T extends MergeableCodexMessage>(...groups: T
       createdAt: original.createdAt || item.createdAt,
       metadata: { ...next.metadata, ...item.metadata },
     } as T;
+    if (previousExecution && incomingExecution) {
+      next = { ...next, content: executionSource.content, status: executionSource.status,
+        metadata: { ...next.metadata, execution: executionSource.metadata?.execution } } as T;
+    }
     merged[targetIndex] = next;
     indexMessage(item, targetIndex);
     indexMessage(next, targetIndex);

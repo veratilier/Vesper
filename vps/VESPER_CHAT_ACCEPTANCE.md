@@ -74,8 +74,21 @@ changes. The D1 execution table is created lazily by the API.
    long filenames, theme changes, photo backgrounds, reduced motion and keyboard.
 
 No production deployment or real VPS editing was performed in this change.
-Browser verification was blocked by the unavailable Chromium executable and
-failed browser-download network requests. Whole-repository TypeScript checking
+Browser verification was subsequently completed on the release Mac at 375,
+390, 430 and 1280 CSS pixels. The tests cover photo backgrounds, transparent
+headers and AI text, safe-area/keyboard geometry, offline draft preservation and
+deleted-message suppression. Separate browser fixtures verify execution cards,
+late output, deliberately reordered checkpoint persistence, stale snapshots,
+gallery navigation/dialog closure, file history success/failure, approval
+accept/deny and rejection of another thread's tool request. These fixtures do
+not establish real production VPS editing capability.
+
+Actual isolated Worker/D1/R2 HTTP checks verify generated text/image bytes,
+idempotent file keys, download headers, authentication, monotonic observations
+and conversation isolation. The installed local runtime requires a local-only
+compatibility-date override to 2026-05-22; production config remains unchanged.
+Completed execution checkpoints are now serialized, and late deltas/stale
+running records cannot regress a completed item. Whole-repository TypeScript checking
 still reports pre-existing music typing and test-extension configuration errors;
 the newly added modules pass the check.
 

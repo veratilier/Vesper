@@ -22,3 +22,14 @@ assert.deepEqual(workspaceOptions(''), {});
 assert.throws(() => workspaceOptions('relative/path'));
 assert.throws(() => workspaceOptions('/project\nother'));
 console.log('Execution event, replay, output limits, failed status and workspace checks passed');
+
+assert.equal(executionEvent('item/commandExecution/outputDelta', { itemId: 'exec-1', delta: 'duplicate output' }, state).output, 'authoritative');
+const done = { id: 'exec', role: 'system', content: 'terminal', createdAt: '2026-09-08T00:00:00Z', status: 'completed', metadata: { itemId: 'exec', execution: { ...state, status: 'completed', updatedAt: '2026-09-08T00:00:02Z' } } };
+const stale = { ...done, status: 'inProgress', metadata: { ...done.metadata, execution: { ...done.metadata.execution, status: 'inProgress', output: 'partial', updatedAt: '2026-09-08T00:00:03Z' } } };
+for (const sources of [[done, stale], [stale, done]]) {
+  const merged = mergeCodexMessages(sources);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].metadata.execution.status, 'completed');
+  assert.equal(merged[0].metadata.execution.output, 'authoritative');
+}
+console.log('Late output and stale running snapshots cannot replay or regress completed execution');

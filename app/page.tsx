@@ -3839,6 +3839,7 @@ function ConnectedChat({
   const fileInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const executionPending = useRef(new Map<string, BridgeChatMessage>());
+  const executionWrites = useRef(new Map<string, Promise<void>>());
   const executionFlush = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nearBottomRef = useRef(true);
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
@@ -3886,7 +3887,12 @@ function ConnectedChat({
     if (!pending.length) return;
     save(mergeCodexMessages(messagesRef.current, pending));
     for (const item of pending) {
-      void persistCodexMessage(item).catch(() => setHistoryWarning("执行记录暂未同步"));
+      // Serialize each item's checkpoints so a slow running write cannot overwrite completion.
+      const writes = executionWrites.current;
+      const write = (writes.get(item.id) || Promise.resolve())
+        .then(() => persistCodexMessage(item)).catch(() => setHistoryWarning("执行记录暂未同步"));
+      writes.set(item.id, write);
+      void write.finally(() => { if (writes.get(item.id) === write) writes.delete(item.id); });
       void fetch(apiUrl('/api/codex/events'), { method: 'POST', headers: appHeaders(true), body: JSON.stringify({ conversationId, event: { ...item.metadata?.execution, id: item.id } }) })
         .then(response => { if (!response.ok) throw new Error('event sync failed'); }).catch(() => setHistoryWarning("执行记录暂未同步"));
     }
@@ -4055,6 +4061,13 @@ function ConnectedChat({
       else pendingRpc.resolve(message);
       return;
     }
+    const params = message.params || {};
+    if (params.threadId && threadId.current && params.threadId !== threadId.current) {
+      if (message.id != null && message.method && CODEX_DYNAMIC_TOOL_METHODS.has(message.method)) {
+        socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32602, message: "Tool request belongs to another thread" } }));
+      }
+      return;
+    }
     // App-server versions have used each of these request names for dynamic tools.
     if (message.method && CODEX_DYNAMIC_TOOL_METHODS.has(message.method)) {
       void sendToolResult(message);
@@ -4064,8 +4077,6 @@ function ConnectedChat({
       socket.current?.send(JSON.stringify({ id: message.id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } }));
       return;
     }
-    const params = message.params || {};
-    if (params.threadId && threadId.current && params.threadId !== threadId.current) return;
     if (message.method === "serverRequest/resolved") {
       updateApprovalQueue((queue) => queue.filter((approval) => !approvalWasResolved(approval, params)));
       for (const [key, response] of approvalResponses.current) {

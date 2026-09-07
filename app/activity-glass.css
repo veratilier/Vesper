@@ -1,0 +1,47 @@
+/* Functional execution records: plain monospace output, never HTML or shell replay. */
+.execution-card { min-width: 0; border: 1px solid var(--ui-line); border-radius: 16px; background: color-mix(in srgb, var(--ui-surface) 85%, transparent); overflow: hidden; }
+.execution-heading { display: flex; align-items: center; }
+.execution-heading button { border: 0; background: none; color: var(--ui-ink-secondary); min-height: 44px; padding: 10px; }
+.execution-heading > button:first-child { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; text-align: left; }
+.execution-heading b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px/1.5 ui-monospace, monospace; }
+.execution-heading small { flex: none; font-size: 11px; }
+.execution-location { margin: 8px 12px; overflow-wrap: anywhere; font-size: 11px; color: var(--ui-muted); }
+.execution-card pre, .execution-dialog pre { max-height: 230px; overflow: auto; margin: 10px; padding: 12px; border-radius: 10px; background: color-mix(in srgb, var(--ui-ink) 6%, var(--ui-surface)); color: var(--ui-ink); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, monospace; font-style: normal !important; }
+.execution-dialog, .gallery-dialog { box-sizing: border-box; width: min(900px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--ui-line); border-radius: 22px; padding: 16px; background: var(--ui-surface); color: var(--ui-ink); }
+.execution-dialog::backdrop, .gallery-dialog::backdrop { background: rgba(16, 26, 40, .62); }
+.execution-dialog header, .gallery-dialog header { display: flex; align-items: center; gap: 12px; }
+.execution-dialog header b { overflow-wrap: anywhere; flex: 1; font-size: 14px; }
+.execution-dialog button, .gallery-dialog header button { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 24px; }
+.execution-dialog pre { max-height: 65dvh; }
+.attachment-gallery { max-width: min(290px, 100%); min-width: 0; padding: 8px; }
+.photo-stack, .single-photo { position: relative; width: 100%; touch-action: pan-y; }
+.photo-stack { margin: 8px 0 12px; }
+.photo-open { display: block; position: relative; width: 100%; padding: 0; border: 0; border-radius: 18px; background: transparent; cursor: zoom-in; }
+.photo-open img { display: block; width: 100%; max-height: 300px; object-fit: contain; border-radius: 18px; animation: photo-enter .2s ease-out; background: var(--ui-surface); }
+.photo-stack .photo-open img { aspect-ratio: 4 / 3; object-fit: cover; }
+.stack-under { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 18px; pointer-events: none; border: 1px solid var(--ui-line); }
+.stack-under-1 { transform: rotate(-4deg) translate(-3px, -3px); }
+.stack-under-2 { transform: rotate(5deg) translate(3px, -6px); }
+.gallery-controls { display: flex; justify-content: center; align-items: center; }
+.gallery-controls button { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--ui-ink-secondary); }
+.gallery-dialog header a { margin-left: auto; color: inherit; font-size: 12px; }
+.gallery-full-image { display: block; max-width: 100%; width: auto; height: 65dvh; object-fit: contain; margin: 12px auto; }
+.gallery-dialog nav { display: flex; gap: 8px; overflow-x: auto; padding: 6px; }
+.gallery-dialog nav button { flex: 0 0 52px; padding: 2px; border: 2px solid transparent; border-radius: 8px; background: none; }
+.gallery-dialog nav button[aria-current=true] { border-color: var(--vesper-accent); }
+.gallery-dialog nav img { width: 44px; height: 44px; object-fit: cover; border-radius: 5px; }
+.file-attachment small { display: block; font-size: 11px; color: var(--ui-muted); overflow-wrap: anywhere; }
+@keyframes photo-enter { from { opacity: .6; transform: translateX(8px) rotate(2deg); } to { opacity: 1; transform: none; } }
+/* Frosted chrome follows the current theme; content remains transparent. */
+.stage .app-shell :is(.drawer, .mobile-navigation, .chat-compose, .connection-modal, .codex-model-picker) {
+  background: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  backdrop-filter: blur(20px) saturate(120%);
+  border-color: color-mix(in srgb, var(--ui-line-strong) 70%, white);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 8px 28px rgba(28,48,68,.09);
+}
+@supports not (backdrop-filter: blur(1px)) { .stage .app-shell :is(.drawer, .mobile-navigation, .chat-compose, .connection-modal, .codex-model-picker) { background: var(--ui-surface); } }
+@media (prefers-reduced-transparency: reduce) { .stage .app-shell :is(.drawer, .mobile-navigation, .chat-compose, .connection-modal, .codex-model-picker) { background: var(--ui-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+@media (prefers-reduced-motion: reduce) { .photo-open img { animation: none; } }
+
+.photo-caption { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ui-muted); margin-block: 5px; }

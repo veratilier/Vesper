@@ -445,3 +445,6 @@
 }
 .codex-chat .chat-scroll-to-bottom:hover { background: var(--ui-surface-raised, var(--ui-surface)); }
 .codex-chat .chat-scroll-to-bottom:focus-visible { outline: 2px solid var(--vesper-accent); outline-offset: 3px; }
+/* Connection lives beside the model picker; retain the separate error/recovery row. */
+.app-shell .codex-chat .composer-status > i { background: #9aa4ad !important; }
+.app-shell .codex-chat .composer-status > i.online { background: #36956b !important; }

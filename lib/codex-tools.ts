@@ -1,3 +1,5 @@
+import { createChatFile } from '@/lib/codex-artifacts';
+import { readExecutions } from '@/lib/codex-events';
 import { allowedDocumentKeys } from "@/db/schema";
 import { ensureSchema, getDb } from "@/lib/db";
 import { callConfiguredMcpTool, configuredMcpTools } from "@/lib/mcp-connections";
@@ -8,7 +10,7 @@ type ToolInput = Record<string, unknown>;
 type MusicTrack = { id: string; neteaseId?: string; title: string; artist: string; album?: string; cover?: string; duration?: string; url?: string; playable?: boolean };
 type MusicPlayback = { trackId?: string; playing?: boolean; positionSeconds?: number; durationSeconds?: number; queueLength?: number; updatedAt?: string };
 type NeteaseSourceSong = { id?: string | number; name?: string; dt?: number; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string } };
-export type CodexToolContext = { conversationId?: string; turnId?: string };
+export type CodexToolContext = { conversationId?: string; turnId?: string; origin?: string };
 
 const sectionToKey: Record<string, string> = {
   today: "todos",
@@ -23,6 +25,8 @@ const sectionToKey: Record<string, string> = {
 };
 
 export const codexToolDefinitions = [
+  { name: "send_chat_file", description: "Send a real generated file as a chat attachment (up to 8 MiB). Supply text OR base64 bytes, never a local path or invented URL. Images sent together in one tool call are grouped. Do not include credentials or private configuration files.", inputSchema: { type: "object", additionalProperties: false, properties: { files: { type: "array", minItems: 1, maxItems: 8, items: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, mimeType: { type: "string" }, text: { type: "string" }, base64: { type: "string" } }, required: ["name"] } }, message: { type: "string" } }, required: ["files"] } },
+  { name: "read_codex_task_progress", description: "Read the latest 30 saved execution events for this Vesper conversation, including commands, output, errors, exit codes and timestamps. These are observations, not a live health check; running records may be stale. Does not grant shell or filesystem permissions.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
   {
     name: "read_vesper_state",
     description: "Read one Vesper document or section. Read-only; never changes data.",
@@ -320,6 +324,21 @@ async function readMusicStatus() {
 
 export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope, context: CodexToolContext = {}) {
   await ensureSchema();
+  if (name === "read_codex_task_progress") {
+    if (!memoryScope || !context.conversationId) throw new Error("Conversation context required");
+    return readExecutions(memoryScope.userId, context.conversationId);
+  }
+  if (name === "send_chat_file") {
+    if (!memoryScope || !context.conversationId || !context.origin) throw new Error("Conversation context required");
+    if (!Array.isArray(input.files) || !input.files.length || input.files.length > 8) throw new Error("Send between 1 and 8 files");
+    if (JSON.stringify(input.files).length > 12 * 1024 * 1024) throw new Error("Attachment batch too large");
+    const attachments = [];
+    for (const file of input.files) {
+      if (!file || typeof file !== 'object' || Array.isArray(file)) throw new Error("Invalid file");
+      attachments.push(await createChatFile(file as ToolInput, memoryScope.userId, context.origin));
+    }
+    return { attachments, message: String(input.message || '').slice(0, 2000) };
+  }
   if (name === "read_vesper_state") {
     const section = String(input.section || "notes").toLowerCase();
     if (section === "memory") {

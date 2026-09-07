@@ -1,4 +1,8 @@
 "use client";
+import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
+import { ExecutionCard } from './execution-card';
+import { AttachmentGallery } from './attachment-gallery';
+import './activity-glass.css';
 import {
   useCallback,
   useEffect,
@@ -2598,6 +2602,7 @@ type BridgeChatMessage = {
   content: string;
   status: string;
   metadata?: {
+    execution?: Execution;
     thoughtSummary?: string;
     durationMs?: number;
     tools?: string[];
@@ -3313,7 +3318,7 @@ function normalizeCodexMessages(value: unknown, conversationId: string): BridgeC
     // memory input. They are never user-authored messages and must not survive
     // a restore from local cache, the VPS history service, or a legacy import.
     if (isVesperInternalContextText(item.content)) return [];
-    const isMusicCard = item.metadata?.blockType === "musicCard";
+    const isMusicCard = item.metadata?.blockType === "musicCard" || Boolean(item.metadata?.attachments?.length);
     // Older VPS history servers do not yet persist `message_type`, but they do
     // preserve metadata. Treat that durable metadata as authoritative so an
     // already-sent sticker never falls back to its compatibility text after a
@@ -3663,6 +3668,7 @@ function CodexChatMessage({
   onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
   onSaveAttachmentAsSticker?: (attachment: ChatAttachment, item: BridgeChatMessage) => void;
 }) {
+  if (item.metadata?.execution) return <ExecutionCard execution={item.metadata.execution} live={turnInProgress} />;
   const assistant = item.role === "agent";
   const timestamp = visibleMessageTimestamp(item.createdAt);
   const stamp = Number.isFinite(timestamp)
@@ -3832,6 +3838,9 @@ function ConnectedChat({
   const streamEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const executionPending = useRef(new Map<string, BridgeChatMessage>());
+  const executionWrites = useRef(new Map<string, Promise<void>>());
+  const executionFlush = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nearBottomRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
@@ -3871,6 +3880,47 @@ function ConnectedChat({
     const item = updated.find((candidate) => candidate.id === id);
     if (item) void persistCodexMessage(item).catch(() => setHistoryWarning("历史暂未同步"));
   };
+  const flushExecutions = () => {
+    if (executionFlush.current) clearTimeout(executionFlush.current);
+    executionFlush.current = null;
+    const pending = [...executionPending.current.values()];
+    executionPending.current.clear();
+    if (!pending.length) return;
+    save(mergeCodexMessages(messagesRef.current, pending));
+    for (const item of pending) {
+      // Serialize each item's checkpoints so a slow running write cannot overwrite completion.
+      const writes = executionWrites.current;
+      const write = (writes.get(item.id) || Promise.resolve())
+        .then(() => persistCodexMessage(item)).catch(() => setHistoryWarning("执行记录暂未同步"));
+      writes.set(item.id, write);
+      void write.finally(() => { if (writes.get(item.id) === write) writes.delete(item.id); });
+      void fetch(apiUrl('/api/codex/events'), { method: 'POST', headers: appHeaders(true), body: JSON.stringify({ conversationId, event: { ...item.metadata?.execution, id: item.id } }) })
+        .then(response => { if (!response.ok) throw new Error('event sync failed'); }).catch(() => setHistoryWarning("执行记录暂未同步"));
+    }
+  };
+  const observeExecution = (method: string, params: Record<string, unknown>) => {
+    if (params.threadId && params.threadId !== threadId.current) return;
+    const raw = params.item as Record<string, unknown> | undefined;
+    const itemId = String(raw?.id || params.itemId || '');
+    if (!itemId) return;
+    const id = `${threadId.current}:execution:${itemId}`;
+    const previous = executionPending.current.get(id) || messagesRef.current.find(item => item.id === id);
+    const execution = executionEvent(method, params, previous?.metadata?.execution);
+    if (!execution) return;
+    const item: BridgeChatMessage = { id, conversationId, role: 'system', content: execution.title, status: execution.status,
+      createdAt: previous?.createdAt || new Date().toISOString(), metadata: { execution, threadId: threadId.current, itemId: `execution:${itemId}`, turnId: String(params.turnId || activeTurnId.current || ''), blockType: 'execution', showTurnStatus: false } };
+    executionPending.current.set(id, item);
+    // Render live output without writing the full conversation to storage per token.
+    const next = mergeCodexMessages(messagesRef.current, [item]);
+    messagesRef.current = next; setMessages(next);
+    if (method === 'item/completed') flushExecutions();
+    else if (!executionFlush.current) executionFlush.current = setTimeout(flushExecutions, 1000);
+  };
+  useEffect(() => () => {
+    if (executionFlush.current) clearTimeout(executionFlush.current);
+    executionFlush.current = null;
+    executionPending.current.clear();
+  }, [conversationId]);
   const logCodexDiagnostic = (message: CodexSocketMessage) => {
     const method = typeof message.method === "string" ? message.method : "rpc-response";
     const itemType = message.params && typeof message.params.item === "object" && message.params.item !== null
@@ -3928,6 +3978,14 @@ function ConnectedChat({
     setTurnStatus("tool");
     try {
       const result = await callServerTool(name, argumentsValue, itemId);
+      if (name === 'send_chat_file' && result && typeof result === 'object' && 'attachments' in result) {
+        const sent = result as { attachments: ChatAttachment[]; message?: string };
+        const attachmentId = `files:${threadId.current}:${itemId}`;
+        const existing = messagesRef.current.find(item => item.id === attachmentId);
+        const fileMessage: BridgeChatMessage = { id: attachmentId, conversationId, role: 'agent', content: sent.message || '文件', status: 'delivered', createdAt: existing?.createdAt || new Date().toISOString(), metadata: { attachments: sent.attachments, itemId: attachmentId, threadId: threadId.current, turnId: activeTurnId.current, blockType: 'agentMessage', showTurnStatus: false } };
+        save(mergeCodexMessages(messagesRef.current, [fileMessage]));
+        await persistCodexMessage(fileMessage);
+      }
       if (result && typeof result === "object" && "musicCard" in result) {
         window.dispatchEvent(new CustomEvent("vesper-music-card", { detail: { conversationId, card: (result as { musicCard: MusicCardData }).musicCard } }));
       }
@@ -4004,6 +4062,13 @@ function ConnectedChat({
       else pendingRpc.resolve(message);
       return;
     }
+    const params = message.params || {};
+    if (params.threadId && threadId.current && params.threadId !== threadId.current) {
+      if (message.id != null && message.method && CODEX_DYNAMIC_TOOL_METHODS.has(message.method)) {
+        socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32602, message: "Tool request belongs to another thread" } }));
+      }
+      return;
+    }
     // App-server versions have used each of these request names for dynamic tools.
     if (message.method && CODEX_DYNAMIC_TOOL_METHODS.has(message.method)) {
       void sendToolResult(message);
@@ -4013,7 +4078,6 @@ function ConnectedChat({
       socket.current?.send(JSON.stringify({ id: message.id, result: { currentTimeAt: Math.floor(Date.now() / 1000) } }));
       return;
     }
-    const params = message.params || {};
     if (message.method === "serverRequest/resolved") {
       updateApprovalQueue((queue) => queue.filter((approval) => !approvalWasResolved(approval, params)));
       for (const [key, response] of approvalResponses.current) {
@@ -4043,6 +4107,22 @@ function ConnectedChat({
         socket.current?.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unsupported approval request type" } }));
       }
       return;
+    }
+    if (message.method === 'item/started' || message.method === 'item/completed' || message.method === 'item/commandExecution/outputDelta' || message.method === 'item/fileChange/outputDelta') observeExecution(message.method, params);
+    if (message.method === 'item/commandExecution/outputDelta' || message.method === 'item/fileChange/outputDelta') return;
+    if (['turn/started', 'turn/completed', 'turn/plan/updated', 'turn/diff/updated'].includes(message.method || '')) {
+      const turn = (params.turn || {}) as Record<string, unknown>;
+      const turnId = String(turn.id || params.turnId || activeTurnId.current || '');
+      if (turnId) {
+        const plan = message.method === 'turn/plan/updated';
+        const diff = message.method === 'turn/diff/updated';
+        const finished = message.method === 'turn/completed';
+        observeExecution(finished || plan || diff ? 'item/completed' : 'item/started', { ...params, turnId, item: {
+          id: `${plan ? 'plan' : diff ? 'diff' : 'turn'}:${turnId}`, type: 'toolCall', name: plan ? '任务计划' : diff ? '本轮修改' : '回复任务',
+          status: plan || diff ? 'completed' : turn.status || (finished ? 'completed' : 'inProgress'), result: plan ? params.plan : diff ? params.diff : turn.error || (finished ? '本轮结束' : '已开始'),
+        } });
+      }
+      if (message.method === 'turn/plan/updated' || message.method === 'turn/diff/updated') return;
     }
     if (message.method === "item/agentMessage/delta") {
       const id = String(params.itemId || "agent");
@@ -4114,18 +4194,20 @@ function ConnectedChat({
       }
     }
     if (message.method === "turn/completed") {
+      flushExecutions();
       const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
       const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
       if (completedTurnId) clearApprovalQueue({ threadId: threadId.current, turnId: completedTurnId });
       setBusy(false);
+      const turnFailed = ["failed", "interrupted"].includes(String((params.turn as Record<string, unknown> | undefined)?.status));
       if (activeTurnUserId.current) {
         updateMessage(activeTurnUserId.current, (item) => ({
           ...item,
-          status: "completed",
+          status: turnFailed ? "error" : "completed",
           metadata: {
             ...item.metadata,
             turnId: activeTurnId.current || item.metadata?.turnId,
-            turnStatus: "completed",
+            turnStatus: turnFailed ? "error" : "completed",
             thoughtSummary: reasoningSummaries.current.length ? reasoningSummaries.current.join("\n") : undefined,
           },
         }));
@@ -4179,10 +4261,12 @@ function ConnectedChat({
         return Array.isArray(value.items) ? value.items.map((item) => ({ item, turnId: value.id || "", createdAt: value.startedAt })) : [];
       }),
     ];
-    const restored = rawItems.flatMap((entry) => {
+    const restored = rawItems.flatMap<BridgeChatMessage>((entry) => {
       if (!entry.item || typeof entry.item !== "object") return [];
       const item = entry.item as CodexItem & { createdAt?: unknown; startedAt?: unknown };
       const type = String(item.type || "");
+      const execution = executionEvent('item/completed', { item });
+      if (execution) return [{ id: `${threadId.current}:execution:${execution.id}`, conversationId, role: 'system' as const, content: execution.title, status: execution.status, createdAt: codexTimestamp(item.createdAt ?? item.startedAt ?? entry.createdAt, new Date().toISOString()), metadata: { execution, threadId: threadId.current, itemId: `execution:${execution.id}`, turnId: entry.turnId, blockType: 'execution', showTurnStatus: false } } satisfies BridgeChatMessage];
       const role = item.role === "user" || type === "userMessage" || type === "userInput" ? "user" : "agent";
       const content = role === "agent" ? visibleAssistantText(item) : visibleUserText(item);
       if (!content.trim()) return [];
@@ -4204,6 +4288,8 @@ function ConnectedChat({
       return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: role === "user" && existing ? existing.content : content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
     if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageWasDeleted(item, tombstonesRef.current))));
+    for (const item of restored) if (item.metadata?.execution && !messageWasDeleted(item, tombstonesRef.current)) executionPending.current.set(item.id, item);
+    if (executionPending.current.size) flushExecutions();
   };
   const loadDynamicTools = async () => {
     let dynamicTools = CODEX_DYNAMIC_TOOLS;
@@ -4226,6 +4312,7 @@ function ConnectedChat({
   const startThreadWithTools = async (dynamicTools: typeof CODEX_DYNAMIC_TOOLS, developerInstructions: string) => {
     const result = await sendRpc("thread/start", {
       dynamicTools,
+      ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")),
       approvalPolicy: "on-request",
       summary: "concise",
       developerInstructions,
@@ -4241,7 +4328,7 @@ function ConnectedChat({
   };
   const resumeThread = async (developerInstructions: string) => {
     try {
-      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions });
+      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions, dynamicTools: await loadDynamicTools() });
       syncThreadModel(resumed);
       hydrateThreadSnapshot(resumed);
       appliedDeveloperInstructions.current = developerInstructions;
@@ -4256,6 +4343,7 @@ function ConnectedChat({
           syncThreadModel(resumed);
           hydrateThreadSnapshot(resumed);
           appliedDeveloperInstructions.current = "";
+          setHistoryWarning("当前 app-server 未接受会话工具更新；文件发送等新工具请在新对话中使用。");
           setResumeError("");
           logCodexDiagnostic({ method: "thread/resume/developer-instructions-unsupported", params: {} });
           return;
@@ -4309,7 +4397,7 @@ function ConnectedChat({
     const dynamicTools = await loadDynamicTools();
     if (threadId.current) {
       await resumeThread(developerInstructions);
-      // The app-server does not accept a dynamic-tool update on thread/resume.
+      // Older app-server versions may reject tool updates; resumeThread falls back.
       // Never auto-replace a persisted Codex thread here: a continuation thread
       // has a shorter snapshot and must not be allowed to make an existing
       // Vesper conversation appear empty.
@@ -4324,7 +4412,7 @@ function ConnectedChat({
     }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     try {
-      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
+      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
@@ -4452,7 +4540,7 @@ function ConnectedChat({
       if (!threadId.current) throw new Error("No Codex thread");
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
       const requestedModel = nextModelRef.current;
-      const started = await startCodexTurnWithModel(sendRpc, { threadId: threadId.current, clientUserMessageId: userMessage.id, input, summary: "concise" }, requestedModel, modelCatalog.current);
+      const started = await startCodexTurnWithModel(sendRpc, { threadId: threadId.current, ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), clientUserMessageId: userMessage.id, input, summary: "concise" }, requestedModel, modelCatalog.current);
       // A rejected RPC must retain the pending selection, not pretend it applied.
       if (requestedModel) {
         setCurrentModel(requestedModel);
@@ -4631,7 +4719,7 @@ function ConnectedChat({
     requestAnimationFrame(() => {
       if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
     });
-  }, [messages.length, streamingItems]);
+  }, [messages, streamingItems]);
   useLayoutEffect(() => {
     if (!focusMessageId) return;
     const timer = window.setTimeout(() => {
@@ -4667,7 +4755,6 @@ function ConnectedChat({
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
-        <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
@@ -4679,7 +4766,7 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
         {busy && <div className="reply-progress" role="status" aria-live="polite"><i aria-hidden="true" /><span>{liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"}</span></div>}
         <div ref={streamEnd} />
@@ -4692,11 +4779,11 @@ function ConnectedChat({
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
         <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><button aria-label="选择表情包" onClick={() => setStickerPickerOpen(true)}><Icon name="sticker" /></button>
-          <span className="composer-status"><i className={online ? "online" : ""} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
+          <span className="composer-status"><i className={online ? "online" : ""} role="img" aria-label={online ? "已连接" : "未连接"} title={online ? "已连接" : "未连接"} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
           {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
-      {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={answerApproval} />}
+      {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={(action) => answerApproval(approvalQueue[0], action)} />}
       {modelPickerOpen && <CodexModelPicker models={models} current={displayedModel} loading={modelsLoading} error={modelError} online={online} onRefresh={() => void refreshModels()} onClose={() => setModelPickerOpen(false)} onSelect={(selection) => { nextModelRef.current = selection; setNextModel(selection); setModelPickerOpen(false); }} />}
       <StickerPickerSheet open={stickerPickerOpen} onClose={() => setStickerPickerOpen(false)} onSelect={(sticker) => { setStickerPickerOpen(false); void send(sticker); }} onManage={() => { setStickerPickerOpen(false); setStickerManagerOpen(true); }} />
       <StickerManagerModal open={stickerManagerOpen} onClose={() => setStickerManagerOpen(false)} />
@@ -4708,13 +4795,9 @@ function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[
   if (!items.length) return null;
   return (
     <div className="message-attachments">
-      {items.map((item) =>
-        item.type.startsWith("image/") ? (
-          <div className="image-attachment" key={item.key}>
-            <a href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt={item.name} /></a>
-            {onSaveAsSticker && <button className="save-as-sticker" onClick={() => onSaveAsSticker(item)}><Icon name="sticker" />保存为表情包</button>}
-          </div>
-        ) : item.type.startsWith("video/") ? (
+      <AttachmentGallery items={items.filter(item => item.type.startsWith('image/'))} onSaveAsSticker={onSaveAsSticker} />
+      {items.filter(item => !item.type.startsWith('image/')).map((item) =>
+        item.type.startsWith("video/") ? (
           <video src={item.url} controls playsInline key={item.key} />
         ) : item.type.startsWith("audio/") ? (
           <audio src={item.url} controls key={item.key} />
@@ -4727,7 +4810,7 @@ function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[
             key={item.key}
           >
             <Icon name="archive" />
-            <span>{item.name}</span>
+            <span>{item.name}<small>{item.type} · {item.size < 1024 ? `${item.size} B` : item.size < 1048576 ? `${(item.size / 1024).toFixed(1)} KB` : `${(item.size / 1048576).toFixed(1)} MB`}</small></span>
           </a>
         ),
       )}
@@ -5067,6 +5150,12 @@ function SettingsPage({
           title="MCP Servers"
           sub="Add servers with OAuth or no authorization"
           onClick={() => setSelected("MCP 工具")}
+        />
+        <SettingRow
+          icon="link"
+          title="Vesper MCP"
+          sub="让外部 AI 连接 Vesper 的日记、便笺与记忆"
+          onClick={() => setSelected("Vesper MCP")}
         />
         <SettingRow
           icon="volume"
@@ -5571,6 +5660,7 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
 
 function CodexConnectionModal({ onClose }: { onClose: () => void }) {
   const [endpoint, setEndpoint] = useState(() => readLocalValue("vesper-codex-endpoint", "wss://codex.r-vera.com"));
+  const [workspace, setWorkspace] = useState(() => readLocalValue<string>('vesper-codex-workspace', ''));
   const [token, setToken] = useState(() => deviceToken());
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -5578,6 +5668,8 @@ function CodexConnectionModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     const cleanEndpoint = endpoint.trim().replace(/\/$/, "");
     window.localStorage.setItem("vesper-codex-endpoint", cleanEndpoint);
+    try { workspaceOptions(workspace); } catch (e) { setMessage(e instanceof Error ? e.message : 'Invalid workspace'); setBusy(false); return; }
+    window.localStorage.setItem('vesper-codex-workspace', JSON.stringify(workspace.trim()));
     if (token.trim()) window.localStorage.setItem("vesper-device-token", token.trim());
     try {
       if (/^wss?:\/\//i.test(cleanEndpoint)) {
@@ -5608,6 +5700,8 @@ function CodexConnectionModal({ onClose }: { onClose: () => void }) {
         </div>
         <p className="settings-hint">Your private Codex tunnel is preconfigured. Keep this endpoint as <code>wss://codex.r-vera.com</code> and enter your Vesper device token.</p>
         <label className="profile-field"><span>WebSocket endpoint (optional)</span><input value={endpoint} placeholder="wss://codex.example.com" onChange={(event) => setEndpoint(event.target.value)} /></label>
+        <label className="profile-field"><span>项目工作目录（可选）</span><input value={workspace} placeholder="/home/ubuntu/Vesper" onChange={e => setWorkspace(e.target.value)} /></label>
+        <p className="settings-hint">填写 app-server 所在机器上的项目路径，下次发送消息时使用。代码和依赖需已在该目录；文件修改、命令和网络访问仍按服务器权限审批。</p>
         <label className="profile-field"><span>Vesper device token</span><input type="password" value={token} placeholder="The VESPER_APP_TOKEN value" onChange={(event) => setToken(event.target.value)} /></label>
         {message && <p className="connection-message">{message}</p>}
         <button className="save-profile" disabled={busy} onClick={() => void save()}>{busy ? "Testing…" : "Save and test"}</button>

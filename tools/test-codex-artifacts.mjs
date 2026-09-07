@@ -5,7 +5,7 @@ import ts from 'typescript';
 const objects = new Map();
 const source = ts.transpileModule(fs.readFileSync('lib/codex-artifacts.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const exports = {};
-vm.runInNewContext(source, { exports, require: name => { assert.equal(name, 'cloudflare:workers'); return { env: { MEDIA: { put: async (key, bytes, metadata) => objects.set(key, { bytes: [...bytes], metadata }) } } }; }, crypto: globalThis.crypto, TextEncoder, Uint8Array, atob, encodeURIComponent });
+vm.runInNewContext(source, { exports, require: name => { if (name === './photo-album') return { registerPhotoSource: async () => {} }; assert.equal(name, 'cloudflare:workers'); return { env: { MEDIA: { put: async (key, bytes, metadata) => objects.set(key, { bytes: [...bytes], metadata }) } } }; }, crypto: globalThis.crypto, TextEncoder, Uint8Array, atob, encodeURIComponent });
 const send = (input, owner = 'private-owner') => exports.createChatFile(input, owner, 'https://example.test');
 const first = await send({ name: 'hello.txt', text: '你好', mimeType: 'text/plain' });
 assert.equal(first.size, 6); assert.equal(first.type, 'text/plain');

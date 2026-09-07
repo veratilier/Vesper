@@ -1,3 +1,6 @@
+import { createChatFile } from '../../lib/codex-artifacts';
+import { listAlbumPhotos, saveAlbumPhoto, getAlbumPhoto } from '../../lib/photo-album';
+import { createOAuth, type OAuthEnv } from './oauth';
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { sendPushBatch, type PushSubscriptionData } from "@mmmike/web-push/send";
@@ -6,7 +9,7 @@ import { createMemory, listMemories, memoryScopeFromRequest, MEMORY_CONFIG } fro
 import { mergeAgentDiary, isCalendarDate } from "./diary";
 import { pinnedMemoryOwner } from "./memory-owner";
 
-type Env = {
+type Env = OAuthEnv & {
   DB: D1Database;
   VESPER_APP_TOKEN?: string;
   VESPER_MEMORY_USER_ID?: string;
@@ -80,6 +83,31 @@ function createServer(env: Env) {
       readDoc<unknown[]>(env.DB, "anniversaries", []), readDoc<Record<string, unknown>>(env.DB, "diary", {}),
     ]);
     return text({ notes: notes.length, todos: todos.length, openTodos: todos.filter((item) => !item.done).length, anniversaries: anniversaries.length, diaryDays: Object.keys(diary).length });
+  });
+
+  const mediaOrigin = 'https://api.vesper.r-vera.com';
+  server.registerTool("album_import_photo", {
+    description: "主动选择一张真实图片存进 Vesper 相册并分类。需提供实际图片的 base64 字节，不接受本地路径或臆造链接。没有附件字节访问能力时请说明，勿伪造上传。",
+    inputSchema: { name: z.string().min(1).max(160), mimeType: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]), base64: z.string().min(4).max(12 * 1024 * 1024), category: z.string().max(60), caption: z.string().max(500).optional() },
+  }, async input => {
+    const owner = (await ownerMemoryScope(env)).userId;
+    const file = await createChatFile(input, owner, mediaOrigin);
+    return text(await saveAlbumPhoto(owner, file.key, input.category, input.caption, mediaOrigin));
+  });
+  server.registerTool("album_search_photos", {
+    description: "搜索 Vesper 私人相册，按名称、描述或分类查找；只返回主动保存过的照片。",
+    inputSchema: { query: z.string().optional(), category: z.string().optional(), limit: z.number().int().min(1).max(60).optional(), offset: z.number().int().min(0).optional() },
+  }, async input => text(await listAlbumPhotos((await ownerMemoryScope(env)).userId, input, mediaOrigin)));
+  server.registerTool("album_save_photo", {
+    description: "选择性保存 Vesper 已上传的照片到分类；不要默认保存全部照片。必须使用已有 Vesper photo key。ChatGPT 本地附件需先导入 Vesper 相册。",
+    inputSchema: { key: z.string(), category: z.string().max(60), caption: z.string().max(500).optional() },
+  }, async ({ key, category, caption }) => text(await saveAlbumPhoto((await ownerMemoryScope(env)).userId, key, category, caption, mediaOrigin)));
+  server.registerTool("album_get_photos", {
+    description: "选择 1–8 张相册照片并获取原图链接，可在当前回复中展示。必须使用搜索返回的 ID；此工具不会向另一个 Vesper 聊天窗口发送消息。",
+    inputSchema: { photoIds: z.array(z.string()).min(1).max(8) },
+  }, async ({ photoIds }) => {
+    const owner = (await ownerMemoryScope(env)).userId;
+    return text({ photos: await Promise.all([...new Set(photoIds)].map(id => getAlbumPhoto(owner, id, mediaOrigin))), instruction: 'Use the returned photo URLs to display selected photos in your current reply.' });
   });
 
   server.registerTool("list_notes", { description: "列出 Vesper 便笺。" }, async () => text(await readDoc(env.DB, "notes", [])));
@@ -212,7 +240,7 @@ function createServer(env: Env) {
   return server;
 }
 
-export default {
+const legacyRoutes = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     await ensure(env.DB);
     const url = new URL(request.url);
@@ -230,5 +258,22 @@ export default {
     if (url.pathname !== "/mcp") return new Response("Vesper MCP", { status: 200, headers: cors });
     if (!(await authorized(request, env.DB))) return Response.json({ error: "Unauthorized" }, { status: 401, headers: { ...cors, "www-authenticate": "Bearer" } });
     return createMcpHandler(() => createServer(env), { route: "/mcp" })(request, env, ctx);
+  },
+} satisfies ExportedHandler<Env>;
+
+const oauth = createOAuth<Env>({ async fetch(request, env, ctx) {
+  const props = (ctx as ExecutionContext & { props?: { owner?: boolean; scope?: string[] } }).props;
+  if (!props?.owner || !props.scope?.includes('vesper:access')) return new Response('Forbidden', { status: 403 });
+  return createMcpHandler(() => createServer(env), { route: '/mcp' })(request, env, ctx);
+} }, legacyRoutes, (request, env) => authorized(request, env.DB));
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    await ensure(env.DB);
+    const path = new URL(request.url).pathname;
+    // Existing private Bearer clients and setup remain compatible; OAuth grants never rotate the owner credential.
+    if (path === '/setup' || path === '/health') return legacyRoutes.fetch(request, env, ctx);
+    if (path === '/mcp' && await authorized(request, env.DB)) return legacyRoutes.fetch(request, env, ctx);
+    return oauth.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;

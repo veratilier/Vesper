@@ -1,3 +1,4 @@
+import { registerPhotoSource } from './photo-album';
 import { env } from 'cloudflare:workers';
 export async function createChatFile(input: Record<string, unknown>, owner: string, origin: string) {
   const name = String(input.name || '').replace(/[\r\n\0/\\]/g, '_').slice(0, 160);
@@ -22,5 +23,6 @@ export async function createChatFile(input: Record<string, unknown>, owner: stri
   const extension = name.split('.').pop()?.replace(/[^a-z0-9]/gi, '').slice(0, 12) || 'bin';
   const key = `${hash}.${extension}`;
   await (env as unknown as { MEDIA: R2Bucket }).MEDIA.put(key, bytes, { httpMetadata: { contentType: type, contentDisposition: `${type.startsWith('image/') || type.startsWith('audio/') || type.startsWith('video/') ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}` } });
+  if (type.startsWith('image/')) await registerPhotoSource(owner, { key, name, type, size: bytes.length }, 'agent');
   return { key, url: `${origin}/api/media/${key}`, name, type, size: bytes.length };
 }

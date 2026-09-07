@@ -1,6 +1,7 @@
 "use client";
 import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
 import { ExecutionCard } from './execution-card';
+import { PhotoAlbum } from './photo-album';
 import { AttachmentGallery } from './attachment-gallery';
 import './activity-glass.css';
 import {
@@ -360,6 +361,9 @@ Object.assign(iconPaths, {
 });
 // Deliberately open contours rather than dashed outlines; small controls keep their shape.
 const brokenIconPaths: Record<string, string[]> = {
+  "file-code": ["M14 2H6a3 3 0 0 0-3 3v14a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V9L14 2Z", "M14 2v7h7", "m8 12-3 3 3 3m8-6 3 3-3 3m-3-7-2 8"],
+  "arrow-up": ["M12 19V5", "m5 12 7-7 7 7"],
+  image: ["M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V8", "M3 16l5-5 5 5 3-3 5 5", "M16 3h5v5", "M14 8h.01"],
   home: ["M3 10 12 3l9 7", "M4 13v6a2 2 0 0 0 2 2h3v-7h6v7h3a2 2 0 0 0 2-2v-6"],
   chat: ["M21 10V7a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v10l5-3h9a4 4 0 0 0 4-4", "M8 8h8"],
   note: ["M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6", "M14 3v6h6"],
@@ -488,6 +492,7 @@ const nav = [
   { label: "提醒", english: "Reminders", icon: "check" },
   { label: "纪念日", english: "Dates", icon: "calendar" },
   { label: "音乐", english: "Music", icon: "music" },
+  { label: "相册", english: "Photos", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
   { label: "设置", english: "Settings", icon: "settings" },
 ];
@@ -1399,6 +1404,8 @@ export default function Home() {
                 if (!nextQueue.length) setPlaying(false);
               }}
             />
+          ) : section === "相册" ? (
+            <PhotoAlbum apiUrl={apiUrl} headers={appHeaders} active={active === "相册"} />
           ) : section === "记忆库" ? (
             <MemoryLibrary />
           ) : section === "设置" ? (
@@ -3037,7 +3044,7 @@ function LegacyConnectedChat({
                 <div>
                   <p>{item.content}</p>
                   <MessageAttachments items={item.metadata?.attachments || []} />
-                  <button className="message-edit" aria-label="编辑这条消息" title="编辑" onClick={() => void editMessage(item)}><Icon name="edit" /></button>
+
                 </div>
                 <AvatarMark src={userAvatar} label={userName} kind="user" />
               </div>
@@ -3699,7 +3706,7 @@ function CodexChatMessage({
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
         <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
         <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>
-        {!assistant && <button className="message-action" aria-label="编辑" title="编辑" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
+
         <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
       </div>}
       <MessageAttachments items={item.metadata?.attachments || []} onSaveAsSticker={onSaveAttachmentAsSticker ? (attachment) => onSaveAttachmentAsSticker(attachment, item) : undefined} />
@@ -3979,7 +3986,7 @@ function ConnectedChat({
     setTurnStatus("tool");
     try {
       const result = await callServerTool(name, argumentsValue, itemId);
-      if (name === 'send_chat_file' && result && typeof result === 'object' && 'attachments' in result) {
+      if (['send_chat_file', 'album_send_photos'].includes(name) && result && typeof result === 'object' && 'attachments' in result) {
         const sent = result as { attachments: ChatAttachment[]; message?: string };
         const attachmentId = `files:${threadId.current}:${itemId}`;
         const existing = messagesRef.current.find(item => item.id === attachmentId);
@@ -4789,9 +4796,9 @@ function ConnectedChat({
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-        <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><button aria-label="选择表情包" onClick={() => setStickerPickerOpen(true)}><Icon name="sticker" /></button>
+        <div className="compose-actions"><details className="compose-add-menu"><summary aria-label="添加附件或表情包"><Icon name="plus" /></summary><div className="compose-add-options"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); fileInput.current?.click(); }}><Icon name="file-code" />添加文件</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setStickerPickerOpen(true); }}><Icon name="sticker" />表情包</button></div></details><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} />
           <span className="composer-status"><i className={online ? "online" : ""} role="img" aria-label={online ? "已连接" : "未连接"} title={online ? "已连接" : "未连接"} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
-          {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
+          {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="arrow-up" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
       {approvalQueue[0] && <CodexApprovalDialog approval={approvalQueue[0]} queuedCount={approvalQueue.length} onDecision={(action) => answerApproval(approvalQueue[0], action)} />}
@@ -4820,7 +4827,7 @@ function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[
             rel="noreferrer"
             key={item.key}
           >
-            <Icon name="archive" />
+            <Icon name="file-code" />
             <span>{item.name}<small>{item.type} · {item.size < 1024 ? `${item.size} B` : item.size < 1048576 ? `${(item.size / 1024).toFixed(1)} KB` : `${(item.size / 1048576).toFixed(1)} MB`}</small></span>
           </a>
         ),
@@ -5658,7 +5665,7 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
             <input type="password" value={draft} autoCapitalize="none" autoCorrect="off" placeholder="留空时自动生成安全令牌" onChange={(event) => setDraft(event.target.value)} />
           </label>
         </div>
-        <p className="settings-hint">令牌只保存在此设备和 MCP 服务的哈希值中；AI 官端连接时使用 Authorization: Bearer。</p>
+        <p className="settings-hint">ChatGPT 连接时选择 OAuth，在授权页面输入这里的访问令牌。支持 Bearer 的客户端仍可使用现有令牌连接；无需重新生成。</p>
         {message && <p className="connection-message">{message}</p>}
         {toolCount !== null && <p className="settings-hint">当前远程目录：{toolCount} 个 MCP tools</p>}
         <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "更新并测试 MCP" : "生成令牌并启用 MCP"}</button>

@@ -27,7 +27,7 @@
   --paper: var(--ui-canvas);
 }
 
-html, body { background-color: var(--ui-canvas); color: var(--ui-ink); }
+html, body { background-color: var(--vesper-browser-canvas, var(--ui-canvas)); color: var(--ui-ink); }
 .stage, .app-shell { color: var(--ui-ink); }
 .scroll-view, .page-body, .settings-page { background-color: transparent; color: var(--ui-ink); }
 

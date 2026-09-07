@@ -1104,12 +1104,14 @@ export default function Home() {
   // Keep Safari chrome and the overscroll canvas in step with the saved appearance.
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--ui-canvas", canvasColor);
+    const previousCanvas = root.style.getPropertyValue("--vesper-browser-canvas");
+    root.style.setProperty("--vesper-browser-canvas", canvasColor);
     const metas = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
     const previous = metas.map((meta) => meta.content);
     metas.forEach((meta) => { meta.content = canvasColor; });
     return () => {
-      root.style.removeProperty("--ui-canvas");
+      if (previousCanvas) root.style.setProperty("--vesper-browser-canvas", previousCanvas);
+      else root.style.removeProperty("--vesper-browser-canvas");
       metas.forEach((meta, index) => { meta.content = previous[index]; });
     };
   }, [canvasColor]);

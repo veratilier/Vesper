@@ -13,6 +13,7 @@ import './app/refinement.css';
 import './app/anniversary.css';
 import './app/home-cards.css';
 import './app/floating-interface.css';
+import './app/type-scale.css';
 import App from './app/page';
 
 const root = document.getElementById('root');

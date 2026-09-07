@@ -111,13 +111,6 @@ function Notes() {
           ))}
         </div>
       )}
-      <div className="agent-callout">
-        <Icon name="link" />
-        <div>
-          <b>Vesper note channel</b>
-          <p>Connected agents can create and update notes here.</p>
-        </div>
-      </div>
     </div>
   );
 }

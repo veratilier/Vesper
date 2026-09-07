@@ -1,0 +1,74 @@
+/* Shared sizes by semantic role, loaded after feature styles in both entries.
+   Signature lettering and large anniversary counters remain display elements. */
+:root {
+  --text-page-title: 1.625rem;
+  --text-section-title: .9375rem;
+  --text-body: .875rem;
+  --text-caption: .75rem;
+  --text-script-label: 1.375rem;
+  --text-chat: .875rem;
+}
+.app-shell :is(.page-intro h1, .anniversary-heading h1) {
+  font-size: var(--text-page-title) !important;
+  line-height: 1.3 !important;
+  font-weight: 500;
+  margin-block: 10px 12px;
+}
+.app-shell :is(.page-intro > span, .anniversary-heading > span, .settings-group > h2, .keepsake-label) {
+  font-size: var(--text-caption) !important;
+  line-height: 1.4 !important;
+  letter-spacing: .1em;
+}
+.app-shell :is(.page-intro p, .setting-row b, .note-toolbar, .note-toolbar button,
+  .anniversary-add, .anniversary-keepsake footer button, .anniversary-mini strong,
+  .sticky p, .sticky textarea, .home-card-empty, .reminder-copy, .home-diary-preview,
+  .letter-copy b, .home-track-link strong, .home-return-signal) {
+  font-size: var(--text-body) !important;
+  line-height: 1.5 !important;
+}
+.app-shell :is(.section-title h2, .modal-head h2, .profile-modal h2,
+  .connection-modal h2, .appearance-title h2) {
+  font-size: var(--text-section-title) !important;
+  line-height: 1.4 !important;
+}
+.app-shell :is(.setting-row small, .settings-hint, .empty-state p, .sticky-meta,
+  .sticky footer, .home-track-link small, .letter-copy > span,
+  .home-panel-heading > span:last-child, .anniversary-keepsake footer small,
+  .anniversary-mini > span, .mobile-navigation button > span) {
+  font-size: var(--text-caption) !important;
+  line-height: 1.45 !important;
+}
+.app-shell .home-card-label { font-size: var(--text-script-label) !important; line-height: 1.2 !important; }
+.app-shell :is(.anniversary-keepsake footer > span, .keepsake-count small) {
+  font-size: var(--text-body) !important;
+  line-height: 1.5;
+}
+/* Do not shrink text editors below 16px: iOS would zoom while focusing them. */
+.app-shell :is(input:not([type]), input[type="text"], input[type="password"], input[type="url"], input[type="email"], textarea, select) {
+  font-size: 1rem;
+}
+.app-shell .sticky textarea { font-size: 1rem !important; }
+.app-shell .codex-chat .message,
+.app-shell .codex-chat .message :is(p, ul, ol, li, blockquote, td, th) {
+  font-size: var(--text-chat) !important;
+  line-height: 1.5 !important;
+}
+.app-shell .codex-chat .message p + p { margin-top: 5px; }
+.app-shell .codex-chat .message :is(ul, ol) { margin-block: 5px; }
+.app-shell .codex-chat .message h1 { font-size: 1.125rem !important; line-height: 1.4; }
+.app-shell .codex-chat .message h2 { font-size: 1rem !important; line-height: 1.4; }
+.app-shell .codex-chat .message :is(h3,h4,h5,h6) { font-size: .9375rem !important; line-height: 1.4; }
+.app-shell .codex-chat .message :is(pre, code) { font-size: .8125rem !important; line-height: 1.5; }
+.app-shell .codex-chat .chat-stream { gap: 8px; }
+.app-shell .codex-chat :is(.agent-turn, .sent-turn) { gap: 2px; }
+.app-shell .codex-chat .message > div { padding-block: 5px; }
+.app-shell .codex-chat .message.assistant > .assistant-message-content { padding-block: 1px; }
+.app-shell .codex-chat .turn-status {
+  font-size: var(--text-caption) !important;
+  line-height: 1.4;
+  margin-block: 0 3px;
+  gap: 7px;
+}
+.app-shell .codex-chat .message-actions { margin-block: 0; }
+.app-shell .codex-chat .message-actions time { font-size: var(--text-caption) !important; }
+.app-shell .codex-chat .chat-compose textarea { font-size: 1rem !important; line-height: 1.45; }

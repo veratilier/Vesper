@@ -5704,10 +5704,14 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
   };
   const copy = async (tokenOnly = false) => {
     if (!verified || draft.trim() !== token) return setMessage("请先保存或测试通过，再复制连接参数。");
-    await navigator.clipboard.writeText(
-      tokenOnly ? token : JSON.stringify({ url: VESPER_MCP_URL, headers: { Authorization: `Bearer ${token}` } }, null, 2),
-    );
-    setMessage(tokenOnly ? "访问令牌已复制，可直接粘贴到 OAuth 授权页。" : "连接参数已复制");
+    try {
+      await navigator.clipboard.writeText(
+        tokenOnly ? token : JSON.stringify({ url: VESPER_MCP_URL, headers: { Authorization: `Bearer ${token}` } }, null, 2),
+      );
+      setMessage(tokenOnly ? "访问令牌已复制，可直接粘贴到 OAuth 授权页。" : "连接参数已复制");
+    } catch {
+      setMessage("无法访问剪贴板，请允许浏览器复制权限后重试。令牌仍已保存，无需重新生成。");
+    }
   };
   return (
     <div className="modal-layer settings-subpage-layer">
@@ -5726,7 +5730,7 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
           </label>
           <label className="profile-field">
             <span>访问令牌</span>
-            <input type="password" value={draft} autoCapitalize="none" autoCorrect="off" placeholder="留空时自动生成安全令牌" onChange={(event) => { setDraft(event.target.value); setVerified(false); setToolCount(null); }} />
+            <input type="password" disabled={busy} value={draft} autoCapitalize="none" autoCorrect="off" placeholder="留空时自动生成安全令牌" onChange={(event) => { setDraft(event.target.value); setVerified(false); setToolCount(null); }} />
           </label>
         </div>
         <p className="settings-hint">保存成功后，ChatGPT 连接时选择 OAuth，在授权页只粘贴访问令牌，不带 Bearer。旧令牌遗失或失效时，可用当前已配对设备生成新令牌；替换后，旧 Bearer 连接需改用新令牌。</p>

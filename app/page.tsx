@@ -1685,7 +1685,7 @@ function Today({
       ? `${Math.round(environment.temperature)}°`
       : "--°";
   return (
-    <>
+    <div className="home-overview">
       <section className="welcome">
         <div className="date-row">
           <span>{dateText}</span>
@@ -1759,7 +1759,7 @@ function Today({
         )}
       </section>
       <MusicCard track={track} playing={playing} onToggle={onToggle} />
-    </>
+    </div>
   );
 }
 

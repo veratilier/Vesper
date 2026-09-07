@@ -3909,9 +3909,7 @@ body small,
 body label {
   font-family: "Times New Roman", "Songti SC", serif;
 }
-body * {
-  font-family: "Times New Roman", "Songti SC", serif !important;
-}
+/* Let controls, code and reading text keep their own type hierarchy. */
 .wordmark > b,
 .drawer-brand b,
 .vesper-splash > b {

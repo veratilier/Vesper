@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Pinyon_Script } from "next/font/google";
 import "./globals.css";
 import "./chat.css";
+import "./refinement.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

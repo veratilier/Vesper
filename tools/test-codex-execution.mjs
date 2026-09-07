@@ -33,3 +33,22 @@ for (const sources of [[done, stale], [stale, done]]) {
   assert.equal(merged[0].metadata.execution.output, 'authoritative');
 }
 console.log('Late output and stale running snapshots cannot replay or regress completed execution');
+
+const { formatExecutionOutput, executionFiles } = await import('../app/codex-execution.ts');
+const wrapped = JSON.stringify([{ type: 'inputText', text: JSON.stringify({ section: 'today', value: [{ title: '整理宿舍', done: false }] }) }]);
+assert.equal(formatExecutionOutput(wrapped), JSON.stringify({ section: 'today', value: [{ title: '整理宿舍', done: false }] }, null, 2));
+assert.equal(formatExecutionOutput('{broken'), '{broken');
+assert.equal(formatExecutionOutput([{ type: 'text', text: '<script>example</script>' }]), '<script>example</script>');
+const patch = '@@ -1 +1 @@\n-old\n+' + 'new code '.repeat(3500);
+const fileEvent = executionEvent('item/completed', { item: { id: 'files', type: 'fileChange', changes: [{ path: 'a.ts', kind: { type: 'update' }, diff: patch }, { path: 'b.ts', kind: 'add', diff: '+hello' }] } });
+assert.equal(fileEvent.files[0].diff, patch, 'patches larger than the old log limit must retain their beginning and end');
+assert.equal(fileEvent.files[1].diff, '+hello');
+assert.equal(fileEvent.output, '', 'avoid duplicating patches as unreadable JSON');
+assert.ok(!fileEvent.filesTruncated);
+const huge = executionEvent('item/completed', { item: { id: 'huge', type: 'fileChange', aggregatedOutput: '\u0000'.repeat(30000), changes: [{ path: 'big.ts', diff: '+'.repeat(200000) }] } });
+assert.ok(huge.filesTruncated && huge.files[0].truncated && huge.truncated);
+assert.ok(JSON.stringify(huge).length < 128000, 'escaped output and patches must fit the persistence limit together');
+assert.equal(executionFiles([{ path: 'only-path.ts' }]).files[0].diff, '', 'never invent missing code');
+assert.deepEqual(executionFiles(null).files, []);
+assert.equal(executionEvent('item/fileChange/outputDelta', { itemId: 'files', delta: 'late' }, fileEvent), fileEvent);
+console.log('Nested tool results, complete patches, missing-code and serialized storage limits passed');

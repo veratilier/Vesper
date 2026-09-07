@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { isCalendarDate, mergeAgentDiary } from '../mcp-server/src/diary.ts';
+assert.equal(isCalendarDate('2026-02-30'), false);
+assert.equal(isCalendarDate('2028-02-29'), true);
+assert.equal(isCalendarDate('2026-2-9'), false);
+const original = {user:'私人文字', agent:'已有日记', extra:'保留'};
+assert.deepEqual(mergeAgentDiary(original, '新段落', 'append', 'chatgpt', 'now'), {...original, agent:'已有日记\n\n新段落', agentSource:'chatgpt', updatedAt:'now'});
+assert.equal(mergeAgentDiary(original, '替换内容', 'replace', 'chatgpt', 'now').user, '私人文字');
+assert.equal(mergeAgentDiary(original, '替换内容', 'replace', 'chatgpt', 'now').agent, '替换内容');
+assert.equal(original.agent, '已有日记');
+assert.equal(mergeAgentDiary(undefined, '首篇', 'append', 'automation', 'now').agent, '首篇');
+console.log('PASS MCP calendar validation and diary append/replace preservation');

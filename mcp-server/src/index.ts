@@ -2,9 +2,12 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { sendPushBatch, type PushSubscriptionData } from "@mmmike/web-push/send";
 import { z } from "zod";
+import { createMemory, listMemories, memoryScopeFromRequest } from "../../lib/memory";
+import { mergeAgentDiary, isCalendarDate } from "./diary";
 
 type Env = {
   DB: D1Database;
+  VESPER_APP_TOKEN?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
@@ -12,7 +15,7 @@ type Env = {
 type Note = { id: string; text: string; kind: "user" | "agent"; tone: string; createdAt: string };
 type Todo = { id: string; title: string; done: boolean; due: string; tag: string; createdAt: string };
 type Anniversary = { id: string; title: string; date: string; repeats: boolean };
-type DiaryEntry = { user?: string; agent?: string; updatedAt?: string };
+type DiaryEntry = { user?: string; agent?: string; updatedAt?: string; agentSource?: string };
 type Track = { id: string; neteaseId?: string; title: string; artist?: string; duration?: string };
 
 const cors = {
@@ -22,6 +25,11 @@ const cors = {
 };
 const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] });
 const now = () => new Date().toISOString();
+const diaryDate = z.string().refine(isCalendarDate, "日期必须是有效的 YYYY-MM-DD");
+async function ownerMemoryScope(env: Env) {
+  if (!env.VESPER_APP_TOKEN) throw new Error("MCP 尚未配置与 Vesper API 相同的 VESPER_APP_TOKEN，无法定位原有记忆库。");
+  return memoryScopeFromRequest(new Request("https://vesper.internal", { headers: { "x-vesper-device-token": env.VESPER_APP_TOKEN } }));
+}
 
 async function ensure(db: D1Database) {
   await db.batch([
@@ -60,7 +68,7 @@ async function writeDoc(db: D1Database, key: string, value: unknown) {
 }
 
 function createServer(env: Env) {
-  const server = new McpServer({ name: "Vesper", version: "1.0.0" });
+  const server = new McpServer({ name: "Vesper", version: "1.1.0" });
 
   server.registerTool("vesper_overview", { description: "查看 Vesper 中便笺、待办、纪念日和日记的数量。" }, async () => {
     const [notes, todos, anniversaries, diary] = await Promise.all([
@@ -112,18 +120,42 @@ function createServer(env: Env) {
     items.push(entry); await writeDoc(env.DB, "anniversaries", items); return text(entry);
   });
 
+  server.registerTool("list_diaries", {
+    description: "列出 Vesper 私人日记，按日期倒序。可指定日期区间；不发布到社区。",
+    inputSchema: { from: diaryDate.optional(), to: diaryDate.optional(), limit: z.number().int().min(1).max(100).default(20) },
+  }, async ({ from, to, limit }) => {
+    if (from && to && from > to) throw new Error("开始日期不能晚于结束日期");
+    const diary = await readDoc<Record<string, DiaryEntry>>(env.DB, "diary", {});
+    return text(Object.entries(diary).filter(([date]) => (!from || date >= from) && (!to || date <= to))
+      .sort(([a], [b]) => b.localeCompare(a)).slice(0, limit).map(([date, entry]) => ({ date, ...entry })));
+  });
   server.registerTool("get_diary", {
     description: "读取指定日期的 Vesper 日记。",
-    inputSchema: { date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) },
+    inputSchema: { date: diaryDate },
   }, async ({ date }) => text((await readDoc<Record<string, unknown>>(env.DB, "diary", {}))[date] || null));
   server.registerTool("write_agent_diary", {
-    description: "写入指定日期的 Agent 日记，不会覆盖用户日记。",
-    inputSchema: { date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), content: z.string().min(1) },
-  }, async ({ date, content }) => {
-    const diary = await readDoc<Record<string, DiaryEntry>>(env.DB, "diary", {});
-    diary[date] = { ...(diary[date] || { user: "" }), agent: content, updatedAt: now() };
-    await writeDoc(env.DB, "diary", diary); return text(diary[date]);
+    description: "在 Vesper 私人日记的 Agent 栏追加内容，保留用户日记和已有 Agent 内容。只有用户明确要求替换时才传 mode=replace。",
+    inputSchema: { date: diaryDate, content: z.string().trim().min(1).max(20000), mode: z.enum(["append", "replace"]).default("append"), source: z.enum(["chatgpt", "automation"]).default("chatgpt") },
+  }, async ({ date, content, mode, source }) => {
+    const row = await env.DB.prepare("SELECT value FROM vesper_documents WHERE key = 'diary'").first<{ value: string }>();
+    const diary = row ? JSON.parse(row.value) as Record<string, DiaryEntry> : {};
+    diary[date] = mergeAgentDiary(diary[date], content, mode, source, now());
+    const saved = await env.DB.prepare(`INSERT INTO vesper_documents(key,value,updated_at) VALUES('diary',?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+      WHERE vesper_documents.value = ?`).bind(JSON.stringify(diary), now(), row?.value ?? null).run();
+    if (!saved.meta.changes) throw new Error("日记刚被其他会话修改，请重新读取后再决定写入。");
+    return text({ date, ...diary[date] });
   });
+  server.registerTool("list_memories", {
+    description: "读取 Vesper 真正的记忆库，与前端和 app-server 共用；核心候选不会被当作已确认事实。",
+    inputSchema: { query: z.string().max(500).optional(), type: z.enum(["core", "long_term", "feeling", "dream"]).optional(), limit: z.number().int().min(1).max(100).default(30) },
+  }, async ({ query, type, limit }) => text(await listMemories(await ownerMemoryScope(env), { query, type, limit, includeCandidates: true })));
+  server.registerTool("save_memory", {
+    description: "把值得长期保留的新内容写入 Vesper 记忆库。感受写为 Rowan 自己的感受；核心事实只创建待用户确认的候选。不要把旧记录当作本轮新互动。",
+    inputSchema: { type: z.enum(["core", "long_term", "feeling", "dream"]).default("long_term"), body: z.string().trim().min(4).max(520), mood: z.string().max(48).optional(), tags: z.array(z.string().max(40)).max(12).optional(), source: z.enum(["chatgpt", "automation"]).default("chatgpt") },
+  }, async ({ type, body, mood, tags, source }) => text(await createMemory(await ownerMemoryScope(env), {
+    type, body, mood, tags, source: `vesper-mcp:${source}`, reviewStatus: type === "core" ? "candidate" : "approved",
+  })));
 
   server.registerTool("search_memory", {
     description: "在 Vesper 的便笺、日记、提醒和纪念日中搜索文字。",
@@ -160,7 +192,7 @@ function createServer(env: Env) {
   });
 
   server.registerTool("send_notification", {
-    description: "向已授权 Web Push 的 Vesper 设备发送通知。",
+    description: "立即向已授权 Web Push 的 Vesper 设备发送通知；需要设备已订阅和 Worker 已配置 VAPID。创建待办不等于安排定时推送。",
     inputSchema: { title: z.string().default("Vesper"), body: z.string().min(1), url: z.string().default("/"), tag: z.string().optional() },
   }, async ({ title, body, url, tag }) => {
     if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) throw new Error("Web Push is not configured");

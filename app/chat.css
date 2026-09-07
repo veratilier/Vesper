@@ -422,3 +422,7 @@
 
 .codex-chat .reply-progress { display: flex; align-items: center; gap: 8px; margin: 0 8px 8px; color: var(--ui-muted); font: 12px/1.5 var(--font-chinese); }
 .codex-chat .reply-progress i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* Connection lives beside the model picker; retain the separate error/recovery row. */
+.app-shell .codex-chat .composer-status > i { background: #9aa4ad !important; }
+.app-shell .codex-chat .composer-status > i.online { background: #36956b !important; }

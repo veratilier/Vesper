@@ -504,3 +504,6 @@
 
 /* Retire message editing across both chat renderers. */
 .app-shell .chat-page :is(.message-edit, .message-actions button[aria-label="编辑"], .message-actions button[title="编辑"]) { display: none !important; }
+
+/* Lift the composer stacking context above the mini-player when its menu opens. */
+.app-shell .codex-chat .chat-compose:has(.compose-add-menu[open]) { z-index: 2; overflow: visible; }

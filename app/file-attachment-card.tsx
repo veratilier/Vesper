@@ -33,7 +33,7 @@ export function FileAttachmentCard({ file }: { file: FileItem }) {
       <span className="file-card-actions">{previewable && <button type="button" onClick={() => void open()} aria-label={`打开 ${file.name}`}>打开</button>}<a href={file.url} download={file.name} target="_blank" rel="noreferrer" aria-label={`下载 ${file.name}`}>下载</a></span>
     </div>
     <dialog ref={dialog} className="file-preview-dialog" onCancel={event => { event.preventDefault(); close(); }}>
-      <header><b>{file.name}</b><button type="button" onClick={close} aria-label="关闭文件预览">×</button></header>
+      <header><b title={file.name}>{file.name}</b><button type="button" onClick={close} aria-label="关闭文件预览">×</button></header>
       {loading ? <p role="status">正在读取文件…</p> : error ? <p role="alert">{error}</p> : html ? <iframe title={file.name} sandbox="" referrerPolicy="no-referrer" srcDoc={text} /> : <pre>{text}</pre>}
       <footer><a href={file.url} download={file.name} target="_blank" rel="noreferrer">下载原文件</a></footer>
     </dialog>

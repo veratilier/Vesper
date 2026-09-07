@@ -104,3 +104,11 @@
   .anniversary-add-actions { grid-template-columns: 1fr; gap: 0; }
   .app-shell .drawer { width: calc(100% - 64px); max-width: 248px; }
 }
+
+/* Bubble-free outgoing prose still reads from the right edge. */
+.app-shell .codex-chat .sent-turn .message.mine > div:not(.sticker-bubble) {
+  margin-left: auto;
+}
+.app-shell .codex-chat .sent-turn .message.mine > div > p {
+  text-align: right;
+}

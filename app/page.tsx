@@ -19,6 +19,7 @@ import {
 import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
 import { syncCodexThread, createConnectionQueue } from "@/lib/codex-thread-lifecycle";
+import { FileAttachmentCard } from "./file-attachment-card";
 import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
 import { attachmentInputText, imageAttachmentInput } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
@@ -4893,16 +4894,7 @@ function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[
         ) : item.type.startsWith("audio/") ? (
           <audio src={item.url} controls key={item.key} />
         ) : (
-          <a
-            className="file-attachment"
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            key={item.key}
-          >
-            <Icon name="file-code" />
-            <span>{item.name}<small>{item.type} · {item.size < 1024 ? `${item.size} B` : item.size < 1048576 ? `${(item.size / 1024).toFixed(1)} KB` : `${(item.size / 1048576).toFixed(1)} MB`}</small></span>
-          </a>
+          <FileAttachmentCard key={item.key} file={item} />
         ),
       )}
     </div>

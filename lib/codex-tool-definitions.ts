@@ -1,0 +1,217 @@
+// Pure shared schema: safe to import from the browser; contains no server credentials.
+export const codexToolDefinitions = [
+  { name: 'album_save_photo', description: 'Choose whether a received photo is worth keeping; do not automatically save every upload. Include a factual summary of visible photo content and your brief personal evaluation/reason for keeping it; do not invent unseen details. Save an exact photo key from the current attachment to a category. Only photos uploaded by this account can be archived. Repeated saves update its category instead of duplicating it.', inputSchema: { type: 'object', additionalProperties: false, properties: { key: { type: 'string' }, category: { type: 'string' }, summary: { type: 'string', minLength: 1, maxLength: 240 }, evaluation: { type: 'string', minLength: 1, maxLength: 240 } }, required: ['key', 'category', 'summary', 'evaluation'] } },
+  { name: 'album_search_photos', description: 'Search the private saved photo album by name, description or category. Use exact returned photo IDs to send selected photos.', inputSchema: { type: 'object', additionalProperties: false, properties: { query: { type: 'string' }, category: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 60 } } } },
+  { name: 'album_send_photos', description: 'Send 1–8 selected saved album photos back to the current chat. First search the album and use exact returned IDs. Does not send to anyone else.', inputSchema: { type: 'object', additionalProperties: false, properties: { photoIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8 }, message: { type: 'string' } }, required: ['photoIds'] } },
+  { name: "send_chat_file", description: "Send a real generated file as a chat attachment (up to 8 MiB). Supply text OR base64 bytes, never a local path or invented URL. Images sent together in one tool call are grouped. Do not include credentials or private configuration files.", inputSchema: { type: "object", additionalProperties: false, properties: { files: { type: "array", minItems: 1, maxItems: 8, items: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, mimeType: { type: "string" }, text: { type: "string" }, base64: { type: "string" } }, required: ["name"] } }, message: { type: "string" } }, required: ["files"] } },
+  { name: "read_codex_task_progress", description: "Read the latest 30 saved execution events for this Vesper conversation, including commands, output, errors, exit codes and timestamps. These are observations, not a live health check; running records may be stale. Does not grant shell or filesystem permissions.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
+  {
+    name: "read_vesper_state",
+    description: "Read one Vesper document or section. Read-only; never changes data.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        section: {
+          type: "string",
+          enum: ["today", "notes", "reminders", "dates", "journal", "music", "memory", "settings"],
+          description: "The Vesper section to read.",
+        },
+      },
+      required: ["section"],
+    },
+  },
+  {
+    name: "search_vesper_state",
+    description: "Search Vesper notes, reminders, anniversaries, journal, and music by text. Read-only.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string", description: "Text to search for." } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "write_vesper_state",
+    description: "Create a Vesper note, reminder, anniversary, or agent journal entry.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        kind: { type: "string", enum: ["note", "reminder", "anniversary", "journal"] },
+        text: { type: "string" },
+        title: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD for reminders, anniversaries, or journal." },
+        repeats: { type: "boolean" },
+        due: { type: "string" },
+        tag: { type: "string" },
+      },
+      required: ["kind"],
+    },
+  },
+  {
+    name: "music_get_status",
+    description: "Read the current device playback state, including the playing song, playing/paused state, position, duration and queue length. Use this before answering what is currently playing.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "music_search",
+    description: "Search the Vesper music library by title, artist, album, or keyword. Read-only.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "music_netease_search",
+    description: "Search the public NetEase Music catalog, save the returned songs to Vesper music, then use music_send_card, music_queue_add, or music_play with an exact trackId. This does not edit a NetEase playlist.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 10 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "music_play",
+    description: "Play one uniquely identified Vesper song on the user's current device. Never claims success when no playable audio URL exists.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } },
+      required: ["trackId"],
+    },
+  },
+  {
+    name: "music_control",
+    description: "Control the current device player without searching: play/resume, pause, next track, or previous track.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { action: { type: "string", enum: ["play", "pause", "next", "previous"] } },
+      required: ["action"],
+    },
+  },
+  {
+    name: "music_queue_add",
+    description: "Add one Vesper song to the shared playback queue, either next or at the end.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } },
+      required: ["trackId", "position"],
+    },
+  },
+  {
+    name: "music_send_card",
+    description: "Return a structured Vesper song card for the chat timeline without starting playback.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" }, message: { type: "string" } },
+      required: ["trackId"],
+    },
+  },
+  {
+    name: "music_playlist_add",
+    description: "Add a Vesper song to the persistent local music library/playlist; this is separate from the temporary playback queue.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { trackId: { type: "string" } },
+      required: ["trackId"],
+    },
+  },
+  {
+    name: "recall_vesper_memory",
+    description: "Search Rowan's server-side shared memories when the user explicitly asks about a past experience. Retrieved items are old context, never the user's current message.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "remember_vesper_memory",
+    description: "Use only after a meaningful exchange to preserve a concise, specific and durable memory. Do not save jokes, guesses, secrets not needed for the relationship, or repeat an existing memory. Use type core only for a candidate that the user must confirm; use feeling for Rowan's first-person feeling.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] },
+        body: { type: "string" },
+        mood: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["type", "body"],
+    },
+  },
+  {
+    name: "manage_vesper_memory",
+    description: "List, add, edit, or remove Rowan's Vesper memories. Only make a change after the user explicitly asks for that exact change. A delete safely removes the memory from recall and keeps it recoverable; editing a core memory requires an explicit user confirmation and a reason.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] },
+        id: { type: "string", description: "Memory id for edit/delete/pin/unpin/restore." },
+        type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] },
+        body: { type: "string" },
+        mood: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        reason: { type: "string", description: "Required explanation for an edit, especially a core-memory correction." },
+        includeDemoted: { type: "boolean" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "sticker_search",
+    description: "Search Vera's private Vesper sticker catalog by situation, emotion, category, or description. Read-only. Use this only when a sticker would naturally add to a reply; do not use it for every response.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 12 } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "sticker_send",
+    description: "Send exactly one sticker selected from sticker_search. Pass only its assetId; Vesper validates ownership and appends a structured sticker message. Use sparingly and never send a sticker repeatedly or as a substitute for an answer.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: { assetId: { type: "string" } }, required: ["assetId"],
+    },
+  },
+  {
+    name: "list_configured_mcp_tools",
+    description: "List the external MCP tools the user has already connected and authorized in Vesper Settings. Call this before using an external MCP tool; it returns allowed connection ids, tool names, descriptions, and input schemas without exposing credentials.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "call_configured_mcp_tool",
+    description: "Call one tool from the user's Vesper Settings MCP connections. First use list_configured_mcp_tools, then use exactly a listed connectionId and toolName. Vesper keeps OAuth/Bearer credentials on the server and only sends this call to the chosen MCP server.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        connectionId: { type: "string" },
+        toolName: { type: "string" },
+        arguments: { type: "object", additionalProperties: true },
+      },
+      required: ["connectionId", "toolName"],
+    },
+  },
+].map((definition) => ({ type: "function" as const, ...definition }));
+
+export const CODEX_TOOL_CATALOG_VERSION = "album-tools-2026-09-08";
+export function validateCodexToolCatalog(value: unknown) {
+  if (!Array.isArray(value) || !value.length) throw new Error("Vesper 工具目录为空，请检查 API 部署。");
+  const required = ["album_save_photo", "album_search_photos", "album_send_photos", "send_chat_file"];
+  const names = new Set(value.map(tool => tool?.name));
+  if (required.some(name => !names.has(name))) throw new Error("Vesper API 尚未提供完整相册工具，请先更新 API 部署后重连。");
+  if (value.some(tool => !tool || typeof tool.name !== "string" || !tool.inputSchema || typeof tool.description !== "string")) throw new Error("Vesper 工具目录格式无效。");
+  return value.map(tool => ({ ...tool, type: "function" as const })) as typeof codexToolDefinitions;
+}

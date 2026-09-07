@@ -17,6 +17,7 @@ import {
   type CSSProperties,
 } from "react";
 import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
+import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
 import { attachmentInputText } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
@@ -3206,38 +3207,7 @@ type CodexInput =
 type CodexPendingFile = { file: File; preview: string };
 type CodexMessageTombstone = { threadId?: string | null; stableId?: string; itemId?: string | null; messageId: string; deletedAt?: string };
 
-const CODEX_DYNAMIC_TOOLS = [
-  {
-    name: "read_vesper_state",
-    description: "Read one Vesper document or section. Read-only; never changes data.",
-    inputSchema: { type: "object", additionalProperties: false, properties: { section: { type: "string", enum: ["today", "notes", "reminders", "dates", "journal", "music", "memory", "settings"] } }, required: ["section"] },
-  },
-  {
-    name: "search_vesper_state",
-    description: "Search Vesper notes, reminders, anniversaries, journal, and music by text. Read-only.",
-    inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" } }, required: ["query"] },
-  },
-  {
-    name: "write_vesper_state",
-    description: "Create a Vesper note, reminder, anniversary, or agent journal entry.",
-    inputSchema: { type: "object", additionalProperties: false, properties: { kind: { type: "string", enum: ["note", "reminder", "anniversary", "journal"] }, text: { type: "string" }, title: { type: "string" }, date: { type: "string" }, repeats: { type: "boolean" }, due: { type: "string" }, tag: { type: "string" } }, required: ["kind"] },
-  },
-  { name: "music_get_status", description: "Read the current device playback state, including song, playing/paused state, position, duration and queue length. Use before answering what is currently playing.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
-  { name: "music_search", description: "Search the Vesper music library and current queue by title, artist, album, or keyword. Read-only.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 20 } }, required: ["query"] } },
-  { name: "music_netease_search", description: "Search the public NetEase Music catalog, save returned songs to Vesper music, then use music_send_card, music_queue_add, or music_play with an exact trackId. This does not edit a NetEase playlist.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 10 } }, required: ["query"] } },
-  { name: "music_play", description: "Play one uniquely identified Vesper song on the user's current device. Never claims success without a playable source.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, replaceQueue: { type: "boolean", default: false } }, required: ["trackId"] } },
-  { name: "music_control", description: "Control the current player: play/resume, pause, next track, or previous track.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["play", "pause", "next", "previous"] } }, required: ["action"] } },
-  { name: "music_queue_add", description: "Add one Vesper song to the shared playback queue, either next or at the end.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, position: { type: "string", enum: ["next", "end"] } }, required: ["trackId", "position"] } },
-  { name: "music_send_card", description: "Return a structured Vesper song card for the chat timeline without starting playback.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" }, message: { type: "string" } }, required: ["trackId"] } },
-  { name: "music_playlist_add", description: "Add a song to the persistent Vesper music playlist, separate from the temporary queue.", inputSchema: { type: "object", additionalProperties: false, properties: { trackId: { type: "string" } }, required: ["trackId"] } },
-  { name: "recall_vesper_memory", description: "Read Rowan's relevant server-side memories. Returned entries are old background, not the user's current message.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" } }, required: ["query"] } },
-  { name: "remember_vesper_memory", description: "Only after a meaningful exchange, preserve one concise and durable memory. Never save a joke, guess, duplicate, or transient detail. Core items are candidates and require the user's confirmation; feelings must be Rowan's first-person feeling.", inputSchema: { type: "object", additionalProperties: false, properties: { type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } } }, required: ["type", "body"] } },
-  { name: "manage_vesper_memory", description: "List, add, edit, or remove Vesper memories only after the user explicitly requests that exact change. Core edits require explicit confirmation and a reason.", inputSchema: { type: "object", additionalProperties: false, properties: { action: { type: "string", enum: ["list", "add", "edit", "delete", "pin", "unpin", "restore"] }, id: { type: "string" }, type: { type: "string", enum: ["core", "long_term", "feeling", "dream"] }, body: { type: "string" }, mood: { type: "string" }, tags: { type: "array", items: { type: "string" } }, reason: { type: "string" }, includeDemoted: { type: "boolean" } }, required: ["action"] } },
-  { name: "sticker_search", description: "Search Vera's private sticker catalog by emotion, situation, category, or description. Read-only. Use only when a sticker would naturally add to a reply, never for every reply.", inputSchema: { type: "object", additionalProperties: false, properties: { query: { type: "string" }, limit: { type: "number", minimum: 1, maximum: 12 } }, required: ["query"] } },
-  { name: "sticker_send", description: "Send exactly one sticker returned by sticker_search. Pass only its assetId. Vesper validates it and appends a structured sticker message; use sparingly.", inputSchema: { type: "object", additionalProperties: false, properties: { assetId: { type: "string" } }, required: ["assetId"] } },
-  { name: "list_configured_mcp_tools", description: "List the user's enabled Vesper Settings MCP connections and their allowed tools before calling one. Credentials are never returned.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
-  { name: "call_configured_mcp_tool", description: "Call exactly one tool returned by list_configured_mcp_tools. Vesper holds the connection credentials securely on the server.", inputSchema: { type: "object", additionalProperties: false, properties: { connectionId: { type: "string" }, toolName: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["connectionId", "toolName"] } },
-].map((definition) => ({ type: "function" as const, ...definition }));
+const CODEX_DYNAMIC_TOOLS = codexToolDefinitions;
 
 // Vesper is a companion chat, not a report console. This always travels through
 // the app-server's developer-instruction channel, never through a user turn.
@@ -3821,6 +3791,7 @@ function ConnectedChat({
   const [error, setError] = useState("");
   const [historyWarning, setHistoryWarning] = useState("");
   const [resumeError, setResumeError] = useState("");
+  const [toolUpgradeNeeded, setToolUpgradeNeeded] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const [, refreshActivity] = useState(0);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
@@ -4320,22 +4291,10 @@ function ConnectedChat({
     if (executionPending.current.size) flushExecutions();
   };
   const loadDynamicTools = async () => {
-    let dynamicTools = CODEX_DYNAMIC_TOOLS;
-    try {
-      const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
-      if (catalog.ok) {
-        const payload = await catalog.json() as { tools?: typeof CODEX_DYNAMIC_TOOLS };
-        if (Array.isArray(payload.tools) && payload.tools.length) {
-          // Older Vesper builds omitted the required app-server discriminator.
-          // Normalize the API catalogue as well as the local fallback so the
-          // browser always sends protocol-valid dynamic function definitions.
-          dynamicTools = payload.tools.map((tool) => ({ ...tool, type: "function" as const }));
-        }
-      }
-    } catch {
-      // The fallback keeps the app-server handshake useful while the bridge is offline.
-    }
-    return dynamicTools;
+    const catalog = await fetch(apiUrl("/api/codex/tools"), { headers: appHeaders(), cache: "no-store" });
+    if (!catalog.ok) throw new Error(catalog.status === 401 ? "无法读取 Vesper 工具，请先在设置中重新配对设备。" : "Vesper 工具目录暂时无法读取，请稍后重连。");
+    const payload = await catalog.json() as { tools?: unknown };
+    return validateCodexToolCatalog(payload.tools);
   };
   const startThreadWithTools = async (dynamicTools: typeof CODEX_DYNAMIC_TOOLS, developerInstructions: string) => {
     const result = await sendRpc("thread/start", {
@@ -4348,6 +4307,8 @@ function ConnectedChat({
     const thread = (result.result?.thread || {}) as { id?: string };
     if (!thread.id) throw new Error("Codex did not return a thread id");
     threadId.current = thread.id;
+    try { window.localStorage.setItem(`vesper-thread-tools-${thread.id}`, CODEX_TOOL_CATALOG_VERSION); } catch {}
+    setToolUpgradeNeeded(false);
     syncThreadModel(result);
     appliedDeveloperInstructions.current = developerInstructions;
     void persistCodexConversation(conversationId, { codexThreadId: thread.id })
@@ -4355,8 +4316,11 @@ function ConnectedChat({
     return thread.id;
   };
   const resumeThread = async (developerInstructions: string) => {
+    // A successful resume is not proof that an older server updated its tool registry.
+    setToolUpgradeNeeded(window.localStorage.getItem(`vesper-thread-tools-${threadId.current}`) !== CODEX_TOOL_CATALOG_VERSION);
+    const dynamicTools = await loadDynamicTools();
     try {
-      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions, dynamicTools: await loadDynamicTools() });
+      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions, dynamicTools });
       syncThreadModel(resumed);
       hydrateThreadSnapshot(resumed);
       appliedDeveloperInstructions.current = developerInstructions;
@@ -4443,6 +4407,7 @@ function ConnectedChat({
       const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
+      try { window.localStorage.setItem(`vesper-thread-tools-${thread.id}`, CODEX_TOOL_CATALOG_VERSION); } catch {}
       void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
         .catch(() => setHistoryWarning("历史暂未同步"));
       rememberConversation(replacementId, "替代会话", 0);
@@ -4830,6 +4795,7 @@ function ConnectedChat({
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
+        {toolUpgradeNeeded && !resumeError && <div className="chat-history-warning" role="status"><span>这段旧会话的相册工具尚未确认更新；原记录会保留。</span><button type="button" disabled={busy || !online} onClick={() => void createReplacementConversation()}>新建支持相册的会话</button></div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">

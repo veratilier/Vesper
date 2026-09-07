@@ -3360,7 +3360,7 @@ function vesperDeveloperInstructions(memoryBackground = "") {
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
 const CODEX_ASSISTANT_CONTENT_TYPES = new Set(["text", "outputText"]);
-const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "shellCall", "computerCall", "webSearchCall"]);
+const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "shellCall", "computerCall", "webSearchCall", "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch"]);
 const CODEX_REASONING_ITEM_TYPES = new Set(["reasoning", "reasoningSummary"]);
 const CODEX_DYNAMIC_TOOL_METHODS = new Set(["item/tool/call", "tool/call", "tools/call"]);
 
@@ -3385,19 +3385,6 @@ function visibleAssistantText(item: CodexItem) {
     if (chunks.length) return chunks.join("");
   }
   return typeof item.text === "string" ? item.text : "";
-}
-
-function splitAssistantChatBubbles(content: string) {
-  const value = content.trim();
-  // Structured content must remain intact: splitting a code block, a Markdown
-  // link, or a list makes it harder to read and breaks copy/paste semantics.
-  if (!value || /```|`[^`]+`|https?:\/\/|\[[^\]]+\]\([^\n)]+\)|^\s*(?:[-*+] |\d+[.)] )/m.test(value)) return [value];
-  const sentences = value.match(/[^。！？!?\n]+[。！？!?]+(?:[”’」』）】]*)|[^。！？!?\n]+$/g)
-    ?.map((sentence) => sentence.trim())
-    .filter(Boolean) || [value];
-  // A normal reply has one to three bubbles. Keep any unexpected long tail
-  // together rather than turning a detailed answer into a wall of bubbles.
-  return sentences.length > 3 ? [...sentences.slice(0, 2), sentences.slice(2).join(" ")] : sentences;
 }
 
 function visibleUserText(item: CodexItem) {
@@ -3805,13 +3792,13 @@ function CodexChatMessage({
           {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
         </div>}
       </div>
-      <div className="message-actions">
+      {item.status !== "streaming" && <div className="message-actions">
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
         <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
         <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>
         {!assistant && <button className="message-action" aria-label="编辑" title="编辑" onClick={() => onEdit(item)}><Icon name="edit" /></button>}
         <button className="message-action danger" aria-label="删除" title="删除" onClick={() => void onDelete(item).catch(() => {})}><Icon name="trash" /></button>
-      </div>
+      </div>}
       <MessageAttachments items={item.metadata?.attachments || []} onSaveAsSticker={onSaveAttachmentAsSticker ? (attachment) => onSaveAttachmentAsSticker(attachment, item) : undefined} />
     </div>
   );
@@ -3918,6 +3905,7 @@ function ConnectedChat({
   const [resumeError, setResumeError] = useState("");
   const [historyReady, setHistoryReady] = useState(false);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
+  const streamStartedAt = useRef(new Map<string, string>());
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
   const [listening, setListening] = useState(false);
   const [approvalQueue, setApprovalQueue] = useState<PendingCodexApproval[]>([]);
@@ -3998,6 +3986,7 @@ function ConnectedChat({
 
   const setTurnStatus = (status: "thinking" | "tool" | "completed" | "error") => {
     if (!activeTurnUserId.current) return;
+    if (messagesRef.current.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus === status) return;
     updateMessage(activeTurnUserId.current, (item) => ({ ...item, metadata: { ...item.metadata, turnStatus: status } }));
   };
 
@@ -4160,6 +4149,8 @@ function ConnectedChat({
     if (message.method === "item/agentMessage/delta") {
       const id = String(params.itemId || "agent");
       if (isCompletedCodexItem(messagesRef.current, id)) return;
+      if (!streamStartedAt.current.has(id)) streamStartedAt.current.set(id, new Date().toISOString());
+      setTurnStatus("thinking");
       const next = `${streamBuffers.current.get(id) || ""}${String(params.delta || "")}`;
       streamBuffers.current.set(id, next);
       setStreamingItems((current) => ({ ...current, [id]: next }));
@@ -4168,6 +4159,7 @@ function ConnectedChat({
       const id = String(params.itemId || "reasoning");
       reasoningBuffers.current.set(id, `${reasoningBuffers.current.get(id) || ""}${String(params.delta || "")}`);
     }
+    if (message.method === "item/started" && CODEX_TOOL_ITEM_TYPES.has(String((params.item as CodexItem | undefined)?.type || ""))) setTurnStatus("tool");
     if (message.method === "item/completed") {
       const item = (params.item || {}) as CodexItem;
       const itemId = String(item.id || params.itemId || "");
@@ -4180,10 +4172,11 @@ function ConnectedChat({
       if (CODEX_TOOL_ITEM_TYPES.has(itemType)) {
         setTurnStatus("tool");
       }
-      const content = (streamBuffers.current.get(itemId) || visibleAssistantText(item)).trim();
+      const content = (visibleAssistantText(item) || streamBuffers.current.get(itemId) || "").trim();
       if (content && activeTurnId.current && CODEX_ASSISTANT_ITEM_TYPES.has(itemType) && (!item.role || item.role === "assistant")) {
         const current = messagesRef.current;
-        const bubbles = splitAssistantChatBubbles(content);
+        // Keep the complete assistant item intact; punctuation is not a message boundary.
+        const bubbles = [content];
         const agentMessages = bubbles.map((bubble, index) => {
           const bubbleItemId = index === 0 ? itemId : `${itemId}:bubble:${index}`;
           const existing = current.find((candidate) => {
@@ -4205,7 +4198,7 @@ function ConnectedChat({
               turnStatus: index === 0 ? "completed" as const : undefined,
               showTurnStatus: index === 0,
             },
-            createdAt: existing?.createdAt || new Date().toISOString(),
+            createdAt: existing?.createdAt || streamStartedAt.current.get(itemId) || new Date().toISOString(),
           } satisfies BridgeChatMessage;
         });
         save(mergeCodexMessages(current, agentMessages));
@@ -4259,6 +4252,7 @@ function ConnectedChat({
       }
       setStreamingItems({});
       streamBuffers.current.clear();
+      streamStartedAt.current.clear();
       reasoningBuffers.current.clear();
       reasoningSummaries.current = [];
       turnDone.current?.(params.turn);
@@ -4743,7 +4737,18 @@ function ConnectedChat({
     }, 260);
     return () => window.clearTimeout(timer);
   }, [focusMessageId, messages.length]);
-  const liveStatusStamp = formatTurnTimestamp(new Date().toISOString());
+  // A live item and its saved form share their React key, so completion updates
+  // the existing row instead of appending a second message or remounting it.
+  const displayMessages: BridgeChatMessage[] = [...messages];
+  for (const [itemId, content] of Object.entries(streamingItems)) {
+    if (isCompletedCodexItem(messages, itemId)) continue;
+    displayMessages.push({
+      id: `${itemId}:bubble:0`, conversationId, role: "agent", content,
+      status: "streaming", createdAt: streamStartedAt.current.get(itemId) || "",
+      metadata: { itemId, turnId: activeTurnId.current, showTurnStatus: true },
+    });
+  }
+  const liveTurnStatus = messages.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus;
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
   return (
@@ -4755,16 +4760,15 @@ function ConnectedChat({
       </div>
       <div className="chat-stream">
         {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在准备对话…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
-        {messages.map((item, index) => {
+        {displayMessages.map((item, index) => {
           const timestamp = visibleMessageTimestamp(item.createdAt);
-          const previousTimestamp = index ? visibleMessageTimestamp(messages[index - 1].createdAt) : Number.NaN;
+          const previousTimestamp = index ? visibleMessageTimestamp(displayMessages[index - 1].createdAt) : Number.NaN;
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
           return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
-        {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
-        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div className="assistant-message-content"><p>{text}</p></div></div></div>)}
+        {busy && <div className="reply-progress" role="status" aria-live="polite"><i aria-hidden="true" /><span>{liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"}</span></div>}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}

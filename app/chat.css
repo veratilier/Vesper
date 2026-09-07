@@ -419,3 +419,6 @@
   .codex-chat .message > div { max-width: min(calc(100% - 16px), 680px); }
   .codex-approval-layer { align-items: center; }
 }
+
+.codex-chat .reply-progress { display: flex; align-items: center; gap: 8px; margin: 0 8px 8px; color: var(--ui-muted); font: 12px/1.5 var(--font-chinese); }
+.codex-chat .reply-progress i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

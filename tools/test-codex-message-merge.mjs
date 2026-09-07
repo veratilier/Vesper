@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hasCodexChatBubbles, mergeCodexMessages } from "../app/codex-message-merge.ts";
+import { hasCodexChatBubbles, isCompletedCodexItem, mergeCodexMessages } from "../app/codex-message-merge.ts";
 
 const local = {
   id: "local-user-id",
@@ -79,3 +79,16 @@ const frozen = JSON.stringify([whole, first, second]);
 mergeCodexMessages([whole, first, second]);
 assert.equal(JSON.stringify([whole, first, second]), frozen, "merge must not mutate source history");
 console.log("codex message merge regression: user identity, split bubbles, replay, refresh, deletion, status and legacy compatibility: ok");
+
+const attachmentLocal = { ...local, content: "Attachment", metadata: { ...local.metadata, modelInputText: "Download URL: https://example.com/file.zip" } };
+const attachmentEcho = { ...snapshot, content: attachmentLocal.metadata.modelInputText };
+for (const groups of [[[attachmentLocal], [attachmentEcho]], [[attachmentEcho], [attachmentLocal]]]) {
+ const result = mergeCodexMessages(...groups);
+ assert.equal(result.length, 1, "attachment protocol text must not create a second user message");
+ assert.equal(result[0].content, "Attachment", "retain the user's visible caption");
+}
+assert.equal(mergeCodexMessages([attachmentLocal], [{...attachmentEcho,metadata:{...attachmentEcho.metadata,turnId:'another-turn'}}]).length,2);
+
+assert.equal(isCompletedCodexItem([first, second], 'reply-1'), true, 'late delta for saved bubbles must be ignored');
+assert.equal(isCompletedCodexItem([{...whole,status:'delivered'}], 'reply-1'), true);
+assert.equal(isCompletedCodexItem([first,second], 'new-reply'), false, 'a new reply must still stream');

@@ -10,10 +10,11 @@ import {
   type SetStateAction,
   type CSSProperties,
 } from "react";
+import { attachmentInputText } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
-import { codexBubbleIdentity, hasCodexChatBubbles, mergeCodexMessages } from "./codex-message-merge";
+import { codexBubbleIdentity, hasCodexChatBubbles, isCompletedCodexItem, mergeCodexMessages } from "./codex-message-merge";
 import {
   approvalResultFor,
   approvalWasResolved,
@@ -2706,6 +2707,7 @@ type BridgeChatMessage = {
     durationMs?: number;
     tools?: string[];
     attachments?: ChatAttachment[];
+    modelInputText?: string;
     turnId?: string;
     threadId?: string;
     itemId?: string;
@@ -4146,6 +4148,7 @@ function ConnectedChat({
     }
     if (message.method === "item/agentMessage/delta") {
       const id = String(params.itemId || "agent");
+      if (isCompletedCodexItem(messagesRef.current, id)) return;
       const next = `${streamBuffers.current.get(id) || ""}${String(params.delta || "")}`;
       streamBuffers.current.set(id, next);
       setStreamingItems((current) => ({ ...current, [id]: next }));
@@ -4289,13 +4292,13 @@ function ConnectedChat({
       if (role === "agent" && item.id && hasCodexChatBubbles(messagesRef.current, item.id)) return [];
       const existing = messagesRef.current.find((candidate) =>
         (item.id && candidate.metadata?.itemId === item.id) ||
-        (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && candidate.content === content.trim()));
+        (entry.turnId && candidate.metadata?.turnId === entry.turnId && candidate.role === role && (candidate.content === content.trim() || candidate.metadata?.modelInputText === content.trim())));
       const messageTime = codexTimestamp(item.createdAt ?? item.startedAt);
       const turnTime = codexTimestamp(entry.createdAt);
       const threadTime = codexTimestamp(thread.createdAt);
       const createdAt = existing?.createdAt || messageTime || turnTime || threadTime;
       const timeSource = existing?.timeSource || existing?.metadata?.timeSource || (messageTime ? "message" : turnTime ? "turn" : threadTime ? "thread" : "unknown");
-      return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
+      return [{ id: existing?.id || String(item.id || crypto.randomUUID()), conversationId, role: role as "user" | "agent", content: role === "user" && existing ? existing.content : content.trim(), status: "delivered", metadata: { ...existing?.metadata, itemId: item.id, turnId: entry.turnId || existing?.metadata?.turnId, blockType: type, threadId: threadId.current, timeSource }, createdAt, source: "codex", timeSource } satisfies BridgeChatMessage];
     });
     if (restored.length) save(mergeCodexMessages(messagesRef.current, restored.filter((item) => !messageWasDeleted(item, tombstonesRef.current))));
   };
@@ -4486,14 +4489,14 @@ function ConnectedChat({
     setFavorites((current) => current.filter((favorite) => favorite.messageId !== item.id));
   };
   const prepareFile = async (item: CodexPendingFile): Promise<{ attachment: ChatAttachment; input?: CodexInput; text?: string }> => {
-    const { file, preview } = item;
-    let attachment: ChatAttachment = { key: crypto.randomUUID(), url: preview, name: file.name, type: file.type || "application/octet-stream", size: file.size };
-    try { attachment = await uploadMedia(file); } catch {}
+    const { file } = item;
+    const attachment = await uploadMedia(file);
+    const downloadText = attachmentInputText(attachment);
     if (file.type.startsWith("image/")) return { attachment, input: { type: "image", url: await localImage(file, 1600, 0.84) } };
     if (file.type.startsWith("audio/")) return { attachment, input: { type: "audio", url: await readDataUrl(file) } };
-    if (file.type.startsWith("video/")) return { attachment, input: { type: "image", url: await videoPoster(file) }, text: `[Video attached: ${file.name}. A representative frame is included.]` };
-    if (file.type.startsWith("text/") || /\.(json|html?|md|csv|tsx?|jsx?)$/i.test(file.name)) return { attachment, text: `[File: ${file.name}]\n${(await file.text()).slice(0, 120000)}` };
-    return { attachment, text: `[File attached: ${file.name} (${file.type || "unknown"}, ${file.size} bytes).]` };
+    if (file.type.startsWith("video/")) return { attachment, input: { type: "image", url: await videoPoster(file) }, text: `${downloadText}\nA representative frame is included.` };
+    if (file.type.startsWith("text/") || /\.(json|html?|md|csv|tsx?|jsx?)$/i.test(file.name)) return { attachment, text: `${downloadText}\nFile preview:\n${(await file.text()).slice(0, 120000)}` };
+    return { attachment, text: downloadText };
   };
   const stickerInputForModel = async (sticker: StickerCatalogItem): Promise<CodexInput | null> => {
     try {
@@ -4536,6 +4539,8 @@ function ConnectedChat({
       const input: CodexInput[] = [
         { type: "text", text: [selectedSticker ? "" : content, stickerText, ...prepared.map((item) => item.text).filter(Boolean)].filter(Boolean).join("\n\n") || "Please inspect the attached files." },
       ];
+      userMessage.metadata = { ...userMessage.metadata, modelInputText: input[0].type === "text" ? input[0].text : undefined };
+      updateMessage(userMessage.id, () => userMessage);
       for (const item of prepared) if (item.input) input.push(item.input);
       if (selectedSticker) { const image = await stickerInputForModel(selectedSticker); if (image) input.push(image); }
       await connect(memoryBackground);

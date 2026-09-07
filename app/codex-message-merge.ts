@@ -5,7 +5,8 @@ export type MergeableCodexMessage = {
   createdAt: string;
   conversationId?: string;
   type?: string;
-  metadata?: { itemId?: string; turnId?: string; threadId?: string; showTurnStatus?: boolean; blockType?: string };
+  status?: string;
+  metadata?: { modelInputText?: string; itemId?: string; turnId?: string; threadId?: string; showTurnStatus?: boolean; blockType?: string };
 };
 
 // The first legacy bubble keeps the original itemId, but its message id has
@@ -21,6 +22,11 @@ export function codexBubbleIdentity(item: MergeableCodexMessage) {
 
 export function hasCodexChatBubbles(items: MergeableCodexMessage[], parentId: string) {
   return items.some((item) => codexBubbleIdentity(item)?.parentId === parentId);
+}
+
+export function isCompletedCodexItem(items: MergeableCodexMessage[], itemId: string) {
+  return hasCodexChatBubbles(items, itemId) || items.some((item) =>
+    item.role === "agent" && item.metadata?.itemId === itemId && item.status === "delivered");
 }
 
 const scopeKey = (item: MergeableCodexMessage) => item.conversationId || item.metadata?.threadId || "";
@@ -69,7 +75,7 @@ export function mergeCodexMessages<T extends MergeableCodexMessage>(...groups: T
   const scoped = (item: T, id: string) => JSON.stringify([scopeKey(item), item.role, id]);
   // Distinct assistant items/bubbles may intentionally say the same thing.
   const semanticKey = (item: T) => item.metadata?.turnId && !(item.role === "agent" && item.metadata?.itemId)
-    ? JSON.stringify([scopeKey(item), item.metadata.turnId, item.role, item.content])
+    ? JSON.stringify([scopeKey(item), item.metadata.turnId, item.role, item.role === "user" ? item.metadata?.modelInputText || item.content : item.content])
     : "";
   const indexMessage = (item: T, index: number) => {
     if (item.id) byId.set(scoped(item, item.id), index);
@@ -110,6 +116,7 @@ export function mergeCodexMessages<T extends MergeableCodexMessage>(...groups: T
     next = {
       ...next,
       ...item,
+      content: original.role === "user" && original.metadata?.modelInputText ? original.content : item.content,
       id: original.id || item.id,
       createdAt: original.createdAt || item.createdAt,
       metadata: { ...next.metadata, ...item.metadata },

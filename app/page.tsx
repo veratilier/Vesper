@@ -3792,6 +3792,8 @@ function ConnectedChat({
   const [error, setError] = useState("");
   const [historyWarning, setHistoryWarning] = useState("");
   const [toolQuestions, setToolQuestions] = useState<UserInputRequest[]>([]);
+  const answeredToolQuestions = useRef(new Set<string | number>());
+  const completedQuestionTurns = useRef(new Set<string>());
   const [resumeError, setResumeError] = useState("");
   const [toolUpgradeNeeded, setToolUpgradeNeeded] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
@@ -4075,6 +4077,7 @@ function ConnectedChat({
       return;
     }
     if (message.method === "serverRequest/resolved") {
+      if (typeof params.requestId === "string" || typeof params.requestId === "number") answeredToolQuestions.current.add(params.requestId);
       setToolQuestions(current => current.filter(request => request.id !== params.requestId));
       updateApprovalQueue((queue) => queue.filter((approval) => !approvalWasResolved(approval, params)));
       for (const [key, response] of approvalResponses.current) {
@@ -4083,7 +4086,10 @@ function ConnectedChat({
       return;
     }
     if (["item/tool/requestUserInput", "tool/requestUserInput", "mcpServer/elicitation/request"].includes(message.method || "") && (typeof message.id === "string" || typeof message.id === "number")) {
-      const request = { id: message.id, method: message.method!, params };
+      if (answeredToolQuestions.current.has(message.id)) return;
+      const questionTurnId = String(params.turnId || activeTurnId.current || "");
+      if (questionTurnId && completedQuestionTurns.current.has(questionTurnId)) return;
+      const request = { id: message.id, method: message.method!, params: { ...params, turnId: questionTurnId } };
       setToolQuestions(current => current.some(entry => entry.id === request.id) ? current : [...current, request]);
       return;
     }
@@ -4200,7 +4206,9 @@ function ConnectedChat({
       }
     }
     if (message.method === "turn/completed") {
-      setToolQuestions(current => current.filter(request => request.params.turnId !== (params.turn as { id?: string } | undefined)?.id));
+      const questionTurnId = (params.turn as { id?: string } | undefined)?.id || params.turnId || activeTurnId.current;
+      if (questionTurnId) completedQuestionTurns.current.add(String(questionTurnId));
+      setToolQuestions(current => current.filter(request => request.params.turnId !== questionTurnId));
       flushExecutions();
       const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
       const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
@@ -4379,6 +4387,8 @@ function ConnectedChat({
       const hadPendingApproval = approvalQueueRef.current.length > 0;
       setOnline(false);
       setToolQuestions([]);
+      answeredToolQuestions.current.clear();
+      completedQuestionTurns.current.clear();
       socket.current = null;
       for (const request of rpc.current.values()) request.reject(new Error("Codex 连接已断开"));
       rpc.current.clear();
@@ -4416,10 +4426,6 @@ function ConnectedChat({
   };
   const createReplacementConversation = async () => {
     if (busy) return;
-    if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
-      setError("Codex app-server is offline");
-      return;
-    }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     setBusy(true);
     try {
@@ -4814,6 +4820,8 @@ function ConnectedChat({
       {toolQuestions[0] && <CodexUserInput key={toolQuestions[0].id} request={toolQuestions[0]} onRespond={result => {
         const request = toolQuestions[0];
         if (socket.current?.readyState !== WebSocket.OPEN) { setError("连接已断开，确认没有发送。"); return; }
+        if (answeredToolQuestions.current.has(request.id)) return;
+        answeredToolQuestions.current.add(request.id);
         socket.current.send(JSON.stringify({ id: request.id, result }));
         setToolQuestions(current => current.filter(entry => entry.id !== request.id));
       }} />}

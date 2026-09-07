@@ -60,7 +60,7 @@ button {
   height: 100dvh;
   max-width: 520px;
   overflow: hidden;
-  background-color: #f0f2ef;
+  background-color: #eaf0f5;
   background-image:
     radial-gradient(
       circle at 75% 8%,
@@ -1603,7 +1603,7 @@ body {
   --soft: #717171;
   --line: rgba(0, 0, 0, 0.09);
   --sage: #1f1f1f;
-  --paper: #f5f5f3;
+  --paper: #eaf0f5;
 }
 .stage {
   background: linear-gradient(145deg, #f1f1ef, #d8d8d5);
@@ -2072,7 +2072,7 @@ body {
 }
 .save-profile:disabled {
   background: #c9ccca;
-  color: #f5f5f3;
+  color: #eaf0f5;
 }
 .connection-modal .connection-message {
   margin: 12px auto 0;
@@ -3597,7 +3597,7 @@ html {
 }
 .avatar-mark.user {
   background-color: #25282b;
-  color: #f5f5f3;
+  color: #eaf0f5;
 }
 .avatar-mark.agent {
   background-color: #f5f5f2;
@@ -4865,7 +4865,7 @@ body {
   min-height: 0;
   margin: 0;
   overflow: hidden;
-  background: #f0f2ef;
+  background: #eaf0f5;
 }
 
 .stage,
@@ -4880,7 +4880,7 @@ body {
   inset: 0;
   height: auto !important;
   min-height: 0 !important;
-  background-color: #f0f2ef;
+  background-color: #eaf0f5;
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
@@ -4894,7 +4894,7 @@ body {
 .app-header {
   height: calc(54px + var(--safe-top));
   padding-top: var(--safe-top);
-  background: #f0f2ef !important;
+  background: #eaf0f5 !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }

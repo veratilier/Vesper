@@ -7,13 +7,13 @@
 .home-cards .home-return-signal { font-size: .8125rem; }
 .home-cards .weather-pill { flex-shrink: 0; }
 .home-cards button { cursor: pointer; text-align: left; }
-.home-cards .home-letter { display: grid; grid-template-columns: 42px minmax(0, 1fr) 16px; align-items: center; gap: 14px; width: 100%; min-height: 88px; height: auto; padding: 14px; border: 0; border-radius: 24px; background: #202728; color: #f6f7f5; box-shadow: 0 10px 28px rgba(24,38,43,.1); }
+.home-cards .home-letter { display: grid; grid-template-columns: 42px minmax(0, 1fr) 16px; align-items: center; gap: 14px; width: 100%; min-height: 88px; height: auto; padding: 14px; border: 0; border-radius: 24px; background: #2e4353; color: #f2f7fb; box-shadow: 0 10px 28px rgba(24,38,43,.1); }
 .home-cards .letter-mark { display: grid; place-items: center; width: 42px; height: 48px; border: 1px solid rgba(255,255,255,.22); border-radius: 12px; }
 .home-cards .letter-mark .ui-icon { width: 22px; height: 22px; }
 .home-cards .letter-copy { display: grid; min-width: 0; gap: 5px; }
-.home-cards .letter-copy small { color: #bdc9cb; font-size: .75rem; }
+.home-cards .letter-copy small { color: #c6d5e1; font-size: .75rem; }
 .home-cards .letter-copy b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 1rem; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
-.home-cards .letter-copy > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #bdc9cb; font-size: .8125rem; line-height: 1.5; }
+.home-cards .letter-copy > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c6d5e1; font-size: .8125rem; line-height: 1.5; }
 .home-cards .home-date-hero, .home-cards .home-stat, .home-cards .home-reminders-card, .home-cards .home-music-card { min-width: 0; padding: 16px; border: 1px solid var(--ui-line); border-radius: 24px; color: var(--ui-ink); background: var(--ui-surface); box-shadow: 0 6px 24px rgba(32,48,56,.035); }
 .home-cards .home-card-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ui-muted); font: 1.125rem/1.4 Georgia, "Songti SC", serif; }
 .home-cards .home-card-label .ui-icon { width: 18px; height: 18px; }

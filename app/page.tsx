@@ -122,18 +122,19 @@ function Notes() {
   );
 }
 const VESPER_API_ORIGIN = "https://api.vesper.r-vera.com";
-const DEFAULT_APP_BACKGROUND = "#f5f5f3";
-const NEUTRAL_ACCENTS = new Set(["#4a4a48", "#6b6b68", "#878783", "#a3a39f"]);
+const DEFAULT_APP_BACKGROUND = "#eaf0f5";
+const NEUTRAL_ACCENTS = new Set(["#647e94", "#8299ad", "#4a4a48", "#6b6b68", "#878783", "#a3a39f"]);
 
 function normalizeNeutralAccent(value?: string) {
-  return value && NEUTRAL_ACCENTS.has(value.toLowerCase()) ? value.toLowerCase() : "#6b6b68";
+  return value && NEUTRAL_ACCENTS.has(value.toLowerCase()) ? value.toLowerCase() : "#647e94";
 }
 
 function normalizeAppBackground(value?: string) {
   const candidate = value?.trim() || "";
+  if (["#f5f5f3", "#f0f2ef"].includes(candidate.toLowerCase())) return DEFAULT_APP_BACKGROUND;
   if (/^#[\da-f]{6}$/i.test(candidate)) return candidate;
   // Uploaded photographs remain user content. Former colour/gradient presets and
-  // the old blue marble default become the new warm-white canvas.
+  // the old blue marble default become the new ice-blue canvas.
   return candidate.includes("url(") && !candidate.includes("vesper-default-bg.webp")
     ? candidate
     : DEFAULT_APP_BACKGROUND;
@@ -650,7 +651,7 @@ export default function Home() {
   const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
   const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
-  const storedAppearance = readLocalValue("vesper-local-appearance", { accent: "#6b6b68", background: DEFAULT_APP_BACKGROUND });
+  const storedAppearance = readLocalValue("vesper-local-appearance", { accent: "#647e94", background: DEFAULT_APP_BACKGROUND });
   const initialAppearance = {
     accent: normalizeNeutralAccent(storedAppearance.accent),
     background: normalizeAppBackground(storedAppearance.background),
@@ -5847,13 +5848,16 @@ function AppearanceModal({
 }) {
   const [color, setColor] = useState("#e4e4e0");
   const accents = [
+    ["灰蓝", "#647e94"],
+    ["雾蓝", "#8299ad"],
     ["石墨", "#4a4a48"],
     ["岩灰", "#6b6b68"],
     ["雾灰", "#878783"],
     ["浅灰", "#a3a39f"],
   ];
   const backgrounds = [
-    ["暖白", "#f5f5f3"],
+    ["冰灰蓝", "#eaf0f5"],
+    ["浅雾蓝", "#e1eaf2"],
     ["纸灰", "#eeeeeb"],
     ["雾灰", "#e2e2df"],
   ];

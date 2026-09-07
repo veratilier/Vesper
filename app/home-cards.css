@@ -59,3 +59,42 @@
 /* Bound replaced SVG elements explicitly: intrinsic sizing must not set card height. */
 .home-cards .home-letter > .ui-icon { width: 16px; height: 16px; min-width: 0; align-self: center; }
 .home-cards .home-play > .ui-icon, .home-cards .home-cover-fallback > .ui-icon { width: 22px; height: 22px; }
+
+/* One-screen overview: a letter, a date, paired diary/reminder, then music. */
+.home-cards.home-overview { grid-template-columns: minmax(0,1fr); gap: 10px; padding: 0 0 6px; }
+.home-cards .home-date-hero { grid-row: auto; }
+.home-cards .home-quick-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.home-cards .home-quick-grid > * { grid-column: auto; min-width: 0; }
+.home-cards .home-letter { min-height: 76px; padding: 10px 14px; gap: 12px; border-radius: 20px; }
+.home-cards .letter-copy { gap: 2px; }
+.home-cards .letter-copy b { -webkit-line-clamp: 1; font-size: .9375rem; line-height: 1.35; }
+.home-cards .home-date-hero { padding: 10px 16px; gap: 2px; border-radius: 20px; }
+.home-cards .home-card-label { font-size: 1rem; line-height: 1.3; }
+.home-cards .home-date-number { font-size: 2.75rem; line-height: 1; margin: 0; }
+.home-cards .home-date-hero > strong { font-size: .875rem; line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.home-cards .home-date-footer { padding-top: 4px; margin-top: 3px; font-size: .75rem; }
+.home-cards .home-stat, .home-cards .home-reminders-card { padding: 12px 14px; border-radius: 20px; display: flex; flex-direction: column; gap: 6px; }
+.home-cards .home-diary > b { font: 1.25rem/1.2 var(--font-chinese),sans-serif; }
+.home-cards .home-diary-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .875rem !important; line-height: 1.4 !important; color: var(--ui-ink) !important; }
+.home-cards .home-panel-heading { padding-bottom: 6px; gap: 4px; }
+.home-cards .home-panel-heading > span:last-child { font-size: .75rem; white-space: nowrap; }
+.home-cards .home-quick-grid .home-panel-heading { align-items: start; flex-wrap: wrap; }
+.home-cards.home-overview .reminder-row { min-height: 44px; padding: 0; gap: 6px; }
+.home-cards .reminder-copy { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .875rem; line-height: 1.35; }
+.home-cards .home-card-empty { margin: 0; font-size: .875rem; line-height: 1.4; }
+.home-cards .home-music-card { padding: 10px 14px; border-radius: 20px; }
+.home-cards .home-track-link img, .home-cards .home-cover-fallback { width: 44px; height: 44px; flex-basis: 44px; }
+.home-cards .home-track-link strong { font-size: .9375rem; }
+.home-cards .home-track-link small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width:767px) {
+  .app-shell > .scroll-view[data-section="今日"] { padding-left: 16px; padding-right: 16px; }
+  .home-cards.home-overview { min-height: 0; height: 100%; grid-template-rows: minmax(max-content,1fr) repeat(4,max-content); align-content: start; align-items: stretch; }
+  .home-cards.home-overview .welcome { align-self: center; padding: 0; }
+  .home-cards.home-overview .welcome h1 { font-size: clamp(30px,8.3vw,42px) !important; margin: 7px 0; }
+  .home-cards .date-row > span:first-child { font: .875rem/1.4 var(--font-chinese),sans-serif; }
+  .home-cards .home-return-signal { margin: 4px 0 0; }
+}
+/* Short windows and enlarged text retain natural scrolling instead of clipping cards. */
+@media (max-height:700px) and (max-width:767px) {
+  .home-cards.home-overview { height: auto; gap: 7px; }
+}

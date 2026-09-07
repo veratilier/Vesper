@@ -52,3 +52,6 @@
   .home-cards .home-quick-grid { grid-template-columns: 1fr; }
   .home-cards .home-date-hero, .home-cards .home-reminders-card, .home-cards .home-music-card { padding: 18px; }
 }
+.home-cards .home-music-empty { width: 100%; }
+.home-cards .home-music-empty > .ui-icon { width: 24px; height: 24px; flex: 0 0 24px; }
+.home-cards .home-music-empty > span { min-width: 0; }

@@ -248,7 +248,8 @@ const legacyRoutes = {
     if (url.pathname === "/health") return Response.json({ ok: true, configured: Boolean(await configuredHash(env.DB)) }, { headers: cors });
     if (url.pathname === "/setup" && request.method === "POST") {
       const existing = await configuredHash(env.DB);
-      if (existing && !(await authorized(request, env.DB))) return Response.json({ error: "当前令牌无效，无法更新" }, { status: 401, headers: cors });
+      if (!existing) return Response.json({ error: "请从已配对的 Vesper 设置页面启用 MCP" }, { status: 403, headers: cors });
+      if (!(await authorized(request, env.DB))) return Response.json({ error: "当前令牌无效，无法更新" }, { status: 401, headers: cors });
       const body = await request.json<{ token?: string }>();
       if (!body.token || body.token.trim().length < 16) return Response.json({ error: "令牌至少需要 16 位" }, { status: 400, headers: cors });
       await env.DB.prepare(`INSERT INTO vesper_mcp_config(key,value,updated_at) VALUES('access_token_hash',?,?)

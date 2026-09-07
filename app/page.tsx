@@ -5640,36 +5640,37 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState(token);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [verified, setVerified] = useState(false);
   const [toolCount, setToolCount] = useState<number | null>(null);
   const generateToken = () => {
     const bytes = crypto.getRandomValues(new Uint8Array(24));
     return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   };
-  const setup = async () => {
-    const nextToken = draft.trim() || generateToken();
+  const setup = async (rotate = false) => {
+    const nextToken = rotate ? generateToken() : draft.trim() || generateToken();
     if (nextToken.length < 16) return setMessage("访问令牌至少需要 16 位。");
-    if (!draft.trim()) setDraft(nextToken);
+    setVerified(false);
+    setToolCount(null);
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch(VESPER_MCP_URL.replace(/\/mcp$/, "/setup"), {
+      const response = await fetch(apiUrl("/api/mcp/owner-token"), {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
-        },
+        headers: appHeaders(true),
         body: JSON.stringify({ token: nextToken }),
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error || `配置失败（${response.status}）`);
       setToken(nextToken);
+      setDraft(nextToken);
+      setVerified(true);
       const testResponse = await fetch(apiUrl("/api/mcp"), {
         method: "POST",
         headers: appHeaders(true),
         body: JSON.stringify({ url: VESPER_MCP_URL, token: nextToken }),
       });
       const tested = (await testResponse.json()) as { toolCount?: number; error?: string };
-      if (!testResponse.ok) throw new Error(tested.error || "MCP tools 测试失败");
+      if (!testResponse.ok) throw new Error(`令牌已保存，但连接测试未通过：${tested.error || "请稍后重试"}`);
       setToolCount(tested.toolCount ?? 0);
       setMessage(`MCP 已启用并连接成功，发现 ${tested.toolCount ?? 0} 个 tools。`);
     } catch (error) {
@@ -5680,6 +5681,7 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
   };
   const testTools = async () => {
     if (!draft.trim()) return setMessage("请先生成并启用连接令牌");
+    setVerified(false);
     setBusy(true);
     setMessage("");
     try {
@@ -5690,6 +5692,8 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
       });
       const result = (await response.json()) as { toolCount?: number; serverName?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "MCP tools 测试失败");
+      setToken(draft.trim());
+      setVerified(true);
       setToolCount(result.toolCount ?? 0);
       setMessage(`${result.serverName || "Vesper"} 已连接，发现 ${result.toolCount ?? 0} 个 tools。`);
     } catch (error) {
@@ -5698,11 +5702,16 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
       setBusy(false);
     }
   };
-  const copy = async () => {
-    await navigator.clipboard.writeText(
-      JSON.stringify({ url: VESPER_MCP_URL, headers: { Authorization: `Bearer ${draft.trim()}` } }, null, 2),
-    );
-    setMessage("连接参数已复制");
+  const copy = async (tokenOnly = false) => {
+    if (!verified || draft.trim() !== token) return setMessage("请先保存或测试通过，再复制连接参数。");
+    try {
+      await navigator.clipboard.writeText(
+        tokenOnly ? token : JSON.stringify({ url: VESPER_MCP_URL, headers: { Authorization: `Bearer ${token}` } }, null, 2),
+      );
+      setMessage(tokenOnly ? "访问令牌已复制，可直接粘贴到 OAuth 授权页。" : "连接参数已复制");
+    } catch {
+      setMessage("无法访问剪贴板，请允许浏览器复制权限后重试。令牌仍已保存，无需重新生成。");
+    }
   };
   return (
     <div className="modal-layer settings-subpage-layer">
@@ -5721,15 +5730,17 @@ function VesperMcpModal({ onClose }: { onClose: () => void }) {
           </label>
           <label className="profile-field">
             <span>访问令牌</span>
-            <input type="password" value={draft} autoCapitalize="none" autoCorrect="off" placeholder="留空时自动生成安全令牌" onChange={(event) => setDraft(event.target.value)} />
+            <input type="password" disabled={busy} value={draft} autoCapitalize="none" autoCorrect="off" placeholder="留空时自动生成安全令牌" onChange={(event) => { setDraft(event.target.value); setVerified(false); setToolCount(null); }} />
           </label>
         </div>
-        <p className="settings-hint">ChatGPT 连接时选择 OAuth，在授权页面输入这里的访问令牌。支持 Bearer 的客户端仍可使用现有令牌连接；无需重新生成。</p>
+        <p className="settings-hint">保存成功后，ChatGPT 连接时选择 OAuth，在授权页只粘贴访问令牌，不带 Bearer。旧令牌遗失或失效时，可用当前已配对设备生成新令牌；替换后，旧 Bearer 连接需改用新令牌。</p>
         {message && <p className="connection-message">{message}</p>}
         {toolCount !== null && <p className="settings-hint">当前远程目录：{toolCount} 个 MCP tools</p>}
-        <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "更新并测试 MCP" : "生成令牌并启用 MCP"}</button>
+        <button className="save-profile" disabled={busy} onClick={() => void setup()}>{busy ? "配置中…" : token ? "保存并测试 MCP" : "生成令牌并启用 MCP"}</button>
+        <button className="reset-background" disabled={busy} onClick={() => void setup(true)}>生成新令牌并替换</button>
         <button className="reset-background" disabled={busy || !draft.trim()} onClick={() => void testTools()}>测试 MCP tools</button>
-        <button className="reset-background" disabled={!draft.trim()} onClick={() => void copy()}>复制 AI 官端连接参数</button>
+        <button className="reset-background" disabled={busy || !verified || draft.trim() !== token} onClick={() => void copy(true)}>复制访问令牌（OAuth）</button>
+        <button className="reset-background" disabled={busy || !verified || draft.trim() !== token} onClick={() => void copy()}>复制 AI 官端连接参数</button>
       </section>
     </div>
   );

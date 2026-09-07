@@ -1937,15 +1937,22 @@ function Today({
         minute: "2-digit",
       }).format(new Date(latestNote.createdAt))
     : "";
-  const upcoming = [...anniversaries]
-    .filter((item) => Number.isFinite(anniversaryTarget(item).getTime()))
-    .sort((a, b) => anniversaryTarget(a).getTime() - anniversaryTarget(b).getTime());
-  const featuredDate = upcoming.find((item) => anniversaryTarget(item).getTime() >= now.getTime()) || upcoming[0];
+  // Compare calendar days so today's date remains today after noon and across DST.
+  const calendarDay = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
+  const today = calendarDay(now);
+  const upcoming = anniversaries.map((item) => {
+    const target = new Date(`${item.date}T12:00:00`);
+    if (item.repeats) {
+      target.setFullYear(now.getFullYear());
+      if (calendarDay(target) < today) target.setFullYear(target.getFullYear() + 1);
+    }
+    return { item, target, days: calendarDay(target) - today };
+  }).filter(({ days }) => Number.isFinite(days)).sort((a, b) => a.days - b.days);
+  const featured = upcoming.find(({ days }) => days >= 0) || upcoming.at(-1);
+  const featuredDate = featured?.item;
   const pendingTodos = todos.filter((item) => !item.done);
-  const featuredIsPast = featuredDate && !featuredDate.repeats && anniversaryTarget(featuredDate).getTime() < now.getTime();
-  const featuredDays = featuredDate ? (featuredIsPast
-    ? Math.max(1, Math.ceil((now.getTime() - anniversaryTarget(featuredDate).getTime()) / 86400000))
-    : daysUntil(featuredDate)) : null;
+  const featuredIsPast = featured ? featured.days < 0 : false;
+  const featuredDays = featured ? Math.abs(featured.days) : null;
   return (
     <div className="today-home home-overview home-cards">
       <section className="welcome">
@@ -1962,7 +1969,7 @@ function Today({
         <span className="home-card-label">{featuredIsPast ? "Days since" : "Next anniversary"}</span>
         <span className="home-date-number">{featuredDays ?? "—"}<small>{featuredIsPast ? "天过去了" : "天后"}</small><Icon name="calendar" /></span>
         <strong>{featuredDate?.title || "留一个值得期待的日子"}</strong>
-        <span className="home-date-footer">{featuredDate ? featuredDate.date : "添加纪念日"}<Icon name="chevron" /></span>
+        <span className="home-date-footer">{featured ? featured.target.toLocaleDateString("zh-CN") : "添加纪念日"}<Icon name="chevron" /></span>
       </button>
       <div className="home-quick-grid">
         <button className="home-stat" onClick={() => onOpenSection("提醒")}><span className="home-card-label">To do<Icon name="check" /></span><b>{pendingTodos.length}</b><span>{pendingTodos.length ? "件待办，慢慢完成" : "暂时没有待办"}</span></button>

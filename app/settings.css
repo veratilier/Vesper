@@ -1,0 +1,285 @@
+/* MCP settings use one page layer at a time.  The list and editor never stack. */
+.settings-page.detail-active .mcp-settings-page {
+  height: calc(100dvh - 68px - var(--safe-bottom));
+  min-height: calc(100dvh - 68px - var(--safe-bottom));
+}
+
+.settings-page.detail-active .external-mcp-modal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--ui-ink);
+}
+
+.settings-page.detail-active .external-mcp-modal > .modal-head {
+  flex: 0 0 auto;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.mcp-list-scroll,
+.mcp-editor-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mcp-list-scroll::-webkit-scrollbar,
+.mcp-editor-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.mcp-list-intro {
+  max-width: 38rem;
+  margin: 0 0 18px;
+  color: var(--ui-ink-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.mcp-server-list {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 18px;
+}
+
+.mcp-server-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--ui-line);
+  border-radius: 18px;
+  background: var(--ui-surface);
+}
+
+.mcp-server-summary {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.mcp-server-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.mcp-server-summary b {
+  color: var(--ui-ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mcp-server-summary small {
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-live-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--ui-ink-secondary);
+  box-shadow: none;
+}
+
+.mcp-live-dot.off {
+  background: var(--ui-line-strong);
+  box-shadow: none;
+}
+
+.mcp-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.mcp-card-actions button {
+  min-width: 48px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  color: var(--ui-ink-secondary);
+  font-size: 13px;
+}
+
+.mcp-card-actions button:last-child {
+  border-color: var(--ui-line-strong);
+  color: var(--ui-danger);
+}
+
+.mcp-card-actions button:disabled {
+  opacity: 0.55;
+}
+
+.mcp-editor-head-spacer {
+  display: block;
+  width: 34px;
+  height: 34px;
+}
+
+.mcp-editor-scroll {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 1px 1px 14px;
+}
+
+.mcp-editor-modal .profile-field {
+  margin: 0;
+}
+
+.mcp-editor-modal .profile-field span {
+  margin: 0 4px 7px;
+  color: var(--ui-ink-secondary);
+  font-size: 13px;
+}
+
+.mcp-editor-modal .profile-field input {
+  box-sizing: border-box;
+  min-height: 52px;
+  height: 52px;
+  border: 1px solid var(--ui-line);
+  border-radius: 15px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: 16px;
+}
+
+.mcp-auth-choice,
+.mcp-auth-choice > div {
+  display: flex;
+  align-items: center;
+}
+
+.mcp-auth-choice {
+  min-height: 54px;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ui-ink-secondary);
+  font-size: 16px;
+}
+
+.mcp-auth-choice > div {
+  gap: 8px;
+}
+
+.mcp-auth-choice button {
+  min-width: 58px;
+  min-height: 42px;
+  border: 1px solid var(--ui-line);
+  border-radius: 21px;
+  background: var(--ui-surface);
+  color: var(--ui-ink-secondary);
+  font-size: 15px;
+}
+
+.mcp-auth-choice button.selected {
+  border-color: var(--ui-line-strong);
+  background: var(--ui-surface-strong);
+  color: var(--ui-ink);
+}
+
+.mcp-editor-modal .settings-hint {
+  margin: -4px 2px 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.mcp-enable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-ink-secondary);
+  font-size: 16px;
+  text-align: left;
+}
+
+.mcp-enable i {
+  width: 36px;
+  height: 21px;
+  box-sizing: border-box;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--ui-surface-strong);
+}
+
+.mcp-enable i u {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--ui-surface);
+  transition: transform 0.2s ease;
+}
+
+.mcp-enable.on i {
+  background: var(--ui-ink-secondary);
+}
+
+.mcp-enable.on i u {
+  transform: translateX(15px);
+}
+
+.mcp-editor-modal .connection-message {
+  margin: 0 2px;
+  color: var(--ui-danger);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.mcp-editor-actions {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.mcp-editor-actions > button {
+  min-height: 50px;
+  border: 1px solid var(--ui-line);
+  border-radius: 15px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-size: 16px;
+}
+
+.mcp-editor-actions .save-profile {
+  width: auto;
+  height: auto;
+  margin: 0;
+  border: 0;
+  background: var(--ui-inverse);
+  color: var(--ui-on-inverse);
+}
+
+.external-mcp-modal .connection-message {
+  margin: 0 2px 14px;
+  color: var(--ui-ink-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}

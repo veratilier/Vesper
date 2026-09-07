@@ -1,0 +1,210 @@
+/* Home is intentionally quiet: it only rearranges existing local documents. */
+.today-home {
+  padding-bottom: 4px;
+}
+
+.today-home .welcome {
+  padding: 8px 2px 20px;
+}
+
+.today-home .welcome h1 {
+  margin: 18px 0 3px;
+}
+
+.today-home .home-return-signal {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: .04em;
+}
+
+.today-home .section-block {
+  margin-bottom: 18px;
+}
+
+.today-home .section-title {
+  height: 28px;
+}
+
+.today-home .section-title h2 {
+  color: var(--ui-ink-secondary);
+}
+
+.today-home .section-title svg {
+  color: var(--ui-muted);
+}
+
+.today-home .section-title span {
+  border: 1px solid var(--ui-line);
+  background: transparent;
+  color: var(--ui-muted);
+}
+
+.home-note-summary,
+.home-note-empty,
+.home-moment-card {
+  width: 100%;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .68);
+  text-align: left;
+}
+
+.home-note-summary,
+.home-moment-card {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 11px 13px;
+}
+
+.home-note-empty {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 13px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.home-card-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-line);
+  border-radius: 50%;
+  color: var(--ui-ink-secondary);
+}
+
+.home-card-icon .ui-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.35;
+}
+
+.home-note-copy,
+.home-moment-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.home-note-copy b,
+.home-moment-copy b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-note-copy small,
+.home-moment-copy span,
+.home-moment-copy small {
+  overflow: hidden;
+  color: var(--ui-muted);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-moment-section {
+  margin-top: -2px;
+}
+
+.home-moment-card {
+  min-height: 62px;
+}
+
+.home-moment-copy {
+  gap: 1px;
+}
+
+.home-moment-copy small {
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+
+.home-note-summary > .ui-icon,
+.home-note-empty > .ui-icon,
+.home-moment-card > .ui-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--ui-muted);
+  stroke-width: 1.35;
+}
+
+.today-home .section-block > .empty-state,
+.today-home .music-section > .empty-state {
+  min-height: 54px;
+  padding: 10px 13px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+
+.today-home .section-block > .empty-state span,
+.today-home .music-section > .empty-state span {
+  display: none;
+}
+
+.today-home .section-block > .empty-state p,
+.today-home .music-section > .empty-state p {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.today-home .reminders {
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .68);
+}
+
+.today-home .reminders .empty-state,
+.today-home .section-block .surface > .empty-state {
+  min-height: 54px;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+}
+
+.today-home .reminders .empty-state span,
+.today-home .section-block .surface > .empty-state span {
+  display: none;
+}
+
+.today-home .reminders .empty-state p,
+.today-home .section-block .surface > .empty-state p {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.today-home .reminder-row {
+  min-height: 48px;
+}
+
+.today-home .anniversary,
+.today-home .player-card {
+  border-radius: 10px;
+}
+
+@media (max-width: 390px) {
+  .home-note-summary,
+  .home-moment-card {
+    padding-inline: 12px;
+  }
+}

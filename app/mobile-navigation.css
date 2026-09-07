@@ -1,0 +1,54 @@
+/* Retain each visited page's DOM, draft, scroll position and in-flight work. */
+.app-shell > .scroll-view[hidden] { display: none !important; }
+.mobile-navigation { display: none; }
+
+@media (max-width: 767px) {
+  .app-shell { --mobile-nav-height: 58px; }
+  .app-shell > .scroll-view {
+    height: calc(100% - var(--mobile-nav-height) - var(--safe-bottom));
+    padding-bottom: 10px !important;
+  }
+  .app-shell > .scroll-view:has(> .codex-chat) { padding-bottom: 0 !important; }
+  .app-shell > .mobile-navigation {
+    position: absolute;
+    z-index: 4;
+    inset: auto 0 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    height: calc(var(--mobile-nav-height) + var(--safe-bottom));
+    padding: 0 max(12px, env(safe-area-inset-right)) var(--safe-bottom) max(12px, env(safe-area-inset-left));
+    box-sizing: border-box;
+    border-top: 1px solid var(--ui-line);
+    background: var(--ui-canvas);
+    color: var(--ui-muted);
+  }
+  .mobile-navigation button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 4px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: 12px/1.2 var(--font-chinese);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-navigation button[aria-current="page"] { color: var(--theme-accent, var(--ui-ink)); font-weight: 600; }
+  .mobile-navigation button:focus-visible { outline: 2px solid var(--theme-accent, var(--ui-ink)); outline-offset: -4px; border-radius: 8px; }
+  .mobile-navigation .nav-icon { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
+  .app-shell .codex-chat .chat-compose { margin-bottom: 10px; }
+  .app-shell .codex-chat .chat-compose textarea { font-size: 16px; }
+  html[data-mobile-keyboard="true"] .stage {
+    top: var(--mobile-viewport-top);
+    bottom: auto;
+    height: var(--mobile-viewport-height) !important;
+  }
+  html[data-mobile-keyboard="true"] .app-shell > .mobile-navigation { display: none; }
+  html[data-mobile-keyboard="true"] .app-shell > .scroll-view { height: 100%; }
+  html[data-mobile-keyboard="true"] .app-shell .codex-chat .chat-compose { margin-bottom: 6px; }
+}

@@ -20,11 +20,16 @@ function safeHttpsUrl(value: unknown) {
 }
 
 async function readJson(url: URL) {
-  const response = await fetch(url, {
-    headers: { accept: "application/json" },
-    redirect: "error",
+  const response = await globalThis.fetch(url.toString(), {
+    headers: {
+      accept: "application/json",
+      "ngrok-skip-browser-warning": "true",
+      "user-agent": "Vesper MCP OAuth discovery",
+    },
+    cache: "no-store",
+    redirect: "manual",
   });
-  if (!response.ok) return null;
+  if (!response.ok) throw new Error(`metadata HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
   if (contentLength > 1_000_000) throw new Error("OAuth 元数据过大");
   return (await response.json()) as JsonRecord;
@@ -37,13 +42,15 @@ function metadataCandidates(resource: URL, challenge?: string | null) {
     fromHeader,
     `${resource.origin}/.well-known/oauth-protected-resource${path}`,
     `${resource.origin}/.well-known/oauth-protected-resource`,
+    `${resource.origin}${path}/.well-known/oauth-protected-resource`,
   ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
 }
 
 async function discoverResource(resource: URL) {
   let challenge = "";
+  const diagnostics: string[] = [];
   try {
-    const probe = await fetch(resource, {
+    const probe = await globalThis.fetch(resource.toString(), {
       method: "POST",
       headers: {
         accept: "application/json, text/event-stream",
@@ -56,17 +63,25 @@ async function discoverResource(resource: URL) {
         method: "initialize",
         params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Vesper", version: "1.0" } },
       }),
-      redirect: "error",
+      redirect: "manual",
     });
     challenge = probe.headers.get("www-authenticate") || "";
-  } catch {}
+  } catch (reason) {
+    diagnostics.push(reason instanceof Error ? reason.message.slice(0, 80) : "resource probe failed");
+  }
   for (const candidate of metadataCandidates(resource, challenge)) {
     try {
       const value = await readJson(safeHttpsUrl(candidate));
       if (value) return { value, challenge };
-    } catch {}
+    } catch (reason) {
+      diagnostics.push(reason instanceof Error ? reason.message.slice(0, 80) : "metadata request failed");
+    }
   }
-  throw new Error("MCP 没有提供 OAuth Protected Resource Metadata");
+  console.warn("MCP OAuth protected-resource discovery failed", {
+    resource: resource.toString(),
+    diagnostics,
+  });
+  throw new Error("无法读取 MCP 的 OAuth 元数据");
 }
 
 async function discoverAuthorizationServer(issuer: URL) {
@@ -109,7 +124,7 @@ export async function POST(request: Request) {
     let clientSecret = "";
     const registrationEndpoint = metadata.registration_endpoint;
     if (!clientId && typeof registrationEndpoint === "string") {
-      const registration = await fetch(safeHttpsUrl(registrationEndpoint), {
+      const registration = await globalThis.fetch(safeHttpsUrl(registrationEndpoint).toString(), {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
@@ -119,7 +134,7 @@ export async function POST(request: Request) {
           grant_types: ["authorization_code"],
           response_types: ["code"],
         }),
-        redirect: "error",
+        redirect: "manual",
       });
       const registered = (await registration.json()) as { client_id?: string; client_secret?: string; error_description?: string };
       if (!registration.ok || !registered.client_id)

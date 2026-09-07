@@ -1,14 +1,12 @@
-const CACHE = "vesper-shell-v17-static-only";
+const CACHE = "vesper-shell-v27-static-only";
 const SHELL = [
   "./",
-  "./manifest.webmanifest?v=9",
-  "./icon-192-20260823-v8.png",
-  "./icon-512-20260823-v8.png",
-  "./icon-maskable-512-20260823-v8.png",
-  "./apple-touch-icon-20260823-v8.png",
-  "./favicon-20260823-v8.png",
-  "./vesper-default-bg.webp",
-  "./vesper-drawer-bg.webp",
+  "./manifest.webmanifest?v=11",
+  "./icon-192-20260907-moon-v1.png",
+  "./icon-512-20260907-moon-v1.png",
+  "./icon-maskable-512-20260907-moon-v1.png",
+  "./apple-touch-icon-20260907-moon-v1.png",
+  "./favicon-20260907-moon-v1.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -80,8 +78,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: "/icon-192-20260823-v8.png",
-      badge: "/favicon-20260823-v8.png",
+      icon: "/icon-192-20260907-moon-v1.png",
+      badge: "/favicon-20260907-moon-v1.png",
       tag: payload.tag || "vesper",
       data: { url: payload.url || "/" },
     }),

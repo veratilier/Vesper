@@ -1,7 +1,7 @@
 /* Shared by the Worker and GitHub Pages entries. Viewport/safe-area rules stay in globals.css. */
 :root {
-  --vesper-text: #30454d;
-  --vesper-muted: #62757d;
+  --vesper-text: var(--ui-ink);
+  --vesper-muted: var(--ui-muted);
   --vesper-border: rgba(68, 94, 105, .14);
   --vesper-accent: #466b7b;
 }

@@ -52,3 +52,6 @@ assert.equal(executionFiles([{ path: 'only-path.ts' }]).files[0].diff, '', 'neve
 assert.deepEqual(executionFiles(null).files, []);
 assert.equal(executionEvent('item/fileChange/outputDelta', { itemId: 'files', delta: 'late' }, fileEvent), fileEvent);
 console.log('Nested tool results, complete patches, missing-code and serialized storage limits passed');
+
+const escapedMetadata = executionEvent('item/completed', { item: { id: 'escaped-meta', type: 'fileChange', command: '\u0000'.repeat(3000), cwd: '\u0000'.repeat(1000), aggregatedOutput: '\u0000'.repeat(24000), changes: [{ path: 'a.ts', kind: 'update'.repeat(100000), diff: '+'.repeat(60000) }] } });
+assert.ok(JSON.stringify(escapedMetadata).length < 128000, 'full execution including escaped metadata stays within persistence budget');

@@ -35,7 +35,7 @@ export function executionFiles(value: unknown): { files: ExecutionFile[]; filesT
     const change = record(raw);
     if (typeof change.path !== 'string') continue;
     if (files.length >= 50 || budget < 200) { filesTruncated = true; break; }
-    const file: ExecutionFile = { path: change.path.slice(0, 1000), kind: typeof change.kind === 'string' ? change.kind : String(record(change.kind).type || 'update'), diff: typeof change.diff === 'string' ? change.diff : '' };
+    const file: ExecutionFile = { path: change.path.slice(0, 1000), kind: (typeof change.kind === 'string' ? change.kind : String(record(change.kind).type || 'update')).slice(0, 200), diff: typeof change.diff === 'string' ? change.diff : '' };
     if (JSON.stringify(file).length > budget) {
       let low = 0, high = file.diff.length;
       const full = file.diff;
@@ -75,10 +75,16 @@ export function executionEvent(method: string, params: Record<string, unknown>, 
   // A late start/delta must not turn a completed item back into a running one.
   const terminal = previous && !['inProgress', 'running', 'unknown'].includes(previous.status);
   const status = terminal && method !== 'item/completed' ? previous.status : String(item.status || (method === 'item/completed' ? 'completed' : previous?.status || 'inProgress'));
-  return { id, type, command, title: command || display(item.tool || item.name).slice(0, 500) || (type === 'fileChange' ? '文件修改' : type === 'commandExecution' ? '终端' : type), cwd: display(item.cwd).slice(0, 1000) || previous?.cwd,
+  const result: Execution = { id, type, command, title: command || display(item.tool || item.name).slice(0, 500) || (type === 'fileChange' ? '文件修改' : type === 'commandExecution' ? '终端' : type), cwd: display(item.cwd).slice(0, 1000) || previous?.cwd,
     status: item.success === false || (exitCode != null && exitCode !== 0 && status === 'completed') ? 'failed' : status,
     ...changes, output: boundedOutput, truncated: boundedOutput.length < output.length || previous?.truncated,
     exitCode, durationMs: typeof item.durationMs === 'number' ? item.durationMs : previous?.durationMs, updatedAt: new Date().toISOString() };
+  // Include escaped command/title/path metadata in the persistence budget too.
+  while (result.output && JSON.stringify(result).length > 120000) {
+    result.output = result.output.slice(Math.max(1, Math.ceil(result.output.length / 10)));
+    result.truncated = true;
+  }
+  return result;
 }
 export function workspaceOptions(value: unknown) {
   const cwd = typeof value === 'string' ? value.trim() : '';

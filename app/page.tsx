@@ -18,6 +18,7 @@ import {
 } from "react";
 import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
+import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
 import { attachmentInputText } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
@@ -3790,6 +3791,9 @@ function ConnectedChat({
   const [online, setOnline] = useState(false);
   const [error, setError] = useState("");
   const [historyWarning, setHistoryWarning] = useState("");
+  const [toolQuestions, setToolQuestions] = useState<UserInputRequest[]>([]);
+  const answeredToolQuestions = useRef(new Set<string | number>());
+  const completedQuestionTurns = useRef(new Set<string>());
   const [resumeError, setResumeError] = useState("");
   const [toolUpgradeNeeded, setToolUpgradeNeeded] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
@@ -4073,10 +4077,20 @@ function ConnectedChat({
       return;
     }
     if (message.method === "serverRequest/resolved") {
+      if (typeof params.requestId === "string" || typeof params.requestId === "number") answeredToolQuestions.current.add(params.requestId);
+      setToolQuestions(current => current.filter(request => request.id !== params.requestId));
       updateApprovalQueue((queue) => queue.filter((approval) => !approvalWasResolved(approval, params)));
       for (const [key, response] of approvalResponses.current) {
         if (response.expiresAt <= Date.now()) approvalResponses.current.delete(key);
       }
+      return;
+    }
+    if (["item/tool/requestUserInput", "tool/requestUserInput", "mcpServer/elicitation/request"].includes(message.method || "") && (typeof message.id === "string" || typeof message.id === "number")) {
+      if (answeredToolQuestions.current.has(message.id)) return;
+      const questionTurnId = String(params.turnId || activeTurnId.current || "");
+      if (questionTurnId && completedQuestionTurns.current.has(questionTurnId)) return;
+      const request = { id: message.id, method: message.method!, params: { ...params, turnId: questionTurnId } };
+      setToolQuestions(current => current.some(entry => entry.id === request.id) ? current : [...current, request]);
       return;
     }
     const approval = createCodexApprovalRequest(message);
@@ -4192,6 +4206,9 @@ function ConnectedChat({
       }
     }
     if (message.method === "turn/completed") {
+      const questionTurnId = (params.turn as { id?: string } | undefined)?.id || params.turnId || activeTurnId.current;
+      if (questionTurnId) completedQuestionTurns.current.add(String(questionTurnId));
+      setToolQuestions(current => current.filter(request => request.params.turnId !== questionTurnId));
       flushExecutions();
       const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
       const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
@@ -4317,7 +4334,7 @@ function ConnectedChat({
   };
   const resumeThread = async (developerInstructions: string) => {
     // A successful resume is not proof that an older server updated its tool registry.
-    setToolUpgradeNeeded(window.localStorage.getItem(`vesper-thread-tools-${threadId.current}`) !== CODEX_TOOL_CATALOG_VERSION);
+    setToolUpgradeNeeded(false);
     const dynamicTools = await loadDynamicTools();
     try {
       const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions, dynamicTools });
@@ -4345,7 +4362,7 @@ function ConnectedChat({
         }
       }
       logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
-      setResumeError("这段旧对话无法连接原 Codex 会话，但已保存的聊天记录仍可查看。");
+      setResumeError(`会话连接失败：${reason instanceof Error ? reason.message : "未知错误"}。已保存的记录仍可查看。`);
       throw new Error("原会话暂时无法继续，可新建替代会话。 ");
     }
   };
@@ -4369,6 +4386,9 @@ function ConnectedChat({
       if (socket.current !== ws) return;
       const hadPendingApproval = approvalQueueRef.current.length > 0;
       setOnline(false);
+      setToolQuestions([]);
+      answeredToolQuestions.current.clear();
+      completedQuestionTurns.current.clear();
       socket.current = null;
       for (const request of rpc.current.values()) request.reject(new Error("Codex 连接已断开"));
       rpc.current.clear();
@@ -4406,19 +4426,13 @@ function ConnectedChat({
   };
   const createReplacementConversation = async () => {
     if (busy) return;
-    if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
-      setError("Codex app-server is offline");
-      return;
-    }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
     setBusy(true);
     try {
-      const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
-      const thread = (result.result?.thread || {}) as { id?: string };
-      if (!thread.id) throw new Error("Codex did not return a thread id");
-      try { window.localStorage.setItem(`vesper-thread-tools-${thread.id}`, CODEX_TOOL_CATALOG_VERSION); } catch {}
-      await persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id });
-      rememberConversation(replacementId, "替代会话", 0);
+      // Create the Vesper conversation only. Its mounted chat starts its own
+      // app-server thread; an empty thread on this old socket may not have a rollout yet.
+      await persistCodexConversation(replacementId, { title: "新会话", codexThreadId: null });
+      rememberConversation(replacementId, "新会话", 0);
       onSelectConversation(replacementId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create replacement conversation");
@@ -4803,6 +4817,14 @@ function ConnectedChat({
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
   return (
     <div className="page-body chat-page codex-chat">
+      {toolQuestions[0] && <CodexUserInput key={toolQuestions[0].id} request={toolQuestions[0]} onRespond={result => {
+        const request = toolQuestions[0];
+        if (socket.current?.readyState !== WebSocket.OPEN) { setError("连接已断开，确认没有发送。"); return; }
+        if (answeredToolQuestions.current.has(request.id)) return;
+        answeredToolQuestions.current.add(request.id);
+        socket.current.send(JSON.stringify({ id: request.id, result }));
+        setToolQuestions(current => current.filter(entry => entry.id !== request.id));
+      }} />}
       <div className="chat-status-stack">
         {error && <div className="chat-restore-error" role="alert"><span>{error}</span>{!online && <button type="button" disabled={busy} onClick={() => void connect().catch(reason => setError(reason instanceof Error ? reason.message : "连接失败，请重试"))}>重试连接</button>}</div>}
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}

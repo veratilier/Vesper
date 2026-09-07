@@ -3647,6 +3647,8 @@ function formatTurnTimestamp(value: string) {
 function CodexChatMessage({
   item,
   activity,
+  activityExpanded,
+  onActivityExpandedChange,
   turnInProgress = false,
   agentName,
   userName,
@@ -3663,6 +3665,8 @@ function CodexChatMessage({
 }: {
   item: BridgeChatMessage;
   activity?: TurnActivity;
+  activityExpanded?: boolean;
+  onActivityExpandedChange?: (open: boolean) => void;
   turnInProgress?: boolean;
   agentName: string;
   userName: string;
@@ -3689,7 +3693,7 @@ function CodexChatMessage({
   const sticker = item.type === "sticker" ? item.metadata?.sticker : undefined;
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
-      {assistant && activity && <ChatActivity {...activity} timestamp={statusLabel} dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined} status={statusText} />}
+      {assistant && activity && <ChatActivity {...activity} expanded={activityExpanded} onExpandedChange={onActivityExpandedChange} timestamp={statusLabel} dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined} status={statusText} />}
       {assistant && !activity && item.metadata?.showTurnStatus !== false && (
         item.metadata?.thoughtSummary ? (
           <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
@@ -3809,6 +3813,7 @@ function ConnectedChat({
   onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [expandedActivities, setExpandedActivities] = useState<Record<string, boolean>>({});
   const [messages, setMessages] = useState<BridgeChatMessage[]>(() => mergeCodexMessages(normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId)).filter((item) => !messageWasDeleted(item, readLocalValue(`vesper-codex-tombstones-${conversationId}`, []))));
   const [pending, setPending] = useState<CodexPendingFile[]>([]);
   const [busy, setBusy] = useState(false);
@@ -4808,11 +4813,16 @@ function ConnectedChat({
     activityAnchors.set(turnId, id);
     activityOnlyRows.push({ id, conversationId, role: 'system', content: '', status: 'delivered', createdAt: source?.createdAt || '', metadata: { turnId } });
   }
-  const visibleRows = displayMessages.filter(item => !item.metadata?.execution || !item.metadata?.turnId);
-  for (const row of activityOnlyRows) {
-    const lastIndex = visibleRows.map(item => item.metadata?.turnId).lastIndexOf(row.metadata?.turnId);
-    visibleRows.splice(lastIndex < 0 ? visibleRows.length : lastIndex + 1, 0, row);
-  }
+  const lastTurnIndex = new Map<string, number>();
+  displayMessages.forEach((item, index) => { if (item.metadata?.turnId) lastTurnIndex.set(item.metadata.turnId, index); });
+  const activityOnlyByTurn = new Map(activityOnlyRows.map(row => [row.metadata!.turnId!, row]));
+  const visibleRows: BridgeChatMessage[] = [];
+  displayMessages.forEach((item, index) => {
+    if (!item.metadata?.execution || !item.metadata?.turnId) visibleRows.push(item);
+    const turnId = item.metadata?.turnId;
+    if (turnId && lastTurnIndex.get(turnId) === index && activityOnlyByTurn.has(turnId)) visibleRows.push(activityOnlyByTurn.get(turnId)!);
+  });
+  for (const row of activityOnlyRows) if (!lastTurnIndex.has(row.metadata!.turnId!)) visibleRows.push(row);
   const liveTurnStatus = messages.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus;
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
@@ -4831,8 +4841,10 @@ function ConnectedChat({
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
           const activity = item.metadata?.turnId && activityAnchors.get(item.metadata.turnId) === item.id ? turnActivities.get(item.metadata.turnId) : undefined;
-          if (activity && item.id.startsWith('activity:')) return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<ChatActivity {...activity} timestamp={formatTurnTimestamp(item.createdAt)} dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined} status={liveTurnStatus === 'tool' ? 'Using a tool…' : 'Thinking…'} /></div>;
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} activity={activity} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
+          const activityExpanded = expandedActivities[item.metadata?.turnId || ''] || false;
+          const onActivityExpandedChange = (open: boolean) => { const turnId = item.metadata?.turnId; if (turnId) setExpandedActivities(current => current[turnId] === open ? current : { ...current, [turnId]: open }); };
+          if (activity && item.id.startsWith('activity:')) return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<ChatActivity {...activity} expanded={activityExpanded} onExpandedChange={onActivityExpandedChange} timestamp={formatTurnTimestamp(item.createdAt)} dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined} status={liveTurnStatus === 'tool' ? 'Using a tool…' : 'Thinking…'} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} activity={activity} activityExpanded={activityExpanded} onActivityExpandedChange={onActivityExpandedChange} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
         <div ref={streamEnd} />
       </div>

@@ -2,10 +2,10 @@
 import { ExecutionCard } from './execution-card';
 import type { Execution } from './codex-execution';
 export type TurnActivity = { busy: boolean; online: boolean; executions: Execution[]; summary: string };
-export function ChatActivity({ busy, online, executions, summary, timestamp, dateTime, status }: TurnActivity & {
-  timestamp: string; dateTime?: string; status?: string;
+export function ChatActivity({ busy, online, executions, summary, timestamp, dateTime, status, expanded, onExpandedChange }: TurnActivity & {
+  timestamp: string; dateTime?: string; status?: string; expanded?: boolean; onExpandedChange?: (open: boolean) => void;
 }) {
-  return <details className="chat-activity chat-activity-inline">
+  return <details className="chat-activity chat-activity-inline" open={expanded} onToggle={event => onExpandedChange?.(event.currentTarget.open)}>
     <summary aria-label={`${timestamp} 工具调用与思考摘要`}>
       <i aria-hidden="true" /><time dateTime={dateTime}>{timestamp}</time>
       <svg className="activity-chevron" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 7.5 5 5 5-5" /></svg>

@@ -3946,7 +3946,7 @@ html {
   background-color: #edf2f2;
 }
 .vesper-splash {
-  background: radial-gradient(circle at 50% 44%, #fff 0%, #edf2f2 48%, #d5e0e3 100%) !important;
+  background: radial-gradient(circle at 50% 44%, #fff 0%, #edf2f2 48%, #d5e0e3 100%);
 }
 
 
@@ -4957,7 +4957,7 @@ html {
   height: 17px !important;
   border-radius: 50%;
   color: #fff;
-  background: rgba(20, 20, 20, 0.72) !important;
+  background: rgba(20, 20, 20, 0.72);
 }
 .compose-preview > button svg {
   width: 9px;
@@ -5003,7 +5003,7 @@ html {
 }
 .compose-actions button.active,
 .voice.recording {
-  background: #dbe8eb !important;
+  background: #dbe8eb;
   box-shadow: 0 0 0 5px rgba(184, 220, 232, 0.22);
 }
 .call-layer {
@@ -5393,7 +5393,7 @@ html {
 .app-header {
   height: calc(54px + var(--safe-top));
   padding-top: var(--safe-top);
-  background: transparent !important;
+  background: transparent;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -5617,11 +5617,11 @@ body {
 }
 
 .drawer {
-  background: linear-gradient(rgba(249,251,253,.16), rgba(231,239,247,.18)), url("/vesper-drawer-bg.webp") center / cover no-repeat !important;
+  background: linear-gradient(rgba(249,251,253,.16), rgba(231,239,247,.18)), url("/vesper-drawer-bg.webp") center / cover no-repeat;
 }
 
 .app-header {
-  background: transparent !important;
+  background: transparent;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
@@ -5637,7 +5637,7 @@ body {
 .settings-page.detail-active .appearance-modal,
 .settings-page.detail-active .functional-settings-modal {
   padding: 18px 22px calc(20px + var(--safe-bottom)) !important;
-  background: rgba(246,249,249,.96) !important;
+  background: rgba(246,249,249,.96);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -5875,7 +5875,7 @@ body {
 .app-header {
   height: calc(54px + var(--safe-top));
   padding-top: var(--safe-top);
-  background: #f0f2ef !important;
+  background: transparent;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }

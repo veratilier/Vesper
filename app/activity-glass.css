@@ -45,3 +45,44 @@
 @media (prefers-reduced-motion: reduce) { .photo-open img { animation: none; } }
 
 .photo-caption { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ui-muted); margin-block: 5px; }
+
+/* Terminal surfaces keep their own typography and contrast, independent of chat themes. */
+.app-shell .execution-card, .app-shell .execution-dialog {
+  --terminal-bg: #1c1c1e; --terminal-text: #e5e5e7;
+  background: var(--terminal-bg); color: var(--terminal-text); border-color: #444448;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.app-shell :is(.execution-card, .execution-dialog) :is(p, span, small, b, button, code, pre) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 12px !important; font-style: normal !important; line-height: 1.6;
+}
+.app-shell .execution-heading { background: #29292c; }
+.app-shell .execution-heading button { color: var(--terminal-text); }
+.app-shell .execution-heading small { color: #a3d5a1; }
+.app-shell .execution-card[data-status="failed"] .execution-heading small { color: #f4a6a6; }
+.app-shell .execution-body { min-width: 0; }
+.app-shell .execution-meta { display: flex; gap: 6px 12px; flex-wrap: wrap; padding: 10px 12px; color: #b9b9c0; overflow-wrap: anywhere; }
+.app-shell .execution-files { display: flex; gap: 6px; overflow-x: auto; padding: 0 12px 10px; }
+.app-shell .execution-files button { width: auto; height: auto; min-height: 40px; flex: none; padding: 6px 10px; border: 1px solid #56565c; border-radius: 8px; color: #e5e5e7; background: #29292c; }
+.app-shell .execution-files button[aria-pressed="true"] { border-color: #a4cafa; background: #333e4e; }
+.app-shell :is(.execution-card, .execution-dialog) pre { margin: 0; padding: 12px; border-radius: 0; max-height: 240px; overflow: auto; white-space: pre; overflow-wrap: normal; background: #1c1c1e; color: #e5e5e7; tab-size: 2; }
+.app-shell :is(.execution-card, .execution-dialog) code { display: block; min-width: max-content; }
+.app-shell :is(.execution-card, .execution-dialog) .diff-add { color: #a3d5a1; }
+.app-shell :is(.execution-card, .execution-dialog) .diff-remove { color: #f4a6a6; }
+.app-shell :is(.execution-card, .execution-dialog) .diff-hunk { color: #a4cafa; }
+.app-shell .execution-path, .app-shell .execution-notice { margin: 6px 12px; overflow-wrap: anywhere; color: #c9c9ce; }
+.app-shell .execution-notice { color: #e7c98a; }
+.app-shell dialog.execution-dialog {
+  position: fixed; inset: 0; margin: auto; width: min(1100px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px); max-height: calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding: 0; border-radius: 12px; overflow: auto; box-sizing: border-box;
+}
+.app-shell .execution-dialog header { position: sticky; top: 0; z-index: 1; padding: 8px 12px; background: #29292c; border-bottom: 1px solid #444448; }
+.app-shell .execution-dialog header b { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-shell .execution-dialog header button { flex: none; width: 44px; height: 44px; font-size: 24px !important; color: #e5e5e7; }
+.app-shell .execution-dialog pre { max-height: none; }
+.app-shell .terminal-lights { display: flex; gap: 6px; }
+.app-shell .terminal-lights i { width: 9px; height: 9px; border-radius: 50%; background: #ff5f57; }
+.app-shell .terminal-lights i:nth-child(2) { background: #febc2e; }
+.app-shell .terminal-lights i:nth-child(3) { background: #28c840; }
+.app-shell :is(.execution-card, .execution-dialog) :focus-visible { outline: 2px solid #a4cafa; outline-offset: -2px; }

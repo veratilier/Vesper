@@ -3360,7 +3360,7 @@ function vesperDeveloperInstructions(memoryBackground = "") {
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
 const CODEX_ASSISTANT_CONTENT_TYPES = new Set(["text", "outputText"]);
-const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "shellCall", "computerCall", "webSearchCall"]);
+const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "shellCall", "computerCall", "webSearchCall", "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch"]);
 const CODEX_REASONING_ITEM_TYPES = new Set(["reasoning", "reasoningSummary"]);
 const CODEX_DYNAMIC_TOOL_METHODS = new Set(["item/tool/call", "tool/call", "tools/call"]);
 

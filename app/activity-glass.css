@@ -116,7 +116,7 @@
 .app-shell .question-dialog :is(span,p,b,small,button,legend,label,input) { font-style: normal !important; }
 .question-dialog header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
 .question-dialog header button { border: 0; background: transparent; color: inherit; font-size: 24px; }
-.question-dialog nav { display: flex; gap: 8px; margin-block: 10px; }
+.question-dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 10px; }
 .question-dialog nav button { border: 1px solid var(--ui-line); border-radius: 50%; background: transparent; color: inherit; min-width: 40px; }
 .question-dialog nav button[aria-current] { background: var(--ui-ink); color: var(--ui-surface); }
 .app-shell .question-dialog fieldset { border: 0; padding: 0; min-width: 0; margin: 18px 0; }
@@ -134,3 +134,13 @@
 .question-dialog footer small { font-size: 11px; color: var(--ui-muted); }
 .question-dialog footer .question-submit { background: var(--ui-ink); color: var(--ui-surface); }
 .question-dialog button:disabled { opacity: .45; }
+.question-dialog :is(legend,p,a,.question-option span) { overflow-wrap: anywhere; }
+.question-dialog .question-option > span:last-child { min-width: 0; }
+@media (max-width: 767px) {
+  html[data-mobile-keyboard="true"] .app-shell .question-dialog {
+    top: calc(var(--mobile-viewport-top) + 8px);
+    bottom: auto;
+    max-height: calc(var(--mobile-viewport-height) - 16px);
+    margin-block: 0;
+  }
+}

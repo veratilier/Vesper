@@ -3737,6 +3737,17 @@ function StickerManagerModal({ open, onClose }: { open: boolean; onClose: () => 
   </section></div>;
 }
 
+function formatTurnTimestamp(value: string) {
+  const timestamp = visibleMessageTimestamp(value);
+  if (!Number.isFinite(timestamp)) return "时间未知";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai", month: "numeric", day: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(timestamp));
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value || "";
+  return `${part("month")}/${part("day")} ${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
 function CodexChatMessage({
   item,
   agentName,
@@ -3774,18 +3785,18 @@ function CodexChatMessage({
     ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp))
     : "时间未知";
   const status = item.metadata?.turnStatus;
-  const statusText = status === "thinking" ? "Thinking…" : status === "tool" ? "Using a tool…" : status === "error" ? "Failed" : "Done";
-  const statusLabel = `${stamp}  ${statusText}`;
+  const statusText = status === "thinking" ? "Thinking…" : status === "tool" ? "Using a tool…" : status === "error" ? "Failed" : "";
+  const statusLabel = formatTurnTimestamp(item.createdAt);
   const sticker = item.type === "sticker" ? item.metadata?.sticker : undefined;
   return (
     <div data-message-id={item.id} className={`${assistant ? "agent-turn" : "sent-turn"}${favorite ? " is-favorite" : ""}`}>
       {assistant && item.metadata?.showTurnStatus !== false && (
         item.metadata?.thoughtSummary ? (
           <button className="turn-status" onClick={() => onThought(item)} aria-label="View thought process">
-            <i /> <span>{statusLabel}</span>
+            <i aria-hidden="true" /> <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{statusLabel}</time>{statusText && <span className="turn-progress">{statusText}</span>}
           </button>
         ) : (
-          <div className="turn-status" aria-live="polite"><i /> <span>{statusLabel}</span></div>
+          <div className="turn-status" aria-live="polite"><i aria-hidden="true" /> <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{statusLabel}</time>{statusText && <span className="turn-progress">{statusText}</span>}</div>
         )
       )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
@@ -4732,7 +4743,7 @@ function ConnectedChat({
     }, 260);
     return () => window.clearTimeout(timer);
   }, [focusMessageId, messages.length]);
-  const liveStatusStamp = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const liveStatusStamp = formatTurnTimestamp(new Date().toISOString());
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
   return (

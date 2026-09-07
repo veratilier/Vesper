@@ -38,6 +38,7 @@ const noPkce = new URL(origin + authPath()); noPkce.searchParams.delete('code_ch
 assert.equal((await request(noPkce.pathname + noPkce.search)).status, 400);
 const consent = await request(authPath()); assert.equal(consent.status, 200);
 assert.equal(consent.headers.get('referrer-policy'), 'same-origin', 'same-origin consent POST must retain its Origin without leaking referrers cross-origin');
+assert.match(consent.headers.get('content-security-policy'), /form-action 'self' https:\/\/chatgpt\.com;/, 'permit the validated OAuth callback after form POST');
 const cookie = consent.headers.get('set-cookie').split(';')[0], nonce = cookie.split('=')[1];
 const post = (csrf, token, from = origin) => request('/authorize', { method: 'POST', headers: { origin: from, cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, token, decision: 'allow' }) });
 assert.equal((await post('wrong', 'synthetic-owner-token-for-test')).status, 403);

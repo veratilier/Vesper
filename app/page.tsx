@@ -3272,7 +3272,8 @@ const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "s
 const CODEX_REASONING_ITEM_TYPES = new Set(["reasoning", "reasoningSummary"]);
 const CODEX_DYNAMIC_TOOL_METHODS = new Set(["item/tool/call", "tool/call", "tools/call"]);
 
-function cleanReasoningSummary(value: unknown) {
+function cleanReasoningSummary(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(cleanReasoningSummary);
   if (typeof value !== "string") return [] as string[];
   return value
     .replace(/\*\*/g, "\n")
@@ -3813,6 +3814,7 @@ function ConnectedChat({
   const [historyWarning, setHistoryWarning] = useState("");
   const [resumeError, setResumeError] = useState("");
   const [historyReady, setHistoryReady] = useState(false);
+  const [, refreshActivity] = useState(0);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
   const streamStartedAt = useRef(new Map<string, string>());
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
@@ -4147,6 +4149,7 @@ function ConnectedChat({
       setStreamingItems((current) => ({ ...current, [id]: next }));
     }
     if (message.method === "item/reasoning/summaryTextDelta") {
+      if (params.turnId && params.turnId !== activeTurnId.current) return;
       const id = String(params.itemId || "reasoning");
       reasoningBuffers.current.set(id, `${reasoningBuffers.current.get(id) || ""}${String(params.delta || "")}`);
       refreshActivity(value => value + 1);
@@ -4157,9 +4160,11 @@ function ConnectedChat({
       const itemId = String(item.id || params.itemId || "");
       const itemType = String(item.type || "");
       if (itemId) clearApprovalQueue({ threadId: String(params.threadId || threadId.current || ""), itemId });
-      if (CODEX_REASONING_ITEM_TYPES.has(itemType)) {
-        const summaries = cleanReasoningSummary(item.summary ?? item.text ?? reasoningBuffers.current.get(itemId) ?? "");
+      if (CODEX_REASONING_ITEM_TYPES.has(itemType) && (!params.turnId || params.turnId === activeTurnId.current)) {
+        const summaries = cleanReasoningSummary(item.summary ?? (itemType === "reasoningSummary" ? item.text : undefined) ?? reasoningBuffers.current.get(itemId) ?? "");
         reasoningSummaries.current.push(...summaries.filter((line) => !reasoningSummaries.current.includes(line)));
+        reasoningBuffers.current.delete(itemId);
+        refreshActivity(value => value + 1);
       }
       if (CODEX_TOOL_ITEM_TYPES.has(itemType)) {
         setTurnStatus("tool");
@@ -4212,6 +4217,7 @@ function ConnectedChat({
       const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
       const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
       if (completedTurnId) clearApprovalQueue({ threadId: threadId.current, turnId: completedTurnId });
+      reasoningSummaries.current = [...new Set([...reasoningSummaries.current, ...Array.from(reasoningBuffers.current.values()).flatMap(cleanReasoningSummary)])];
       setBusy(false);
       const turnFailed = ["failed", "interrupted"].includes(String((params.turn as Record<string, unknown> | undefined)?.status));
       if (activeTurnUserId.current) {
@@ -4773,7 +4779,6 @@ function ConnectedChat({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
     });
   };
-  const [, refreshActivity] = useState(0);
   const activityTurnId = activeTurnId.current || [...messages].reverse().find(item => item.metadata?.turnId)?.metadata?.turnId;
   const liveTurnStatus = messages.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus;
   const displayedModel = nextModel || currentModel;

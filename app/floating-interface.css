@@ -1,0 +1,56 @@
+/* Interface slant is independent of message content and the signature face. */
+.app-shell :where(h1,h2,h3,h4,p,span,small,b,strong,label,button,a,time,input,textarea,select,option) {
+  font-style: italic !important;
+}
+.app-shell :is(.message, .chat-compose, .chat-empty, pre, code, kbd),
+.app-shell :is(.message, .chat-compose, .chat-empty, pre, code, kbd) * {
+  font-style: normal !important;
+}
+.app-shell .message :is(em, em *, i, i *) { font-style: italic !important; }
+/* Script fonts already contain their own slant. Do not artificially skew twice. */
+.app-shell :is(.wordmark > b, .drawer-brand b, .welcome h1, .home-card-label) {
+  font-style: normal !important;
+}
+.app-shell .ui-icon { filter: none !important; }
+.app-shell .ui-icon .icon-depth { display: none; }
+.app-shell :is(.ui-icon, .nav-icon) {
+  stroke: currentColor;
+  stroke-width: 1.65 !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Floating navigation island, clear of the device safe areas on all sides. */
+.app-shell .drawer {
+  inset: calc(env(safe-area-inset-top, 0px) + 12px) auto calc(env(safe-area-inset-bottom, 0px) + 12px) calc(env(safe-area-inset-left, 0px) + 12px);
+  width: min(80%, 304px);
+  max-width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 24px);
+  height: auto;
+  max-height: none;
+  padding: 20px 14px 14px;
+  border: 1px solid rgba(255,255,255,.64);
+  border-radius: 26px;
+  background: linear-gradient(155deg, #f4f8fc, #dce7f1) !important;
+  box-shadow: 0 16px 48px rgba(37,57,79,.19), 0 2px 8px rgba(37,57,79,.06) !important;
+  overflow: hidden;
+  transform: translateX(calc(-100% - 24px));
+}
+.app-shell .drawer-layer.visible .drawer { transform: translateX(0); }
+.app-shell .drawer-head { flex-shrink: 0; margin-bottom: 14px; }
+.app-shell .drawer nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; gap: 4px; }
+.app-shell .drawer .nav-row {
+  min-height: 44px; height: 44px; flex-shrink: 0;
+  border-radius: 13px; padding: 0 12px; gap: 12px;
+}
+.app-shell .drawer .nav-row span { font-size: 15px; letter-spacing: .01em; }
+.app-shell .drawer .nav-row > .nav-icon { width: 24px; height: 24px; flex-basis: 24px; padding: 1px; }
+.app-shell .drawer .nav-row.active {
+  background: rgba(100,126,148,.16) !important;
+  box-shadow: inset 0 0 0 1px rgba(100,126,148,.12);
+}
+.app-shell .drawer-footer { flex-shrink: 0; margin-top: auto; padding-top: 16px; }
+.app-shell .drawer .icon-button { min-width: 40px; min-height: 40px; }
+@media (max-height: 600px) {
+  .app-shell .drawer { padding-top: 12px; }
+  .app-shell .drawer-head { margin-bottom: 8px; }
+  .app-shell .drawer-footer { padding-top: 8px; }
+}

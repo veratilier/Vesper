@@ -3833,6 +3833,7 @@ function ConnectedChat({
   const fileInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const tombstonesRef = useRef<CodexMessageTombstone[]>(readLocalValue(`vesper-codex-tombstones-${conversationId}`, []));
   const approvalQueueRef = useRef<PendingCodexApproval[]>([]);
   const approvalResponses = useRef(new Map<string, { result: Record<string, unknown>; expiresAt: number }>());
@@ -4591,16 +4592,23 @@ function ConnectedChat({
     const updateNearBottom = () => {
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       nearBottomRef.current = distance <= 96;
+      setShowScrollToBottom(!nearBottomRef.current);
     };
     updateNearBottom();
     scroller.addEventListener("scroll", updateNearBottom, { passive: true });
     const resizeObserver = new ResizeObserver(() => {
       if (nearBottomRef.current) scroller.scrollTop = scroller.scrollHeight;
+      updateNearBottom();
     });
     resizeObserver.observe(scroller);
     nearBottomRef.current = true;
-    requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+    setShowScrollToBottom(false);
+    const frame = requestAnimationFrame(() => {
+      scroller.scrollTop = scroller.scrollHeight;
+      updateNearBottom();
+    });
     return () => {
+      cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       scroller.removeEventListener("scroll", updateNearBottom);
     };
@@ -4645,6 +4653,14 @@ function ConnectedChat({
       metadata: { itemId, turnId: activeTurnId.current, showTurnStatus: true },
     });
   }
+  const scrollToLatest = () => {
+    const scroller = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
+    if (!scroller) return;
+    scroller.scrollTo({
+      top: scroller.scrollHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
+  };
   const liveTurnStatus = messages.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus;
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
@@ -4668,6 +4684,9 @@ function ConnectedChat({
         {busy && <div className="reply-progress" role="status" aria-live="polite"><i aria-hidden="true" /><span>{liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"}</span></div>}
         <div ref={streamEnd} />
       </div>
+      {showScrollToBottom && <button className="chat-scroll-to-bottom" type="button" aria-label="回到最新消息" title="回到最新消息" onClick={scrollToLatest}>
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v15m-6-6 6 6 6-6" /></svg>
+      </button>}
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}

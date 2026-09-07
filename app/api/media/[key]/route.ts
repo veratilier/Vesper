@@ -14,6 +14,7 @@ export async function GET(_request: Request, context: { params: Promise<{ key: s
   if (!object) return new Response('Not found', { status: 404 });
   const headers = corsHeaders(_request);
   object.writeHttpMetadata(headers);
+  headers.set('x-content-type-options', 'nosniff');
   headers.set('etag', object.httpEtag);
   headers.set('cache-control', 'public, max-age=31536000, immutable');
   return new Response(object.body, { headers });

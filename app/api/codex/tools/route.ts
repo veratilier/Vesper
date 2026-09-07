@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const name = String(body.name || "");
     const definition = codexToolDefinitions.find((tool) => tool.name === name);
     if (!definition) return json(request, { error: "Unknown Codex tool" }, 404);
-    const result = await executeCodexTool(name, body.arguments || {}, await memoryScopeFromRequest(request), { conversationId: body.conversationId, turnId: body.turnId });
+    const result = await executeCodexTool(name, body.arguments || {}, await memoryScopeFromRequest(request), { conversationId: body.conversationId, turnId: body.turnId, origin: new URL(request.url).origin });
     return json(request, { ok: true, name, threadId: body.threadId || null, itemId: body.itemId || null, result });
   } catch (reason) {
     return json(request, { error: reason instanceof Error ? reason.message : "Codex tool failed" }, 400);

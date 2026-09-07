@@ -4728,7 +4728,6 @@ function ConnectedChat({
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
-        <div className="bridge-presence"><i className={online ? "online" : ""} /><span>{online ? "Codex app-server connected" : "Codex app-server offline"}</span></div>
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
@@ -4750,7 +4749,7 @@ function ConnectedChat({
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
         <div className="compose-actions"><button aria-label="Attach files" onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} /><button aria-label="选择表情包" onClick={() => setStickerPickerOpen(true)}><Icon name="sticker" /></button>
-          <span className="composer-status"><i className={online ? "online" : ""} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
+          <span className="composer-status"><i className={online ? "online" : ""} role="img" aria-label={online ? "已连接" : "未连接"} title={online ? "已连接" : "未连接"} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
           {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="send" /></button></div>
       </div>
       {thought && <div className="thought-sheet-layer"><button className="thought-scrim" aria-label="Close reasoning" onClick={() => setThought(null)} /><section className="thought-sheet"><div className="thought-sheet-head"><button aria-label="Close" onClick={() => setThought(null)}><Icon name="close" /></button><h2>Thought process</h2></div><div className="thought-raw">{thought.metadata?.thoughtSummary?.split("\n").map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}</div></section></div>}
@@ -5121,6 +5120,12 @@ function SettingsPage({
           title="MCP Servers"
           sub="Add servers with OAuth or no authorization"
           onClick={() => setSelected("MCP 工具")}
+        />
+        <SettingRow
+          icon="link"
+          title="Vesper MCP"
+          sub="让外部 AI 连接 Vesper 的日记、便笺与记忆"
+          onClick={() => setSelected("Vesper MCP")}
         />
         <SettingRow
           icon="volume"

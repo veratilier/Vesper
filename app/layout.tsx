@@ -10,6 +10,7 @@ import "./memory.css";
 import "./stickers.css";
 import "./typography.css";
 import "./refinement.css";
+import "./anniversary.css";
 
 const pinyonScript = Pinyon_Script({
   variable: "--font-pinyon-script",

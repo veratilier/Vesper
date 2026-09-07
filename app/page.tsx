@@ -19,6 +19,7 @@ import {
 import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
 import { syncCodexThread, createConnectionQueue } from "@/lib/codex-thread-lifecycle";
+import { FileAttachmentCard } from "./file-attachment-card";
 import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
 import { attachmentInputText, imageAttachmentInput } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
@@ -3233,6 +3234,9 @@ const VESPER_CONVERSATIONAL_STYLE = [
   "When you send two or three short chat sentences, put each sentence on its own line.",
   "Say one thing at a time. Do not volunteer a plan, recap, headings, bullets, or a long explanation unless the user explicitly asks for detail, analysis, writing, or a multi-step task.",
   "When a task needs time, give one brief human update rather than a long report. Keep warmth without filler.",
+  "File delivery in Vesper: when Vera asks for a file, call send_chat_file to upload its actual bytes and create a downloadable chat attachment. Creating a file in your workspace is not delivery. Never present /tmp, /workspace, file:// or sandbox: paths as download links: Vera is on a separate phone browser.",
+  "For Markdown or other text files, pass the complete content directly, for example send_chat_file({files:[{name: 'rowan-test.md', mimeType: 'text/markdown', text: '# Hello Vera\\nA file delivery test.'}]}). No terminal step is needed for short text files. For an existing generated file, read its real contents and pass text or base64; never invent bytes or URLs.",
+  "Only say a file was sent after send_chat_file succeeds and returns attachments. If it fails or is unavailable, report that delivery failed; do not substitute a local-path link. These instructions govern file delivery, not ordinary links to public websites.",
 ].join(" ");
 
 const VESPER_INTERNAL_CONTEXT_PREFIXES = [
@@ -4890,16 +4894,7 @@ function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[
         ) : item.type.startsWith("audio/") ? (
           <audio src={item.url} controls key={item.key} />
         ) : (
-          <a
-            className="file-attachment"
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            key={item.key}
-          >
-            <Icon name="file-code" />
-            <span>{item.name}<small>{item.type} · {item.size < 1024 ? `${item.size} B` : item.size < 1048576 ? `${(item.size / 1024).toFixed(1)} KB` : `${(item.size / 1048576).toFixed(1)} MB`}</small></span>
-          </a>
+          <FileAttachmentCard key={item.key} file={item} />
         ),
       )}
     </div>

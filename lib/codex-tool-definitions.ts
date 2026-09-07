@@ -211,6 +211,7 @@ export function validateCodexToolCatalog(value: unknown) {
   if (!Array.isArray(value) || !value.length) throw new Error("Vesper 工具目录为空，请检查 API 部署。");
   const required = ["album_save_photo", "album_search_photos", "album_send_photos", "send_chat_file"];
   const names = new Set(value.map(tool => tool?.name));
+  if (names.size !== value.length) throw new Error("Vesper 工具目录包含重复名称，请检查 API 部署。");
   if (required.some(name => !names.has(name))) throw new Error("Vesper API 尚未提供完整相册工具，请先更新 API 部署后重连。");
   if (value.some(tool => !tool || typeof tool.name !== "string" || !tool.inputSchema || typeof tool.description !== "string")) throw new Error("Vesper 工具目录格式无效。");
   return value.map(tool => ({ ...tool, type: "function" as const })) as typeof codexToolDefinitions;

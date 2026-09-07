@@ -15,3 +15,5 @@ const input = attachmentInputText({ key: 'owner/photo.jpg', name: 'photo.jpg', t
 assert.ok(input.includes('Vesper photo key: "owner/photo.jpg"'));
 assert.ok(input.includes('album_save_photo'));
 console.log('Shared album/file/sticker tool schema, stale catalog rejection and exact attachment keys passed');
+
+assert.throws(() => validateCodexToolCatalog([...codexToolDefinitions, codexToolDefinitions[0]]), /重复名称/);

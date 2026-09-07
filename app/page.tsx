@@ -4335,6 +4335,7 @@ function ConnectedChat({
           syncThreadModel(resumed);
           hydrateThreadSnapshot(resumed);
           appliedDeveloperInstructions.current = "";
+          setToolUpgradeNeeded(true);
           setHistoryWarning("当前 app-server 未接受会话工具更新；文件发送等新工具请在新对话中使用。");
           setResumeError("");
           logCodexDiagnostic({ method: "thread/resume/developer-instructions-unsupported", params: {} });
@@ -4382,38 +4383,47 @@ function ConnectedChat({
       ws.onopen = () => { ws.removeEventListener("close", closedBeforeOpen); resolve(); };
       ws.onerror = () => { ws.removeEventListener("close", closedBeforeOpen); reject(new Error("Codex app-server is offline")); };
     });
-    setOnline(true);
-    await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
-    ws.send(JSON.stringify({ method: "initialized" }));
-    void refreshModels();
-    const dynamicTools = await loadDynamicTools();
-    if (threadId.current) {
-      await resumeThread(developerInstructions);
-      // Older app-server versions may reject tool updates; resumeThread falls back.
-      // Never auto-replace a persisted Codex thread here: a continuation thread
-      // has a shorter snapshot and must not be allowed to make an existing
-      // Vesper conversation appear empty.
-    } else {
-      await startThreadWithTools(dynamicTools, developerInstructions);
+    try {
+      await sendRpc("initialize", { clientInfo: { name: "vesper_web", title: "Vesper", version: "0.6.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
+      ws.send(JSON.stringify({ method: "initialized" }));
+      void refreshModels();
+      if (threadId.current) {
+        await resumeThread(developerInstructions);
+        // Older app-server versions may reject tool updates; resumeThread falls back.
+        // Never auto-replace a persisted Codex thread here: a continuation thread
+        // has a shorter snapshot and must not be allowed to make an existing
+        // Vesper conversation appear empty.
+      } else {
+        await startThreadWithTools(await loadDynamicTools(), developerInstructions);
+      }
+      setOnline(true);
+      setError("");
+    } catch (reason) {
+      setOnline(false);
+      ws.close();
+      throw reason;
     }
   };
   const createReplacementConversation = async () => {
+    if (busy) return;
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
       setError("Codex app-server is offline");
       return;
     }
     const replacementId = `chat-${Date.now()}-${crypto.randomUUID()}`;
+    setBusy(true);
     try {
       const result = await sendRpc("thread/start", { dynamicTools: await loadDynamicTools(), ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), approvalPolicy: "on-request", summary: "concise", developerInstructions: VESPER_CONVERSATIONAL_STYLE });
       const thread = (result.result?.thread || {}) as { id?: string };
       if (!thread.id) throw new Error("Codex did not return a thread id");
       try { window.localStorage.setItem(`vesper-thread-tools-${thread.id}`, CODEX_TOOL_CATALOG_VERSION); } catch {}
-      void persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id })
-        .catch(() => setHistoryWarning("历史暂未同步"));
+      await persistCodexConversation(replacementId, { title: "替代会话", codexThreadId: thread.id });
       rememberConversation(replacementId, "替代会话", 0);
       onSelectConversation(replacementId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not create replacement conversation");
+    } finally {
+      setBusy(false);
     }
   };
   const cancelActiveTurn = async () => {
@@ -4794,12 +4804,13 @@ function ConnectedChat({
   return (
     <div className="page-body chat-page codex-chat">
       <div className="chat-status-stack">
+        {error && <div className="chat-restore-error" role="alert"><span>{error}</span>{!online && <button type="button" disabled={busy} onClick={() => void connect().catch(reason => setError(reason instanceof Error ? reason.message : "连接失败，请重试"))}>重试连接</button>}</div>}
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
         {toolUpgradeNeeded && !resumeError && <div className="chat-history-warning" role="status"><span>这段旧会话的相册工具尚未确认更新；原记录会保留。</span><button type="button" disabled={busy || !online} onClick={() => void createReplacementConversation()}>新建支持相册的会话</button></div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">
-        {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在准备对话…" : error || "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
+        {!messages.length && !Object.keys(streamingItems).length && <div className="chat-empty"><Icon name="chat" /><b>{!historyReady ? "正在准备对话…" : "A quiet place to think"}</b><span>One private Codex connection · files, images, audio and tools ready</span></div>}
         {visibleRows.map((item, index) => {
           const timestamp = visibleMessageTimestamp(item.createdAt);
           const previousTimestamp = index ? visibleMessageTimestamp(visibleRows[index - 1].createdAt) : Number.NaN;

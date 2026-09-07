@@ -4932,7 +4932,8 @@ body {
 
 /* Constrain native date/time controls, including Safari's internal value box. */
 .app-shell input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]) {
-  display: block;
+  display: inline-flex;
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -4948,10 +4949,16 @@ body {
 .app-shell input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"])::-webkit-date-and-time-value {
   min-width: 0;
   max-width: 100%;
-  min-height: 1.2em;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-height: 0;
+  line-height: normal;
   text-align: left;
 }
 .app-shell input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"])::-webkit-datetime-edit {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   padding: 0;
 }

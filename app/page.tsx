@@ -1937,146 +1937,57 @@ function Today({
         minute: "2-digit",
       }).format(new Date(latestNote.createdAt))
     : "";
-  const todayReminder = todos.find((item) => {
-    if (item.done || !item.due?.trim()) return false;
-    if (item.due.includes("今天")) return true;
-    const dueAt = new Date(item.due);
-    return Number.isFinite(dueAt.getTime()) && dueAt.toDateString() === now.toDateString();
-  });
-  const todayAnniversary = anniversaries.find((item) => {
-    const date = new Date(`${item.date}T12:00:00`);
-    return Number.isFinite(date.getTime()) &&
-      date.getMonth() === now.getMonth() &&
-      date.getDate() === now.getDate();
-  });
-  const todayMoment = todayReminder
-    ? {
-        icon: "check",
-        title: todayReminder.title,
-        detail: todayReminder.due || todayReminder.tag,
-        section: "提醒" as const,
-      }
-    : latestNote
-      ? {
-          icon: latestNote.kind === "agent" ? "sparkles" : "note",
-          title: latestNoteTitle,
-          detail: "最近便笺",
-          section: "便笺" as const,
-        }
-      : todayAnniversary
-        ? {
-            icon: "calendar",
-            title: todayAnniversary.title,
-            detail: "今天的纪念日",
-            section: "纪念日" as const,
-          }
-        : track && playing
-          ? {
-              icon: "music",
-              title: track.title,
-              detail: track.artist,
-              section: "音乐" as const,
-            }
-          : null;
+  const upcoming = [...anniversaries]
+    .filter((item) => Number.isFinite(anniversaryTarget(item).getTime()))
+    .sort((a, b) => anniversaryTarget(a).getTime() - anniversaryTarget(b).getTime());
+  const featuredDate = upcoming.find((item) => anniversaryTarget(item).getTime() >= now.getTime()) || upcoming[0];
+  const pendingTodos = todos.filter((item) => !item.done);
+  const featuredIsPast = featuredDate && !featuredDate.repeats && anniversaryTarget(featuredDate).getTime() < now.getTime();
+  const featuredDays = featuredDate ? (featuredIsPast
+    ? Math.max(1, Math.ceil((now.getTime() - anniversaryTarget(featuredDate).getTime()) / 86400000))
+    : daysUntil(featuredDate)) : null;
   return (
-    <div className="today-home home-overview">
+    <div className="today-home home-overview home-cards">
       <section className="welcome">
-        <div className="date-row">
-          <span>{dateText}</span>
-          <span className="weather-pill">
-            <Icon name="cloud" />
-            {weather}
-          </span>
-        </div>
-        <h1>{greeting}, {userName}.</h1>
+        <div className="date-row"><span>{dateText}</span><span className="weather-pill"><Icon name="cloud" />{weather}</span></div>
+        <h1>{greeting}, {userName}</h1>
         <p className="home-return-signal">{homeSignal}</p>
       </section>
-      <section className="section-block home-notes">
-        <SectionTitle icon="note" title="Notes" count={latestNote ? String(realNotes.length) : undefined} />
-        {latestNote ? (
-          <button className="home-note-summary" onClick={() => onOpenSection("便笺")}>
-            <span className="home-card-icon">
-              <Icon name={latestNote.kind === "agent" ? "sparkles" : "note"} />
-            </span>
-            <span className="home-note-copy">
-              <b>{latestNoteTitle}</b>
-              <small>{latestNoteSummary || `记录于 ${latestNoteTimestamp}`}</small>
-            </span>
-            <Icon name="chevron" />
+      <button className="home-letter" onClick={() => onOpenSection("便笺")}>
+        <span className="letter-mark"><Icon name="note" /></span>
+        <span className="letter-copy"><small>最近便笺</small><b>{latestNoteTitle || "今天的第一句话，留在这里。"}</b><span>{latestNoteSummary || (latestNote ? latestNoteTimestamp : "打开便笺，写一点想记住的事。")}</span></span>
+        <Icon name="chevron" />
+      </button>
+      <button className="home-date-hero" onClick={() => onOpenSection("纪念日")}>
+        <span className="home-card-label">{featuredIsPast ? "Days since" : "Next anniversary"}</span>
+        <span className="home-date-number">{featuredDays ?? "—"}<small>{featuredIsPast ? "天过去了" : "天后"}</small><Icon name="calendar" /></span>
+        <strong>{featuredDate?.title || "留一个值得期待的日子"}</strong>
+        <span className="home-date-footer">{featuredDate ? featuredDate.date : "添加纪念日"}<Icon name="chevron" /></span>
+      </button>
+      <div className="home-quick-grid">
+        <button className="home-stat" onClick={() => onOpenSection("提醒")}><span className="home-card-label">To do<Icon name="check" /></span><b>{pendingTodos.length}</b><span>{pendingTodos.length ? "件待办，慢慢完成" : "暂时没有待办"}</span></button>
+        <button className="home-stat" onClick={() => onOpenSection("便笺")}><span className="home-card-label">Notes<Icon name="note" /></span><b>{realNotes.length}</b><span>{realNotes.length ? "张便笺，留住日常" : "等你留下第一张"}</span></button>
+      </div>
+      <section className="home-reminders-card">
+        <button className="home-panel-heading" onClick={() => onOpenSection("提醒")}><span className="home-card-label">Little things</span><span>全部提醒<Icon name="chevron" /></span></button>
+        {todos.slice(0, 4).map((item) => (
+          <button className="reminder-row" key={item.id} aria-pressed={item.done} onClick={() => setTodos((items) => items.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>
+            <span className={item.done ? "round-check checked" : "round-check"}>{item.done && <Icon name="check" />}</span>
+            <span className={item.done ? "reminder-copy crossed" : "reminder-copy"}>{item.title}<small>{item.done ? "已完成" : item.due || item.tag}</small></span>
           </button>
-        ) : (
-          <button className="home-note-empty" onClick={() => onOpenSection("便笺")}>
-            <span>留一句给今天的你。</span>
-            <Icon name="chevron" />
+        ))}
+        {!todos.length && <p className="home-card-empty">今天想做什么？留一件小事给自己。</p>}
+      </section>
+      <section className="home-music-card">
+        <button className="home-panel-heading" onClick={() => onOpenSection("音乐")}><span className="home-card-label">Vesper FM</span><span>{playing ? "正在播放" : "一起听"}<Icon name="chevron" /></span></button>
+        {track ? <div className="home-music-content">
+          <button className="home-track-link" onClick={() => onOpenSection("音乐")}>
+            {track.cover ? <img src={track.cover} alt="" /> : <span className="home-cover-fallback"><Icon name="music" /></span>}
+            <span><strong>{track.title}</strong><small>{track.artist || "未知歌手"}</small></span>
           </button>
-        )}
+          <button className="home-play" onClick={onToggle} aria-label={playing ? "暂停播放" : "开始播放"}><Icon name={playing ? "pause" : "play"} /></button>
+        </div> : <button className="home-music-empty" onClick={() => onOpenSection("音乐")}><Icon name="music" /><span>选一首歌，陪你待一会儿。</span></button>}
       </section>
-      {todayMoment && (
-        <section className="section-block home-moment-section">
-          <button
-            className="home-moment-card"
-            onClick={() => onOpenSection(todayMoment.section)}
-          >
-            <span className="home-card-icon">
-              <Icon name={todayMoment.icon} />
-            </span>
-            <span className="home-moment-copy">
-              <small>今日</small>
-              <b>{todayMoment.title}</b>
-              <span>{todayMoment.detail}</span>
-            </span>
-            <Icon name="chevron" />
-          </button>
-        </section>
-      )}
-      <section className="section-block">
-        <SectionTitle
-          icon="check"
-          title="Today's reminders"
-          count={`${todos.filter((x) => x.done).length} / ${todos.length}`}
-        />
-        <div className="surface reminders">
-          {todos.slice(0, 4).map((item) => (
-            <button
-              className="reminder-row"
-              key={item.id}
-              onClick={() =>
-                setTodos((items) =>
-                  items.map((x) =>
-                    x.id === item.id ? { ...x, done: !x.done } : x,
-                  ),
-                )
-              }
-            >
-              <span
-                className={item.done ? "round-check checked" : "round-check"}
-              >
-                {item.done && <Icon name="check" />}
-              </span>
-              <span
-                className={
-                  item.done ? "reminder-copy crossed" : "reminder-copy"
-                }
-              >
-                {item.title}
-                <small>{item.done ? "已完成" : item.due || item.tag}</small>
-              </span>
-            </button>
-          ))}
-          {!todos.length && <EmptyState text="No reminders yet" />}
-        </div>
-      </section>
-      <section className="section-block">
-        <SectionTitle icon="calendar" title="Dates" />
-        {nextAnniversary(anniversaries) ? (
-          <AnniversaryCard item={nextAnniversary(anniversaries)!} />
-        ) : (
-          <div className="surface">
-            <EmptyState text="No dates yet" />
-          </div>
-        )}
-      </section>
-      <MusicCard track={track} playing={playing} onToggle={onToggle} />
     </div>
   );
 }

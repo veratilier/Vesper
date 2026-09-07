@@ -111,13 +111,6 @@ function Notes() {
           ))}
         </div>
       )}
-      <div className="agent-callout">
-        <Icon name="link" />
-        <div>
-          <b>Vesper note channel</b>
-          <p>Connected agents can create and update notes here.</p>
-        </div>
-      </div>
     </div>
   );
 }
@@ -186,12 +179,21 @@ function Anniversaries() {
   const [items, setItems] = usePersistentDocument<AnniversaryItem[]>("anniversaries", []);
   const [editing, setEditing] = useState(false);
   const [selectedId, setSelectedId] = useState("");
+  const [addingCountdown, setAddingCountdown] = useState(false);
   const blank = (): AnniversaryItem => ({ id: "", title: "", date: new Date().toLocaleDateString("en-CA"), repeats: false, background: { mode: "theme" } });
   const [draft, setDraft] = useState<AnniversaryItem>(blank);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const uploadGeneration = useRef(0);
-  const openEditor = (item?: AnniversaryItem) => { uploadGeneration.current++; setUploading(false); setUploadError(""); setDraft(item ? { ...item } : blank()); setEditing(true); };
+  const openEditor = (item?: AnniversaryItem) => { setAddingCountdown(false); uploadGeneration.current++; setUploading(false); setUploadError(""); setDraft(item ? { ...item } : blank()); setEditing(true); };
+  const openCountdown = () => {
+    openEditor();
+    setAddingCountdown(true);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const date = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+    setDraft({ ...blank(), date, repeats: false });
+  };
   const closeEditor = () => { uploadGeneration.current++; setEditing(false); setUploading(false); };
   const saveDate = () => {
     if (!draft.title.trim() || !draft.date || uploading) return;
@@ -214,9 +216,9 @@ function Anniversaries() {
     const past = days < 0;
     const count = Math.abs(days);
     return <article className="anniversary-keepsake" style={anniversaryBackgroundStyle(item.background)}>
-      <span className="keepsake-label">{past ? "Days remembered · 日子在累积" : "A day to remember · 值得期待"}</span>
+      <span className="keepsake-label">{past ? "Days remembered · 日子在累积" : days === 0 ? "Today is the day · 就是今天" : "Counting down · 距离这一天"}</span>
       <h2>{item.title || "纪念日名称"}</h2>
-      <div className="keepsake-count"><small>{past ? "已经走过" : "还有"}</small><b>{count}</b><small>天</small></div>
+      <div className="keepsake-count"><small>{past ? "已经走过" : days === 0 ? "就在今天" : "还有"}</small><b>{count}</b><small>天</small></div>
       <footer><span>{past ? "始于" : "日期"} {item.date}<small>{item.repeats ? "每年纪念" : "记录这一天"}</small></span>{!preview && <button onClick={() => openEditor(item)}><Icon name="edit" />编辑与背景</button>}</footer>
     </article>;
   };
@@ -224,11 +226,12 @@ function Anniversaries() {
     <header className="anniversary-heading"><span>OUR DAYS</span><h1>值得记住的日子</h1></header>
     {featured ? card(featured) : <EmptyState text="把第一个重要的日子留在这里。" />}
     {items.length > 1 && <div className="anniv-list">{items.filter((item) => item.id !== featured?.id).map((item) => <button className="anniversary-mini" key={item.id} onClick={() => setSelectedId(item.id)}><time>{item.date.slice(5).replace("-", ".")}</time><strong>{item.title}</strong><span>{anniversaryDayLabel(item)}</span><Icon name="chevron" /></button>)}</div>}
-    <button className="primary-action anniversary-add" onClick={() => openEditor()}><Icon name="plus" />添加纪念日</button>
+    <div className="anniversary-add-actions"><button className="primary-action anniversary-add" onClick={() => openEditor()}><Icon name="plus" />添加纪念日</button><button className="primary-action anniversary-add" onClick={openCountdown}><Icon name="clock" />添加倒计时</button></div>
     {editing && <div className="modal-layer"><button className="modal-scrim" aria-label="关闭" onClick={closeEditor} /><section className="connection-modal anniversary-editor" role="dialog" aria-modal="true" aria-labelledby="anniversary-editor-title">
-      <div className="modal-head"><h2 id="anniversary-editor-title">{draft.id ? "编辑纪念日" : "添加纪念日"}</h2><button aria-label="关闭" onClick={closeEditor}><Icon name="close" /></button></div>
+      <div className="modal-head"><h2 id="anniversary-editor-title">{draft.id ? "编辑纪念日" : addingCountdown ? "添加倒计时" : "添加纪念日"}</h2><button aria-label="关闭" onClick={closeEditor}><Icon name="close" /></button></div>
       <label className="profile-field"><span>名称</span><input autoFocus value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-      <label className="profile-field"><span>日期</span><input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
+      <label className="profile-field"><span>{addingCountdown ? "目标日期" : "日期"}</span><input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} /></label>
+      {addingCountdown && <p className="settings-hint">选好想期待的日子，卡片会自动显示还有多少天；当天显示“就在今天”，之后显示已经走过的天数。</p>}
       <button className={draft.repeats ? "repeat-choice selected" : "repeat-choice"} aria-pressed={draft.repeats} onClick={() => setDraft({ ...draft, repeats: !draft.repeats })}><span>每年重复</span><b>{draft.repeats ? "✓" : ""}</b></button>
       <fieldset className="anniversary-background-options"><legend>卡片背景</legend><div>{([ ["theme", "跟随主题"], ["color", "纯色"], ["image", "图片"] ] as const).map(([mode, label]) => <button key={mode} aria-pressed={(draft.background?.mode || "theme") === mode} onClick={() => { uploadGeneration.current++; setUploading(false); setUploadError(""); setDraft({ ...draft, background: { color: "#466b7b", ...draft.background, mode } }); }}>{label}</button>)}</div>
       {draft.background?.mode === "color" && <label>选择颜色<input type="color" value={draft.background.color || "#466b7b"} onChange={(event) => setDraft({ ...draft, background: { ...draft.background, mode: "color", color: event.target.value } })} /></label>}

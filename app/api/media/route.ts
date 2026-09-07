@@ -1,3 +1,5 @@
+import { registerPhotoSource } from '@/lib/photo-album';
+import { memoryScopeFromRequest } from '@/lib/memory';
 import { env } from "cloudflare:workers";
 import { corsHeaders, optionsResponse } from "@/lib/cors";
 import { authorizeApp } from "@/lib/bridge-auth";
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
   await mediaBucket().put(key, file.stream(), {
     httpMetadata: { contentType: file.type },
   });
+  if (file.type.startsWith('image/')) await registerPhotoSource((await memoryScopeFromRequest(request)).userId, { key, name: file.name, type: file.type, size: file.size }, 'user');
   return Response.json(
     {
       key,

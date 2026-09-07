@@ -16,10 +16,9 @@ export function AttachmentGallery({ items, onSaveAsSticker }: { items: GalleryAt
       <button className="photo-open" type="button" onClick={() => { if (!swiped.current) dialog.current?.showModal(); swiped.current = false; }} aria-label={`查看图片 ${active + 1}/${items.length}：${item.name}`}><img key={item.key} src={item.url} alt={item.name} loading="lazy" /></button>
     </div>
     {items.length > 1 && <div className="gallery-controls"><button type="button" aria-label="上一张" onClick={() => move(-1)}>‹</button><button type="button" onClick={() => dialog.current?.showModal()} aria-label="打开整组图片">{active + 1} / {items.length}</button><button type="button" aria-label="下一张" onClick={() => move(1)}>›</button></div>}
-    <small className="photo-caption" title={item.name}>{item.name} · {item.type} · {(item.size / 1024).toFixed(1)} KB</small>
-    {onSaveAsSticker && <button className="save-as-sticker" type="button" onClick={() => onSaveAsSticker(item)}>保存为表情包</button>}
     <dialog className="gallery-dialog" ref={dialog} onClick={e => { if (e.target === e.currentTarget) e.currentTarget.close(); }}>
       <header><span>{active + 1} / {items.length}</span><a href={item.url} download={item.name} target="_blank" rel="noreferrer">打开原图</a><button autoFocus type="button" aria-label="关闭图片" onClick={() => dialog.current?.close()}>×</button></header>
+      {onSaveAsSticker && <button className="save-as-sticker" type="button" onClick={() => onSaveAsSticker(item)}>保存为表情包</button>}
       <img className="gallery-full-image" src={item.url} alt={item.name} />
       <nav aria-label="整组图片">{items.map((image, i) => <button type="button" key={image.key} aria-label={`图片 ${i + 1}`} aria-current={active === i ? 'true' : undefined} onClick={() => setIndex(i)}><img src={image.url} alt={image.name} loading="lazy" /></button>)}</nav>
     </dialog>

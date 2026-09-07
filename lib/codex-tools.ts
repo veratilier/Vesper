@@ -1,3 +1,4 @@
+import { listAlbumPhotos, saveAlbumPhoto, getAlbumPhoto } from '@/lib/photo-album';
 import { createChatFile } from '@/lib/codex-artifacts';
 import { readExecutions } from '@/lib/codex-events';
 import { allowedDocumentKeys } from "@/db/schema";
@@ -25,6 +26,9 @@ const sectionToKey: Record<string, string> = {
 };
 
 export const codexToolDefinitions = [
+  { name: 'album_save_photo', description: 'Choose whether a received photo is worth keeping; do not automatically save every upload. Save an exact photo key from the current attachment to a category with an optional description. Only photos uploaded by this account can be archived. Repeated saves update its category instead of duplicating it.', inputSchema: { type: 'object', additionalProperties: false, properties: { key: { type: 'string' }, category: { type: 'string' }, caption: { type: 'string' } }, required: ['key', 'category'] } },
+  { name: 'album_search_photos', description: 'Search the private saved photo album by name, description or category. Use exact returned photo IDs to send selected photos.', inputSchema: { type: 'object', additionalProperties: false, properties: { query: { type: 'string' }, category: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 60 } } } },
+  { name: 'album_send_photos', description: 'Send 1–8 selected saved album photos back to the current chat. First search the album and use exact returned IDs. Does not send to anyone else.', inputSchema: { type: 'object', additionalProperties: false, properties: { photoIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8 }, message: { type: 'string' } }, required: ['photoIds'] } },
   { name: "send_chat_file", description: "Send a real generated file as a chat attachment (up to 8 MiB). Supply text OR base64 bytes, never a local path or invented URL. Images sent together in one tool call are grouped. Do not include credentials or private configuration files.", inputSchema: { type: "object", additionalProperties: false, properties: { files: { type: "array", minItems: 1, maxItems: 8, items: { type: "object", additionalProperties: false, properties: { name: { type: "string" }, mimeType: { type: "string" }, text: { type: "string" }, base64: { type: "string" } }, required: ["name"] } }, message: { type: "string" } }, required: ["files"] } },
   { name: "read_codex_task_progress", description: "Read the latest 30 saved execution events for this Vesper conversation, including commands, output, errors, exit codes and timestamps. These are observations, not a live health check; running records may be stale. Does not grant shell or filesystem permissions.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
   {
@@ -324,6 +328,14 @@ async function readMusicStatus() {
 
 export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope, context: CodexToolContext = {}) {
   await ensureSchema();
+  if (['album_save_photo', 'album_search_photos', 'album_send_photos'].includes(name)) {
+    if (!memoryScope || !context.origin) throw new Error('Account context required');
+    if (name === 'album_save_photo') return { photo: await saveAlbumPhoto(memoryScope.userId, String(input.key || ''), input.category, input.caption, context.origin) };
+    if (name === 'album_search_photos') return listAlbumPhotos(memoryScope.userId, input, context.origin);
+    if (!context.conversationId || !Array.isArray(input.photoIds) || !input.photoIds.length || input.photoIds.length > 8 || input.photoIds.some(id => typeof id !== 'string')) throw new Error('Choose 1–8 exact album photo IDs');
+    const photos = await Promise.all([...new Set(input.photoIds as string[])].map(id => getAlbumPhoto(memoryScope.userId, id, context.origin!)));
+    return { attachments: photos, message: String(input.message || '').slice(0, 2000) };
+  }
   if (name === "read_codex_task_progress") {
     if (!memoryScope || !context.conversationId) throw new Error("Conversation context required");
     return readExecutions(memoryScope.userId, context.conversationId);

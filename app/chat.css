@@ -485,7 +485,7 @@
 .compose-add-menu summary { list-style: none; width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer; border-radius: 50%; }
 .compose-add-menu summary::-webkit-details-marker { display: none; }
 .compose-add-menu summary .ui-icon { width: 27px; height: 27px; }
-.compose-add-options { position: absolute; bottom: 48px; left: 0; z-index: 30; width: 160px; padding: 8px; background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 18px; box-shadow: 0 8px 30px #19344820; }
+.app-shell .codex-chat .compose-add-options { position: absolute; bottom: 48px; left: 0; z-index: 30; width: 176px; padding: 8px; background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 18px; box-shadow: 0 8px 30px #19344820; }
 .app-shell .codex-chat .compose-add-options button { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px; color: var(--ui-ink); font: inherit; background: transparent; border: 0; }
 .compose-add-menu summary:focus-visible { outline: 2px solid var(--ui-ink-secondary); outline-offset: 2px; }
 @media(max-width: 360px) {
@@ -507,3 +507,5 @@
 
 /* Lift the composer stacking context above the mini-player when its menu opens. */
 .app-shell .codex-chat .chat-compose:has(.compose-add-menu[open]) { z-index: 2; overflow: visible; }
+.app-shell .codex-chat .compose-add-options button { white-space: nowrap; text-align: left; }
+.app-shell .codex-chat .compose-add-options button .ui-icon { width: 20px; height: 20px; flex: 0 0 20px; }

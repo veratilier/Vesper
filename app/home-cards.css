@@ -88,7 +88,7 @@
 .home-cards .home-track-link small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width:767px) {
   .app-shell > .scroll-view[data-section="今日"] { padding-left: 16px; padding-right: 16px; }
-  .home-cards.home-overview { min-height: 0; height: 100%; grid-template-rows: minmax(90px,1fr) minmax(76px,auto) minmax(128px,auto) minmax(116px,auto) minmax(94px,auto); align-content: start; align-items: stretch; }
+  .home-cards.home-overview { min-height: 0; height: 100%; grid-template-rows: minmax(max-content,1fr) repeat(4,max-content); align-content: start; align-items: stretch; }
   .home-cards.home-overview .welcome { align-self: center; padding: 0; }
   .home-cards.home-overview .welcome h1 { font-size: clamp(30px,8.3vw,42px) !important; margin: 7px 0; }
   .home-cards .date-row > span:first-child { font: .875rem/1.4 var(--font-chinese),sans-serif; }

@@ -11,6 +11,7 @@ import './app/stickers.css';
 import './app/typography.css';
 import './app/refinement.css';
 import './app/anniversary.css';
+import './app/home-cards.css';
 import App from './app/page';
 
 const root = document.getElementById('root');

@@ -1,5 +1,6 @@
 "use client";
 import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
+import { ChatActivity } from './chat-activity';
 import { ExecutionCard } from './execution-card';
 import { PhotoAlbum } from './photo-album';
 import { AttachmentGallery } from './attachment-gallery';
@@ -3271,7 +3272,8 @@ const CODEX_TOOL_ITEM_TYPES = new Set(["toolCall", "functionCall", "mcpCall", "s
 const CODEX_REASONING_ITEM_TYPES = new Set(["reasoning", "reasoningSummary"]);
 const CODEX_DYNAMIC_TOOL_METHODS = new Set(["item/tool/call", "tool/call", "tools/call"]);
 
-function cleanReasoningSummary(value: unknown) {
+function cleanReasoningSummary(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(cleanReasoningSummary);
   if (typeof value !== "string") return [] as string[];
   return value
     .replace(/\*\*/g, "\n")
@@ -3647,7 +3649,6 @@ function CodexChatMessage({
   turnInProgress = false,
   agentName,
   userName,
-  onEdit,
   onThought,
   onCopy,
   favorite,
@@ -3663,7 +3664,6 @@ function CodexChatMessage({
   turnInProgress?: boolean;
   agentName: string;
   userName: string;
-  onEdit: (item: BridgeChatMessage) => void;
   onThought: (item: BridgeChatMessage) => void;
   onCopy: (item: BridgeChatMessage) => void;
   favorite: boolean;
@@ -3814,6 +3814,7 @@ function ConnectedChat({
   const [historyWarning, setHistoryWarning] = useState("");
   const [resumeError, setResumeError] = useState("");
   const [historyReady, setHistoryReady] = useState(false);
+  const [, refreshActivity] = useState(0);
   const [streamingItems, setStreamingItems] = useState<Record<string, string>>({});
   const streamStartedAt = useRef(new Map<string, string>());
   const [thought, setThought] = useState<BridgeChatMessage | null>(null);
@@ -3984,6 +3985,10 @@ function ConnectedChat({
       return;
     }
     setTurnStatus("tool");
+    const activityId = itemId || String(message.id);
+    const activityThread = threadId.current;
+    const activityTurn = activeTurnId.current;
+    observeExecution("item/started", { threadId: activityThread, turnId: activityTurn, item: { id: activityId, type: "dynamicToolCall", name, status: "inProgress" } });
     try {
       const result = await callServerTool(name, argumentsValue, itemId);
       if (['send_chat_file', 'album_send_photos'].includes(name) && result && typeof result === 'object' && 'attachments' in result) {
@@ -4004,9 +4009,11 @@ function ConnectedChat({
         const sticker = (result as { stickerMessage?: unknown }).stickerMessage;
         if (sticker && typeof sticker === "object" && typeof (sticker as StickerMessageData).assetId === "string") pendingAgentStickers.current.push(sticker as StickerMessageData);
       }
+      observeExecution("item/completed", { threadId: activityThread, turnId: activityTurn, item: { id: activityId, type: "dynamicToolCall", name, status: "completed", result: "工具已返回结果。" } });
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true } }));
     } catch (reason) {
       const text = reason instanceof Error ? reason.message : "Tool failed";
+      observeExecution("item/completed", { threadId: activityThread, turnId: activityTurn, item: { id: activityId, type: "dynamicToolCall", name, status: "failed", error: text } });
       socket.current?.send(JSON.stringify({ id: message.id, result: { contentItems: [{ type: "inputText", text }], success: false, error: text } }));
       setError(text);
     }
@@ -4142,8 +4149,10 @@ function ConnectedChat({
       setStreamingItems((current) => ({ ...current, [id]: next }));
     }
     if (message.method === "item/reasoning/summaryTextDelta") {
+      if (params.turnId && params.turnId !== activeTurnId.current) return;
       const id = String(params.itemId || "reasoning");
       reasoningBuffers.current.set(id, `${reasoningBuffers.current.get(id) || ""}${String(params.delta || "")}`);
+      refreshActivity(value => value + 1);
     }
     if (message.method === "item/started" && CODEX_TOOL_ITEM_TYPES.has(String((params.item as CodexItem | undefined)?.type || ""))) setTurnStatus("tool");
     if (message.method === "item/completed") {
@@ -4151,9 +4160,11 @@ function ConnectedChat({
       const itemId = String(item.id || params.itemId || "");
       const itemType = String(item.type || "");
       if (itemId) clearApprovalQueue({ threadId: String(params.threadId || threadId.current || ""), itemId });
-      if (CODEX_REASONING_ITEM_TYPES.has(itemType)) {
-        const summaries = cleanReasoningSummary(item.summary ?? item.text ?? reasoningBuffers.current.get(itemId) ?? "");
+      if (CODEX_REASONING_ITEM_TYPES.has(itemType) && (!params.turnId || params.turnId === activeTurnId.current)) {
+        const summaries = cleanReasoningSummary(item.summary ?? (itemType === "reasoningSummary" ? item.text : undefined) ?? reasoningBuffers.current.get(itemId) ?? "");
         reasoningSummaries.current.push(...summaries.filter((line) => !reasoningSummaries.current.includes(line)));
+        reasoningBuffers.current.delete(itemId);
+        refreshActivity(value => value + 1);
       }
       if (CODEX_TOOL_ITEM_TYPES.has(itemType)) {
         setTurnStatus("tool");
@@ -4206,6 +4217,7 @@ function ConnectedChat({
       const completedTurn = params.turn && typeof params.turn === "object" ? params.turn as { id?: unknown } : {};
       const completedTurnId = String(completedTurn.id || activeTurnId.current || "");
       if (completedTurnId) clearApprovalQueue({ threadId: threadId.current, turnId: completedTurnId });
+      reasoningSummaries.current = [...new Set([...reasoningSummaries.current, ...Array.from(reasoningBuffers.current.values()).flatMap(cleanReasoningSummary)])];
       setBusy(false);
       const turnFailed = ["failed", "interrupted"].includes(String((params.turn as Record<string, unknown> | undefined)?.status));
       if (activeTurnUserId.current) {
@@ -4767,6 +4779,7 @@ function ConnectedChat({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
     });
   };
+  const activityTurnId = activeTurnId.current || [...messages].reverse().find(item => item.metadata?.turnId)?.metadata?.turnId;
   const liveTurnStatus = messages.find((item) => item.id === activeTurnUserId.current)?.metadata?.turnStatus;
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
@@ -4784,9 +4797,9 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
-        {busy && <div className="reply-progress" role="status" aria-live="polite"><i aria-hidden="true" /><span>{liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"}</span></div>}
+        {(busy || activityTurnId) && <ChatActivity busy={busy} online={online} label={liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"} executions={messages.filter(item => item.metadata?.turnId === activityTurnId && item.metadata?.execution && !item.metadata.execution.id.startsWith("turn:")).map(item => item.metadata!.execution!)} summary={[...new Set([...(busy ? [...reasoningSummaries.current, ...Array.from(reasoningBuffers.current.values())] : []), ...messages.filter(item => item.metadata?.turnId === activityTurnId).map(item => item.metadata?.thoughtSummary || "")])].filter(Boolean).join("\n")} />}
         <div ref={streamEnd} />
       </div>
       {showScrollToBottom && <button className="chat-scroll-to-bottom" type="button" aria-label="回到最新消息" title="回到最新消息" onClick={scrollToLatest}>
@@ -4796,7 +4809,7 @@ function ConnectedChat({
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
         <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-        <div className="compose-actions"><details className="compose-add-menu"><summary aria-label="添加附件或表情包"><Icon name="plus" /></summary><div className="compose-add-options"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); fileInput.current?.click(); }}><Icon name="file-code" />添加文件</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setStickerPickerOpen(true); }}><Icon name="sticker" />表情包</button></div></details><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} />
+        <div className="compose-actions"><details className="compose-add-menu"><summary aria-label="添加附件或表情包"><Icon name="plus" /></summary><div className="compose-add-options"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); fileInput.current?.click(); }}><Icon name="file-code" />Files</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setStickerPickerOpen(true); }}><Icon name="sticker" />Stickers</button></div></details><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} />
           <span className="composer-status"><i className={online ? "online" : ""} role="img" aria-label={online ? "已连接" : "未连接"} title={online ? "已连接" : "未连接"} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
           {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="arrow-up" /></button></div>
       </div>

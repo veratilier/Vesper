@@ -37,10 +37,14 @@ assert.equal((await request(cimdPath.pathname + cimdPath.search)).status, 200, '
 const noPkce = new URL(origin + authPath()); noPkce.searchParams.delete('code_challenge'); noPkce.searchParams.delete('code_challenge_method');
 assert.equal((await request(noPkce.pathname + noPkce.search)).status, 400);
 const consent = await request(authPath()); assert.equal(consent.status, 200);
+assert.equal(consent.headers.get('referrer-policy'), 'same-origin', 'same-origin consent POST must retain its Origin without leaking referrers cross-origin');
+assert.match(consent.headers.get('content-security-policy'), /form-action 'self' https:\/\/chatgpt\.com;/, 'permit the validated OAuth callback after form POST');
 const cookie = consent.headers.get('set-cookie').split(';')[0], nonce = cookie.split('=')[1];
 const post = (csrf, token, from = origin) => request('/authorize', { method: 'POST', headers: { origin: from, cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, token, decision: 'allow' }) });
 assert.equal((await post('wrong', 'synthetic-owner-token-for-test')).status, 403);
 assert.equal((await post(nonce, 'synthetic-owner-token-for-test', 'https://evil.example')).status, 403);
+assert.equal((await post(nonce, 'synthetic-owner-token-for-test', 'null')).status, 403, 'opaque origins remain rejected');
+assert.equal((await request('/authorize', { method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: nonce, token: 'synthetic-owner-token-for-test', decision: 'allow' }) })).status, 403, 'missing origins remain rejected');
 assert.equal((await post(nonce, 'bad-token')).status, 401);
 const allow = await post(nonce, 'synthetic-owner-token-for-test'); assert.equal(allow.status, 303);
 const location = new URL(allow.headers.get('location')); assert.equal(location.searchParams.get('state'), 'test-state');

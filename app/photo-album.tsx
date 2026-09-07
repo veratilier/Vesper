@@ -60,12 +60,12 @@ export function PhotoAlbum({ apiUrl, headers, active }: { active: boolean; apiUr
     <p role="status">{message || (busy ? '正在整理照片…' : '')}</p>
     {message && !busy && <button type="button" onClick={() => void load()}>重新加载相册</button>}
     {!busy && !message && !result.photos.length && <p className="album-empty">这里还没有照片。可以导入，也可以在聊天中把想留下的照片交给我。</p>}
-    <div className="album-grid">{result.photos.map(photo => <article key={photo.id}><AttachmentGallery items={[photo]} /><p>{photo.caption || photo.name}</p><button type="button" onClick={() => setEditing(photo)}>{photo.category} · 编辑</button></article>)}</div>
+    <div className="album-grid">{result.photos.map(photo => <article key={photo.id}><AttachmentGallery items={[photo]} /><p className="album-photo-name">{photo.name}</p><p className="album-photo-caption">{photo.caption || "尚未添加概述与评价"}</p><button type="button" onClick={() => setEditing(photo)}>{photo.category} · 编辑</button></article>)}</div>
     {result.nextOffset !== null && <button type="button" disabled={busy} onClick={() => void load(result.nextOffset!)}>更多照片</button>}
     <dialog ref={editor} className="album-editor-dialog" onCancel={() => setEditing(null)} onClick={e => { if (e.target === e.currentTarget) setEditing(null); }}>{editing && <form className="album-edit" aria-label="编辑照片" onSubmit={async e => {
       e.preventDefault(); setBusy(true);
       try { await save(editing.key, editing.category, editing.caption); setEditing(null); await load(); }
       catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); } finally { setBusy(false); }
-    }}><h2>留个记号</h2><label>分类<input autoFocus maxLength={60} required value={editing.category} onChange={e => setEditing({ ...editing, category: e.target.value })} /></label><label>描述<textarea maxLength={500} value={editing.caption} onChange={e => setEditing({ ...editing, caption: e.target.value })} /></label><p role="alert">{message}</p><button disabled={busy}>保存</button><button type="button" disabled={busy} onClick={() => setEditing(null)}>取消</button></form>}</dialog>
+    }}><h2>留个记号</h2><label>分类<input autoFocus maxLength={60} required value={editing.category} onChange={e => setEditing({ ...editing, category: e.target.value })} /></label><label>概述与评价<textarea maxLength={500} value={editing.caption} onChange={e => setEditing({ ...editing, caption: e.target.value })} /></label><p role="alert">{message}</p><button disabled={busy}>保存</button><button type="button" disabled={busy} onClick={() => setEditing(null)}>取消</button></form>}</dialog>
   </section>;
 }

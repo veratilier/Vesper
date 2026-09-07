@@ -1239,7 +1239,7 @@ export default function Home() {
           {active === "今日" ? (
             <div className="wordmark">
               <span className="home-app-mark">
-                <img src="/icon-192-20260901-v1.png" alt="" />
+                <img src="/icon-192-20260907-moon-v1.png" alt="" />
               </span>
               <b>Vesper</b>
             </div>
@@ -1399,7 +1399,7 @@ export default function Home() {
             <div className="drawer-head">
               <div className="drawer-brand">
                 <span className="drawer-app-mark">
-                  <img src="/icon-192-20260901-v1.png" alt="" />
+                  <img src="/icon-192-20260907-moon-v1.png" alt="" />
                 </span>
                 <div>
                   <b>Vesper</b>

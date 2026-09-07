@@ -1,16 +1,16 @@
-/* Vesper neutral visual system. Keep app content (photos, avatars and covers)
+/* Vesper ice-blue visual system. Keep app content (photos, avatars and covers)
    untouched; these tokens are for product chrome only. */
 :root {
-  --ui-canvas: #f5f5f3;
-  --ui-surface: #fcfcfa;
-  --ui-surface-muted: #efefec;
-  --ui-surface-strong: #e4e4e0;
-  --ui-ink: #111111;
-  --ui-ink-secondary: #555553;
-  --ui-muted: #7b7b77;
-  --ui-line: #dadad6;
-  --ui-line-strong: #bebeba;
-  --ui-inverse: #191919;
+  --ui-canvas: #eaf0f5;
+  --ui-surface: #f5f8fb;
+  --ui-surface-muted: #e2eaf1;
+  --ui-surface-strong: #d5e0e9;
+  --ui-ink: #202b35;
+  --ui-ink-secondary: #506170;
+  --ui-muted: #697b8a;
+  --ui-line: #cdd9e3;
+  --ui-line-strong: #acbecd;
+  --ui-inverse: #263947;
   --ui-on-inverse: #ffffff;
   --ui-danger: #555552;
 

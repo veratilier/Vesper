@@ -3787,7 +3787,7 @@ function CodexChatMessage({
         )
       )}
       <div className={assistant ? "message assistant" : "message mine sent-message"}>
-        {sticker ? <div className="sticker-bubble"><StickerImage sticker={sticker} /></div> : <div>
+        {sticker ? <div className="sticker-bubble"><StickerImage sticker={sticker} /></div> : <div className={assistant ? "assistant-message-content" : undefined}>
           {item.content && <p>{item.content}</p>}
           {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
         </div>}
@@ -4726,7 +4726,7 @@ function ConnectedChat({
           return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
         {busy && !Object.keys(streamingItems).length && <div className="agent-turn pending-agent-turn"><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div></div>}
-        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div><p>{text}</p></div></div></div>)}
+        {Object.entries(streamingItems).map(([itemId, text]) => <div className="agent-turn" key={itemId}><div className="turn-status" aria-live="polite"><i /><span>{liveStatusStamp}  Thinking…</span></div><div className="message assistant"><div className="assistant-message-content"><p>{text}</p></div></div></div>)}
         <div ref={streamEnd} />
       </div>
       {currentTrack && <div className="codex-mini-player"><button className="mini-track" onClick={onOpenMusic}>{currentTrack.cover ? <img src={currentTrack.cover} alt="" /> : <span>V</span>}<strong>{currentTrack.title}</strong><small>{currentTrack.artist || "未知歌手"}</small></button><button aria-label={playing ? "暂停" : "播放"} onClick={onToggleMusic}><Icon name={playing ? "pause" : "play"} /></button><button aria-label="下一首" onClick={onNextMusic}><Icon name="forward" /></button></div>}

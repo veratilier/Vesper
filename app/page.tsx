@@ -20,7 +20,7 @@ import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nex
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
 import { syncCodexThread, createConnectionQueue } from "@/lib/codex-thread-lifecycle";
 import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
-import { attachmentInputText } from "./codex-attachment-input";
+import { attachmentInputText, imageAttachmentInput } from "./codex-attachment-input";
 import { useMobileViewport } from "./use-mobile-viewport";
 import "./mobile-navigation.css";
 import { subscribe, serializeSubscription } from "@mmmike/web-push/client";
@@ -1463,7 +1463,7 @@ export default function Home() {
               </button>
             </div>
             <nav>
-              {nav.map(({ label, english, icon }) => (
+              {nav.filter(item => item.label !== "设置").map(({ label, english, icon }) => (
                 <button
                   key={label}
                   className={active === label ? "nav-row active" : "nav-row"}
@@ -1476,6 +1476,16 @@ export default function Home() {
                 </button>
               ))}
             </nav>
+            <div className="drawer-bottom">
+              <button
+                className={active === "设置" ? "nav-row active" : "nav-row"}
+                aria-current={active === "设置" ? "page" : undefined}
+                onClick={() => navigateTo("设置")}
+              >
+                <NavIcon name="settings" />
+                <span>Settings</span>
+                {active === "设置" && <i />}
+              </button>
             <button
               className="drawer-footer"
               onClick={() => {
@@ -1490,6 +1500,7 @@ export default function Home() {
               </span>
               <Icon name="chevron" />
             </button>
+            </div>
           </aside>
         </div>
         {profileOpen && (
@@ -4503,7 +4514,7 @@ function ConnectedChat({
     const { file } = item;
     const attachment = await uploadMedia(file);
     const downloadText = attachmentInputText(attachment);
-    if (file.type.startsWith("image/")) return { attachment, input: { type: "image", url: await localImage(file, 1600, 0.84) } };
+    if (file.type.startsWith("image/")) return imageAttachmentInput(attachment, await localImage(file, 1600, 0.84));
     if (file.type.startsWith("audio/")) return { attachment, input: { type: "audio", url: await readDataUrl(file) } };
     if (file.type.startsWith("video/")) return { attachment, input: { type: "image", url: await videoPoster(file) }, text: `${downloadText}\nA representative frame is included.` };
     if (file.type.startsWith("text/") || /\.(json|html?|md|csv|tsx?|jsx?)$/i.test(file.name)) return { attachment, text: `${downloadText}\nFile preview:\n${(await file.text()).slice(0, 120000)}` };

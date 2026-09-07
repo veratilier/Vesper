@@ -72,3 +72,35 @@
 .app-shell .codex-chat .message-actions { margin-block: 0; }
 .app-shell .codex-chat .message-actions time { font-size: var(--text-caption) !important; }
 .app-shell .codex-chat .chat-compose textarea { font-size: 1rem !important; line-height: 1.45; }
+
+/* Compact island and plain user messages; keep attachments and controls intact. */
+.app-shell .drawer { width: min(64%, 248px); padding-inline: 12px; }
+.app-shell .drawer-brand { min-width: 0; gap: 8px; }
+.app-shell .drawer-brand b { font-size: 32px !important; }
+.app-shell .drawer-brand small { font-size: 8px !important; letter-spacing: .04em; }
+.app-shell .drawer-app-mark { width: 32px; height: 32px; flex: 0 0 32px; }
+.app-shell .drawer-head { gap: 4px; }
+.app-shell .codex-chat .message.mine > div {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.app-shell .codex-chat .message.mine > div::before,
+.app-shell .codex-chat .message.mine > div::after { display: none !important; }
+/* Shared numeric face with the homepage, independent of inherited body font. */
+.app-shell .keepsake-count b,
+.app-shell .home-cards .home-date-number {
+  font-family: Georgia, "Times New Roman", serif !important;
+  font-weight: 400 !important;
+  font-variant-numeric: tabular-nums;
+}
+.anniversary-add-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.anniversary-add-actions .anniversary-add { padding-inline: 10px; }
+@media (max-width: 340px) {
+  .anniversary-add-actions { grid-template-columns: 1fr; gap: 0; }
+  .app-shell .drawer { width: calc(100% - 64px); max-width: 248px; }
+}

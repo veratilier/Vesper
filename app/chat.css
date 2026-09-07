@@ -501,3 +501,6 @@
 .chat-activity p { margin: 0; font-size: 12px; line-height: 1.6; }
 .chat-activity .activity-summary { white-space: pre-wrap; overflow-wrap: anywhere; font-style: normal; }
 .chat-activity > summary:focus-visible { outline: 2px solid var(--ui-ink-secondary); outline-offset: 3px; }
+
+/* Retire message editing across both chat renderers. */
+.app-shell .chat-page :is(.message-edit, .message-actions button[aria-label="编辑"], .message-actions button[title="编辑"]) { display: none !important; }

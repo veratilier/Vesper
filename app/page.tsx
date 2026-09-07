@@ -3648,7 +3648,6 @@ function CodexChatMessage({
   turnInProgress = false,
   agentName,
   userName,
-  onEdit,
   onThought,
   onCopy,
   favorite,
@@ -3664,7 +3663,6 @@ function CodexChatMessage({
   turnInProgress?: boolean;
   agentName: string;
   userName: string;
-  onEdit: (item: BridgeChatMessage) => void;
   onThought: (item: BridgeChatMessage) => void;
   onCopy: (item: BridgeChatMessage) => void;
   favorite: boolean;
@@ -4794,7 +4792,7 @@ function ConnectedChat({
           const day = Number.isFinite(timestamp) ? new Date(timestamp).toDateString() : "";
           const previousDay = Number.isFinite(previousTimestamp) ? new Date(previousTimestamp).toDateString() : "";
           const divider = day && day !== previousDay ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(new Date(timestamp)) : "";
-          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onEdit={editMessage} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
+          return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
         {(busy || activityTurnId) && <ChatActivity busy={busy} online={online} label={liveTurnStatus === "tool" ? "正在使用工具…" : Object.keys(streamingItems).length ? "正在回复…" : "正在思考…"} executions={messages.filter(item => item.metadata?.turnId === activityTurnId && item.metadata?.execution && !item.metadata.execution.id.startsWith("turn:")).map(item => item.metadata!.execution!)} summary={[...new Set([...(busy ? [...reasoningSummaries.current, ...Array.from(reasoningBuffers.current.values())] : []), ...messages.filter(item => item.metadata?.turnId === activityTurnId).map(item => item.metadata?.thoughtSummary || "")])].filter(Boolean).join("\n")} />}
         <div ref={streamEnd} />

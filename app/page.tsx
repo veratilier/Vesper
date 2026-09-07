@@ -5049,6 +5049,12 @@ function SettingsPage({
           onClick={() => setSelected("MCP 工具")}
         />
         <SettingRow
+          icon="link"
+          title="Vesper MCP"
+          sub="让外部 AI 连接 Vesper 的日记、便笺与记忆"
+          onClick={() => setSelected("Vesper MCP")}
+        />
+        <SettingRow
           icon="volume"
           title="Agent 声音（TTS）"
           sub="尚未连接声音服务"

@@ -2,12 +2,14 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { sendPushBatch, type PushSubscriptionData } from "@mmmike/web-push/send";
 import { z } from "zod";
-import { createMemory, listMemories, memoryScopeFromRequest } from "../../lib/memory";
+import { createMemory, listMemories, memoryScopeFromRequest, MEMORY_CONFIG } from "../../lib/memory";
 import { mergeAgentDiary, isCalendarDate } from "./diary";
+import { pinnedMemoryOwner } from "./memory-owner";
 
 type Env = {
   DB: D1Database;
   VESPER_APP_TOKEN?: string;
+  VESPER_MEMORY_USER_ID?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
@@ -27,7 +29,9 @@ const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSO
 const now = () => new Date().toISOString();
 const diaryDate = z.string().refine(isCalendarDate, "日期必须是有效的 YYYY-MM-DD");
 async function ownerMemoryScope(env: Env) {
-  if (!env.VESPER_APP_TOKEN) throw new Error("MCP 尚未配置与 Vesper API 相同的 VESPER_APP_TOKEN，无法定位原有记忆库。");
+  const userId = pinnedMemoryOwner(env.VESPER_MEMORY_USER_ID);
+  if (userId) return { userId, characterId: MEMORY_CONFIG.characterId };
+  if (!env.VESPER_APP_TOKEN) throw new Error("MCP 尚未配置记忆账户；请配置已核实的 VESPER_MEMORY_USER_ID 或与 API 相同的 VESPER_APP_TOKEN。");
   return memoryScopeFromRequest(new Request("https://vesper.internal", { headers: { "x-vesper-device-token": env.VESPER_APP_TOKEN } }));
 }
 

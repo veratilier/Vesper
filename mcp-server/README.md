@@ -27,10 +27,23 @@ Keep the existing Bearer access token and shared `vesper-db` D1 binding.
 ## Release
 
 Deploy only `mcp-server/wrangler.jsonc` for the MCP update, preserving secrets.
-The Worker requires `VESPER_APP_TOKEN` with exactly the same secret value as the
-production Vesper API to resolve its existing memory scope. Do not paste it in
-chat, commit it, log it, or use the MCP Bearer token in its place. If unavailable,
-only memory-library tools fail with a configuration error; existing tools work.
+Memory tools accept either deployment-only `VESPER_MEMORY_USER_ID` (an audited
+existing `usr_` + 32 hexadecimal owner ID) or, as a fallback, `VESPER_APP_TOKEN`
+with exactly the same secret value as the API. An explicitly configured but
+invalid owner fails closed. Tool callers cannot choose another owner.
+
+When the original app secret cannot be recovered, inspect existing memory owner
+IDs administratively. Configure a verified owner on the MCP Worker to keep the
+API credential, paired devices, memory rows, revisions and jobs unchanged. Never
+select an arbitrary first row when multiple owners exist. Re-audit this mapping
+if the API credential/account is later migrated. Missing configuration fails
+only memory-library tools; other tools retain their existing behavior.
+
+Do not paste credentials in chat, commit or log them, or use the MCP Bearer token
+as the app credential. Preserve the existing MCP Bearer by default. If its
+replacement is explicitly authorized, back up D1 first, store the new credential
+in a protected local configuration file, replace only `access_token_hash`, and
+update external clients. Do not reset app pairing or overwrite VAPID secrets.
 VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are needed for Web Push.
 
 Checks:

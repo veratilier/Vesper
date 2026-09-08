@@ -127,8 +127,8 @@ export async function executeCodexTool(name: string, input: ToolInput, memorySco
   if (['album_save_photo', 'album_search_photos', 'album_send_photos'].includes(name)) {
     if (!memoryScope || !context.origin) throw new Error('Account context required');
     if (name === 'album_save_photo') {
-      if (typeof input.summary !== 'string' || !input.summary.trim() || typeof input.evaluation !== 'string' || !input.evaluation.trim()) throw new Error('保存照片时请填写概述和评价');
-      return { photo: await saveAlbumPhoto(memoryScope.userId, String(input.key || ''), input.category, `概述：${input.summary.trim().slice(0,240)}\n\n评价：${input.evaluation.trim().slice(0,240)}`, context.origin) };
+      if (typeof input.evaluation !== 'string' || !input.evaluation.trim()) throw new Error('保存照片时请填写评价');
+      return { photo: await saveAlbumPhoto(memoryScope.userId, String(input.key || ''), input.category, input.evaluation.trim().slice(0,240), context.origin) };
     }
     if (name === 'album_search_photos') return listAlbumPhotos(memoryScope.userId, input, context.origin);
     if (!context.conversationId || !Array.isArray(input.photoIds) || !input.photoIds.length || input.photoIds.length > 8 || input.photoIds.some(id => typeof id !== 'string')) throw new Error('Choose 1–8 exact album photo IDs');

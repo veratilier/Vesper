@@ -1,0 +1,35 @@
+/* The fixed stage owns one full-screen image; only its page contents scroll. */
+.stage { background-position: center; background-size: cover; background-repeat: no-repeat; }
+.stage > .app-shell { background: transparent; }
+/* An opaque, separate image prevents the main marble from bleeding into navigation. */
+.stage .app-shell .drawer {
+  background: var(--ui-surface) url('/backgrounds/vesper-sidebar-20260908.jpg') center / cover no-repeat !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Preserve readable frosted surfaces over photographs. */
+.stage .app-shell :is(.chat-compose, .mobile-navigation) {
+  background: color-mix(in srgb, var(--ui-surface) 72%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(120%) !important;
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .stage .app-shell :is(.chat-compose, .mobile-navigation) { background: var(--ui-surface) !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .stage .app-shell :is(.chat-compose, .mobile-navigation) {
+    background: var(--ui-surface) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* Album artwork owns the music surface; the reading background stays separate. */
+.stage .music-scroll-view { background: var(--ui-canvas); }
+.stage .listening-player { position: relative; isolation: isolate; background: var(--ui-canvas); }
+.stage .listening-player::before {
+  content: ""; position: absolute; inset: -24px; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(color-mix(in srgb, var(--ui-canvas) 80%, transparent), color-mix(in srgb, var(--ui-canvas) 90%, transparent)), var(--album-background);
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  filter: blur(20px);
+}

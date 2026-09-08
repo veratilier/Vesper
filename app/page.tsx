@@ -125,7 +125,8 @@ function Notes() {
   );
 }
 const VESPER_API_ORIGIN = "https://api.vesper.r-vera.com";
-const DEFAULT_APP_BACKGROUND = "#eaf0f5";
+const DEFAULT_CANVAS_COLOR = "#eaf0f5";
+const DEFAULT_APP_BACKGROUND = 'url("/backgrounds/vesper-marble-20260908.jpg")';
 const NEUTRAL_ACCENTS = new Set(["#647e94", "#8299ad", "#4a4a48", "#6b6b68", "#878783", "#a3a39f"]);
 
 function normalizeNeutralAccent(value?: string) {
@@ -134,10 +135,10 @@ function normalizeNeutralAccent(value?: string) {
 
 function normalizeAppBackground(value?: string) {
   const candidate = value?.trim() || "";
-  if (["#f5f5f3", "#f0f2ef"].includes(candidate.toLowerCase())) return DEFAULT_APP_BACKGROUND;
+  if (["#f5f5f3", "#f0f2ef", "#eaf0f5"].includes(candidate.toLowerCase())) return DEFAULT_APP_BACKGROUND;
   if (/^#[\da-f]{6}$/i.test(candidate)) return candidate;
   // Uploaded photographs remain user content. Former colour/gradient presets and
-  // the old blue marble default become the new ice-blue canvas.
+  // obsolete default presets become the bundled marble background.
   return candidate.includes("url(") && !candidate.includes("vesper-default-bg.webp")
     ? candidate
     : DEFAULT_APP_BACKGROUND;
@@ -1141,8 +1142,7 @@ export default function Home() {
     window.setTimeout(() => setMusicToast(""), 1600);
   };
   const isPhotoBackground = customBackground.includes("url(");
-  const canvasColor = isPhotoBackground ? DEFAULT_APP_BACKGROUND : customBackground || DEFAULT_APP_BACKGROUND;
-  const defaultCanvas = canvasColor === DEFAULT_APP_BACKGROUND && !isPhotoBackground;
+  const canvasColor = isPhotoBackground ? DEFAULT_CANVAS_COLOR : customBackground || DEFAULT_CANVAS_COLOR;
   // Keep Safari chrome and the overscroll canvas in step with the saved appearance.
   useEffect(() => {
     const root = document.documentElement;
@@ -1160,7 +1160,7 @@ export default function Home() {
   const shellStyle = {
     "--theme-accent": accent,
     backgroundColor: canvasColor,
-    backgroundImage: isPhotoBackground ? customBackground : defaultCanvas ? "var(--vesper-mist)" : "none",
+    backgroundImage: active === "音乐" ? "none" : isPhotoBackground ? customBackground : "none",
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
@@ -1284,7 +1284,7 @@ export default function Home() {
           showMusicToast("此音频当前无法在网页播放");
         }}
       />
-      <section className="app-shell" style={shellStyle}>
+      <section className="app-shell" style={{ "--theme-accent": accent } as CSSProperties}>
         <header
           className={`${active === "聊天" ? "app-header chat-mode" : active === "音乐" ? "app-header music-mode" : "app-header"}${historyOpen ? " history-host-shift" : ""}`}
         >
@@ -6096,7 +6096,7 @@ function AppearanceModal({
     ["浅灰", "#a3a39f"],
   ];
   const backgrounds = [
-    ["冰灰蓝", "#eaf0f5"],
+    ["默认大理石", DEFAULT_APP_BACKGROUND],
     ["浅雾蓝", "#e1eaf2"],
     ["纸灰", "#eeeeeb"],
     ["雾灰", "#e2e2df"],
@@ -6810,7 +6810,10 @@ function MusicPlayerUI({
   const modeIcons: Record<MusicPlayMode, string> = { order: "menu", repeat: "repeat", single: "one", random: "shuffle" };
   const totalTogetherSeconds = useTogetherDuration(together);
   const playbackProgress = canSeek ? `${Math.max(0, Math.min(100, displayedTime / Math.max(state.duration, 1) * 100))}%` : "0%";
-  const roomStyle = { "--music-tint": "99, 99, 96", "--music-on-tint": "17, 17, 17", "--playback-progress": playbackProgress } as CSSProperties;
+  const roomStyle = {
+    "--music-tint": "99, 99, 96", "--music-on-tint": "17, 17, 17", "--playback-progress": playbackProgress,
+    "--album-background": track?.cover ? `url(${JSON.stringify(track.cover)})` : "none",
+  } as CSSProperties;
 
   useEffect(() => {
     const openQueue = () => setQueueOpen(true);

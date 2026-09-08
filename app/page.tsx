@@ -3669,6 +3669,8 @@ function CodexChatMessage({
   onSaveAttachmentAsSticker?: (attachment: ChatAttachment, item: BridgeChatMessage) => void;
 }) {
   if (item.metadata?.execution) return <ExecutionCard execution={item.metadata.execution} live={turnInProgress} />;
+  const attachmentOnly = item.role === "agent" && item.id.startsWith("files:") &&
+    !!item.metadata?.attachments?.length && (!item.content?.trim() || item.content.trim() === "文件");
   const assistant = item.role === "agent";
   const timestamp = visibleMessageTimestamp(item.createdAt);
   const stamp = Number.isFinite(timestamp)
@@ -3690,13 +3692,13 @@ function CodexChatMessage({
           <div className="turn-status" aria-live="polite"><i aria-hidden="true" /> <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{statusLabel}</time>{statusText && <span className="turn-progress">{statusText}</span>}</div>
         )
       )}
-      <div className={assistant ? "message assistant" : "message mine sent-message"}>
+      {!attachmentOnly && <div className={assistant ? "message assistant" : "message mine sent-message"}>
         {sticker ? <div className="sticker-bubble"><StickerImage sticker={sticker} /></div> : <div className={assistant ? "assistant-message-content" : undefined}>
           {item.content && <p>{item.content}</p>}
           {item.metadata?.musicCard && <MusicMessageCard card={item.metadata.musicCard} onPlay={onPlayMusic} onQueue={onQueueMusic} onOpen={onOpenMusic} onAddToPlaylist={onAddMusicToPlaylist} />}
         </div>}
-      </div>
-      {item.status !== "streaming" && !(assistant && turnInProgress) && <div className="message-actions">
+      </div>}
+      {!attachmentOnly && item.status !== "streaming" && !(assistant && turnInProgress) && <div className="message-actions">
         {!assistant && <time dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined}>{stamp}</time>}
         <button className="message-action" aria-label="复制" title="复制" onClick={() => onCopy(item)}><Icon name="copy" /></button>
         <button className={`message-action${favorite ? " active" : ""}`} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"} onClick={() => onFavorite(item)}><Icon name="bookmark" /></button>

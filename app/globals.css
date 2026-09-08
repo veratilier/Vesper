@@ -5015,3 +5015,6 @@ body {
 .file-preview-dialog iframe { background: white; }
 .file-preview-dialog footer { flex: none; text-align: right; }
 .app-shell .message-attachments:has(.vesper-file-card) { min-width: 0; max-width: calc(100% - 16px); grid-template-columns: minmax(0, 1fr); }
+
+.file-download-status { margin: 4px 0; font-size: 12px; color: var(--ui-muted); overflow-wrap: anywhere; }
+.file-download-status button { margin-left: 8px; }

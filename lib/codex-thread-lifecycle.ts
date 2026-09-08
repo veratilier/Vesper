@@ -19,3 +19,13 @@ export function createConnectionQueue() {
     return result;
   };
 }
+
+// Resume only protocol-supported fields. A successful resume is not a tool
+// registry refresh; failure must not silently retry with stripped configuration.
+export function resumeCodexThread<T>(
+  rpc: (method: string, params: Record<string, unknown>) => Promise<T>,
+  threadId: string,
+  developerInstructions: string,
+): Promise<T> {
+  return rpc("thread/resume", { threadId, developerInstructions });
+}

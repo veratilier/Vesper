@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {syncCodexThread,createConnectionQueue} from '../lib/codex-thread-lifecycle.ts';
+import {syncCodexThread,createConnectionQueue,resumeCodexThread} from '../lib/codex-thread-lifecycle.ts';
 const calls=[];
 let hasThread=false;
 const start=async()=>{calls.push('start');hasThread=true;};
@@ -29,3 +29,13 @@ await assert.rejects(queue(async()=>{throw Error('offline');}));
 await queue(async()=>{order.push('retry');});
 assert.equal(order.at(-1),'retry');
 console.log('Lazy first-turn creation, preserved existing threads and serialized connection/retry passed');
+
+const resumeCalls=[];
+const snapshot={result:{thread:{id:'existing',turns:[]}}};
+const rpc=async(method,params)=>{resumeCalls.push({method,params});return snapshot;};
+assert.equal(await resumeCodexThread(rpc,'existing','context'),snapshot);
+assert.deepEqual(resumeCalls,[{method:'thread/resume',params:{threadId:'existing',developerInstructions:'context'}}]);
+let attempts=0;
+await assert.rejects(resumeCodexThread(async()=>{attempts++;throw Error('invalid params');},'existing','context'),/invalid params/);
+assert.equal(attempts,1,'Failed resume must not retry without configuration and imply tools were refreshed');
+console.log('Resume preserves configuration, does not send unsupported dynamicTools, and never silently downgrades');

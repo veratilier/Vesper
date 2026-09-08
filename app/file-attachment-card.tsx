@@ -5,6 +5,7 @@ export function FileAttachmentCard({ file }: { file: FileItem }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const request = useRef<AbortController | null>(null);
   const downloadRequest = useRef<AbortController | null>(null);
+  const saving = useRef(false);
   const [prepared, setPrepared] = useState<File | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
@@ -38,13 +39,14 @@ export function FileAttachmentCard({ file }: { file: FileItem }) {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
   const download = async () => {
-    if (downloading) return;
+    if (saving.current) return;
+    saving.current = true;
     setDownloadError('');
-    // Already prepared: share runs directly in the click's user activation.
-    if (prepared) { await saveFile(prepared); return; }
     const controller = new AbortController(); downloadRequest.current = controller;
     setDownloading(true);
     try {
+      // Prepared files share during this click, without another asynchronous fetch.
+      if (prepared) { await saveFile(prepared); return; }
       const response = await fetch(file.url, { signal: controller.signal });
       if (!response.ok) throw Error('文件读取失败，请重试。');
       const bytes = await response.blob();
@@ -56,7 +58,7 @@ export function FileAttachmentCard({ file }: { file: FileItem }) {
       // instead of opening an external URL or silently losing the download.
     } catch (reason) {
       if (!controller.signal.aborted) setDownloadError(reason instanceof Error ? reason.message : '下载失败，请重试。');
-    } finally { if (!controller.signal.aborted) setDownloading(false); }
+    } finally { saving.current = false; if (!controller.signal.aborted) setDownloading(false); }
   };
   const downloadLabel = downloading ? '读取中…' : prepared ? '保存文件' : '下载';
   const open = async () => {
@@ -83,7 +85,7 @@ export function FileAttachmentCard({ file }: { file: FileItem }) {
     <dialog ref={dialog} className="file-preview-dialog" onCancel={event => { event.preventDefault(); close(); }}>
       <header><b title={file.name}>{file.name}</b><button type="button" onClick={close} aria-label="关闭文件预览">×</button></header>
       {loading ? <p role="status">正在读取文件…</p> : error ? <p role="alert">{error}</p> : html ? <iframe title={file.name} sandbox="" referrerPolicy="no-referrer" srcDoc={text} /> : <pre>{text}</pre>}
-      <footer><button type="button" onClick={() => void download()} disabled={downloading}>{downloadLabel}</button>{downloadError && <p role="alert">{downloadError}</p>}</footer>
+      <footer><button type="button" onClick={() => void download()} disabled={downloading}>{downloadLabel}</button>{downloadError && <p role="alert">{downloadError}{prepared && <button type="button" onClick={() => downloadBlob(prepared)}>直接下载</button>}</p>}</footer>
     </dialog>
   </>;
 }

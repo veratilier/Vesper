@@ -669,6 +669,17 @@ export default function Home() {
     () => false,
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [desktopNavigation, setDesktopNavigation] = useState(false);
+  useEffect(() => {
+    const viewport = window.matchMedia("(min-width: 1024px)");
+    const syncNavigation = () => {
+      setDesktopNavigation(viewport.matches);
+      setDrawerOpen(false);
+    };
+    syncNavigation();
+    viewport.addEventListener("change", syncNavigation);
+    return () => viewport.removeEventListener("change", syncNavigation);
+  }, []);
   const [active, setActiveSection] = useState("今日");
   const [visitedSections, setVisitedSections] = useState(["今日"]);
   const setActive = useCallback((section: string) => {
@@ -1438,7 +1449,7 @@ export default function Home() {
         </nav>
         <div
           className={drawerOpen ? "drawer-layer visible" : "drawer-layer"}
-          aria-hidden={!drawerOpen}
+          aria-hidden={!desktopNavigation && !drawerOpen}
         >
           <button
             className="scrim"

@@ -2,6 +2,38 @@
 .app-shell > .scroll-view[hidden] { display: none !important; }
 .mobile-navigation { display: none; }
 
+/* A single navigation tree: persistent on desktop, a drawer on narrow windows. */
+@media (min-width: 1024px) {
+  .stage > .app-shell {
+    --desktop-nav-width: 248px;
+    width: calc(100% - var(--desktop-nav-width));
+    margin-left: var(--desktop-nav-width);
+  }
+  .app-shell > .drawer-layer {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--desktop-nav-width);
+    visibility: visible;
+    pointer-events: auto;
+    transition: none;
+  }
+  .app-shell > .drawer-layer > .drawer {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    transform: none;
+    transition: none;
+    border-radius: 0;
+    border-right: 1px solid var(--ui-line);
+    box-shadow: none !important;
+  }
+  .app-shell > .drawer-layer > .scrim,
+  .app-shell .drawer-head > .icon-button { display: none; }
+  /* Preserve the centered header grid without leaving an actionable menu. */
+  .app-shell > .app-header > button[aria-label="打开目录"] { visibility: hidden; }
+}
+
 @media (max-width: 767px) {
   .app-shell { --mobile-nav-height: 58px; }
   .app-shell > .scroll-view {

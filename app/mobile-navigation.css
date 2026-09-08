@@ -46,7 +46,7 @@
     z-index: 4;
     inset: auto max(16px, env(safe-area-inset-right)) calc(var(--safe-bottom) + var(--mobile-nav-gap)) max(16px, env(safe-area-inset-left));
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     height: var(--mobile-nav-height);
     max-width: 420px;
     margin-inline: auto;

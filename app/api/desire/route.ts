@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const scope = await memoryScopeFromRequest(request);
     const connections = await configuredMcpTools(scope);
     const candidates = connections.flatMap(connection => connection.tools.filter(tool => /(?:^|_)desire_status$/.test(tool.name)).map(tool => ({ connection, tool })));
-    if (candidates.length !== 1) return respond({ error: candidates.length ? '发现多个 Desire 服务，请在 MCP 设置中只启用要使用的那个。' : '请先在设置 → 外部 MCP 中连接 Desire，并同步工具目录。' }, 409);
+    if (candidates.length !== 1) return respond({ error: candidates.length ? '发现多个 Desire 服务，请在本页「连接 MCP」中只启用要使用的那个。' : '请点本页「连接 MCP」，接入 Desire 后刷新状态。' }, 409);
     const { connection, tool } = candidates[0];
     const action = new URL(request.url).searchParams.get('view') || 'status';
     if (!['status', 'history'].includes(action)) return respond({ error: 'Unsupported view' }, 400);

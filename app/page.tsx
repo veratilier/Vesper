@@ -503,7 +503,7 @@ const nav = [
   { label: "音乐", english: "Music", icon: "music" },
   { label: "相册", english: "Photos", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
-  { label: "Pandora", english: "Pandora", icon: "library" },
+  { label: "Pandora", english: "Pandora", icon: "box" },
   { label: "欲望", english: "Desire", icon: "heart" },
   { label: "设置", english: "Settings", icon: "settings" },
 ];
@@ -950,6 +950,14 @@ export default function Home() {
     const oauthErrorDescription = query.get("error_description");
     const raw = window.sessionStorage.getItem("vesper-mcp-oauth-pending");
     if (!raw || (!code && !oauthError)) return;
+    const returnToDesire = () => {
+      if (window.sessionStorage.getItem("vesper-mcp-return") !== "desire") return;
+      window.sessionStorage.removeItem("vesper-mcp-return");
+      window.sessionStorage.setItem("vesper-desire-open-connection", "1");
+      setVisitedSections(sections => sections.includes("欲望") ? sections : [...sections, "欲望"]);
+      setActive("欲望");
+      window.dispatchEvent(new Event("vesper-desire-connect"));
+    };
     try {
       const pending = JSON.parse(raw) as {
         serverId: string;
@@ -973,6 +981,7 @@ export default function Home() {
         window.sessionStorage.setItem("vesper-mcp-oauth-result", `OAuth 授权未完成：${detail.slice(0, 180)}`);
         window.sessionStorage.removeItem("vesper-mcp-oauth-pending");
         window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        returnToDesire();
         return;
       }
       if (!code) throw new Error("OAuth 回调中缺少授权码");
@@ -1008,12 +1017,14 @@ export default function Home() {
         .finally(() => {
           window.sessionStorage.removeItem("vesper-mcp-oauth-pending");
           window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+          returnToDesire();
         });
     } catch (reason) {
       window.sessionStorage.setItem(
         "vesper-mcp-oauth-result",
         reason instanceof Error ? reason.message : "OAuth 授权失败",
       );
+      returnToDesire();
     }
   }, []);
   useEffect(() => {
@@ -1438,7 +1449,7 @@ export default function Home() {
           ) : section === "Pandora" ? (
             <AppCenter onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
           ) : section === "欲望" ? (
-            <DesirePanel apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} />
+            <DesirePanel apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} renderConnection={(onClose) => <ExternalMcpModal onClose={onClose} context="desire" />} />
           ) : section === "设置" ? (
             <SettingsPage
               onOpenSection={navigateTo}
@@ -5322,7 +5333,7 @@ type ExternalMcpEntry = {
   resource?: string;
 };
 
-function ExternalMcpModal({ onClose }: { onClose: () => void }) {
+function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?: "desire" }) {
   const [servers, setServers] = useLocalDocument<ExternalMcpEntry[]>("external-mcp-servers", []);
   const [message, setMessage] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -5331,7 +5342,10 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     return value;
   });
   const [testingId, setTestingId] = useState("");
-  const [editor, setEditor] = useState<ExternalMcpEntry | null>(null);
+  const [editor, setEditor] = useState<ExternalMcpEntry | null>(() => context === "desire" && !servers.some(server => /desire|欲望/i.test(server.name))
+    ? { id: crypto.randomUUID(), name: "Desire", url: "", token: "", enabled: true, authMode: "none" }
+    : null);
+  const [saving, setSaving] = useState(false);
   const [editorMessage, setEditorMessage] = useState("");
   const syncedConnections = useRef(new Set<string>());
   const configuredServers = servers.filter(
@@ -5348,7 +5362,7 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
   const add = () => {
     setEditor({
       id: crypto.randomUUID(),
-      name: "",
+      name: context === "desire" ? "Desire" : "",
       url: "",
       token: "",
       enabled: true,
@@ -5358,8 +5372,8 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
   };
   const updateEditor = (patch: Partial<ExternalMcpEntry>) =>
     setEditor((current) => (current ? { ...current, ...patch } : current));
-  const saveEditor = () => {
-    if (!editor) return;
+  const saveEditor = async () => {
+    if (!editor || saving) return;
     const next = {
       ...editor,
       name: editor.name.trim(),
@@ -5368,6 +5382,22 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     if (!next.name && !next.url) {
       setEditorMessage("请填写名称或 MCP 服务地址");
       return;
+    }
+    if (context === "desire" && (!next.url || !next.name)) {
+      setEditorMessage("请填写名称和 MCP 服务地址");
+      return;
+    }
+    if (context === "desire" && next.authMode !== "oauth") {
+      setSaving(true);
+      try {
+        await syncToCodex(next);
+        setMessage("连接已保存，返回 Desire 即可读取最新状态。");
+      } catch (reason) {
+        setEditorMessage(reason instanceof Error ? reason.message : "连接失败，请检查地址与凭据");
+        return;
+      } finally {
+        setSaving(false);
+      }
     }
     setServers((current) =>
       current.some((server) => server.id === next.id)
@@ -5443,6 +5473,7 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
         scopes: discovered.scopes,
         resource: discovered.resource,
       });
+      if (context === "desire") window.sessionStorage.setItem("vesper-mcp-return", "desire");
       const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
       const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
@@ -5488,7 +5519,7 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
     setMessage("");
     try {
       const result = await syncToCodex(server);
-      setMessage(`连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}；已同步给 Codex，新建对话后即可使用。`);
+      setMessage(context === "desire" ? "连接成功，工具已同步。返回 Desire 即可刷新状态。" : `连接成功${result.serverName ? ` · ${result.serverName}` : ""}${typeof result.toolCount === "number" ? ` · ${result.toolCount} 个工具` : ""}；已同步给 Codex，新建对话后即可使用。`);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "MCP 连接失败");
     } finally {
@@ -5513,17 +5544,17 @@ function ExternalMcpModal({ onClose }: { onClose: () => void }) {
             <button className={editor.enabled ? "mcp-enable on" : "mcp-enable"} onClick={() => updateEditor({ enabled: !editor.enabled })}><span>{editor.enabled ? "已启用" : "已停用"}</span><i><u /></i></button>
             {editorMessage && <p className="connection-message">{editorMessage}</p>}
           </div>
-          <div className="mcp-editor-actions"><button onClick={closeEditor}>取消</button><button className="save-profile" onClick={saveEditor}>保存</button></div>
+          <div className="mcp-editor-actions"><button disabled={saving} onClick={closeEditor}>取消</button><button className="save-profile" disabled={saving} onClick={() => void saveEditor()}>{saving ? "连接中…" : context === "desire" && editor.authMode !== "oauth" ? "保存并连接" : "保存"}</button></div>
         </section>
       ) : (
         <section className="connection-modal external-mcp-modal">
           <div className="modal-head">
             <button className="settings-back" onClick={onClose} aria-label="返回"><Icon name="chevron" /></button>
-            <div><small>TOOL CONNECTIONS</small><h2>MCP 工具</h2></div>
+            <div><small>TOOL CONNECTIONS</small><h2>{context === "desire" ? "Desire 连接" : "MCP 工具"}</h2></div>
             <button onClick={add} aria-label="添加 MCP"><Icon name="plus" /></button>
           </div>
           <div className="mcp-list-scroll">
-            <p className="mcp-list-intro">在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。</p>
+            <p className="mcp-list-intro">{context === "desire" ? "添加 Desire 的 MCP 地址并连接；OAuth 服务保存后点授权，再点测试同步。完成后返回即可查看状态。" : "在这里接入搜索、文件、记忆库或其他第三方 MCP。AI 连接中的 MCP 是对话运行端，这里则是提供给 AI 使用的工具目录。"}</p>
             <div className="mcp-server-list">
               {!configuredServers.length && <EmptyState text="还没有接入第三方 MCP。" />}
               {configuredServers.map((server) => (

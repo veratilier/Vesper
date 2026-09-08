@@ -1,28 +1,43 @@
 .app-center { max-width: 1000px; margin: auto; padding-bottom: 24px; }
-.room-grid,.desire-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
-.room-card,.room-wake,.room-link-form,.wake-session-card { border: 1px solid rgba(255,255,255,.85); border-radius: 24px; background: color-mix(in srgb,var(--ui-surface) 84%,transparent); padding: 22px; color: var(--ui-ink); }
+.room-grid,.desire-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.room-card,.room-wake,.room-link-form { border: 1px solid var(--ui-line); border-radius: 16px; background: color-mix(in srgb,var(--ui-surface) 84%,transparent); padding: 12px; color: var(--ui-ink); }
 .room-card { min-width: 0; }
 .room-card > small,.room-caption,.room-card p,.room-wake p { color: var(--ui-muted); }
-.room-card h2,.room-wake h2 { margin: 12px 0; font-size: 20px; }
-.room-card p,.room-wake p { font-size: 14px; line-height: 1.6; }
-.app-center button,.room-card a { display: inline-block; border: 1px solid var(--ui-line); border-radius: 14px; padding: 10px 14px; background: var(--ui-surface); color: var(--ui-ink); font: inherit; cursor: pointer; text-decoration: none; }
-.room-card button { margin-top: 12px; }
+.room-card h2,.room-wake h2 { margin: 6px 0; font-size: var(--text-body, .875rem); }
+.room-card p,.room-wake p { margin: 4px 0; font-size: var(--text-caption, .75rem); line-height: 1.45; }
+.app-center button,.room-card a { display: inline-block; border: 1px solid var(--ui-line); border-radius: 10px; padding: 7px 10px; background: var(--ui-surface); color: var(--ui-ink); font: inherit; font-size: var(--text-body, .875rem); line-height: 1.4; cursor: pointer; text-decoration: none; }
+.room-card button { margin-top: 6px; }
 .room-card a { margin-right: 8px; }
-.room-unconnected { display: block; font-size: 13px; color: var(--ui-muted); }
+.room-unconnected { display: block; font-size: var(--text-caption, .75rem); color: var(--ui-muted); }
 .room-wake { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .room-wake > button { flex-shrink: 0; background: var(--ui-inverse); color: var(--ui-on-inverse); }
 .room-caption { font-size: 12px; line-height: 1.6; }
 .room-link-form { margin-top: 20px; }
 .room-link-form input { width: 100%; margin-block: 10px; padding: 12px; border: 1px solid var(--ui-line); border-radius: 12px; }
 .room-link-form button + button { margin-left: 10px; }
-.desire-grid { margin-top: 20px; grid-template-columns: repeat(3,minmax(0,1fr)); }
-.desire-value { display: block; font-size: 32px; margin-top: 12px; }
+.desire-grid { margin-top: 12px; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.desire-value { display: block; font-size: 22px; line-height: 1.2; margin-top: 6px; }
 .desire-history { display: grid; gap: 12px; margin-top: 16px; }
-.wake-session-card { margin: 14px 0; padding: 16px 20px; background: color-mix(in srgb,var(--ui-surface-muted) 80%,transparent); }
+.wake-session-card { border: 1px solid rgba(255,255,255,.85); border-radius: 24px; color: var(--ui-ink); margin: 14px 0; padding: 16px 20px; background: color-mix(in srgb,var(--ui-surface-muted) 80%,transparent); }
 .wake-session-card header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wake-session-card small { color: var(--ui-muted); }
 .wake-session-card p,.wake-session-card summary { font-size: 13px; line-height: 1.6; }
 .wake-session-card ul { padding-left: 18px; }
 .wake-session-card li { overflow-wrap: anywhere; font-size: 12px; margin-top: 8px; }
 .wake-session-card li small { margin-left: 10px; }
-@media(max-width:480px) { .room-grid { gap: 12px; } .room-card { padding: 16px; } .desire-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+/* Use the same type roles as settings and chat, including inherited button text. */
+.app-shell .app-center { font-size: var(--text-body, .875rem); }
+.app-shell .app-center .page-intro { margin-bottom: 18px; padding-bottom: 0; }
+.app-shell .app-center .page-intro h1 { font-size: 1.25rem !important; margin-block: 6px 8px; }
+.app-shell .app-center .page-intro p { margin-bottom: 0; font-size: var(--text-caption, .75rem) !important; }
+.room-grid .room-card { display: flex; flex-direction: column; align-items: flex-start; }
+.room-grid .room-card > small { font-size: var(--text-caption, .75rem); }
+.room-grid .room-card > button { margin-top: auto; }
+.room-grid .room-card > p { margin-bottom: 6px; }
+.room-grid .room-unconnected { margin-bottom: 8px; }
+.desire-grid .room-card { padding: 10px 12px; }
+.desire-grid .room-card > span { font-size: var(--text-caption, .75rem); }
+.desire-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.desire-toolbar small { color: var(--ui-muted); font-size: var(--text-caption, .75rem); }
+.desire-error { font-size: var(--text-caption, .75rem); line-height: 1.5; overflow-wrap: anywhere; }
+@media(max-width:340px) { .desire-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }

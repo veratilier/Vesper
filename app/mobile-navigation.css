@@ -5,14 +5,14 @@
 /* A single navigation tree: persistent on desktop, a drawer on narrow windows. */
 @media (min-width: 1024px) {
   .stage > .app-shell {
-    --desktop-nav-width: 248px;
+    --desktop-nav-width: 272px;
     width: calc(100% - var(--desktop-nav-width));
     margin-left: var(--desktop-nav-width);
   }
   .app-shell > .drawer-layer {
     position: fixed;
-    inset: 0 auto 0 0;
-    width: var(--desktop-nav-width);
+    inset: 12px auto 12px 12px;
+    width: calc(var(--desktop-nav-width) - 24px);
     visibility: visible;
     pointer-events: auto;
     transition: none;
@@ -24,9 +24,9 @@
     height: 100%;
     transform: none;
     transition: none;
-    border-radius: 0;
-    border-right: 1px solid var(--ui-line);
-    box-shadow: none !important;
+    border: 1px solid var(--ui-line);
+    border-radius: 26px;
+    box-shadow: 0 12px 32px rgba(37, 57, 79, .12), 0 2px 8px rgba(37, 57, 79, .05) !important;
   }
   .app-shell > .drawer-layer > .scrim,
   .app-shell .drawer-head > .icon-button { display: none; }

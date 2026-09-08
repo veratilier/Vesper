@@ -44,3 +44,27 @@
 @media (max-width: 767px) {
   .app-shell .codex-chat .chat-compose { margin-inline: 12px; margin-bottom: 6px; }
 }
+
+/* Activity annotations sit one type step below the conversation itself. */
+.app-shell {
+  --text-chat-meta: calc(var(--text-chat) - .125rem);
+  --chat-meta-ink: color-mix(in srgb, var(--ui-muted) 88%, var(--ui-surface));
+}
+.app-shell .codex-chat :is(.wake-session-note, .turn-status, .chat-activity-inline),
+.app-shell .codex-chat :is(.wake-session-note, .turn-status) :is(b, small, p, span, time, summary, li),
+.app-shell .codex-chat .chat-activity-inline > summary,
+.app-shell .codex-chat .chat-activity-inline > summary :is(time, span),
+.app-shell .codex-chat .chat-activity-inline > section > :is(h3, p) {
+  font-size: var(--text-chat-meta) !important;
+  line-height: 1.5;
+  color: var(--chat-meta-ink) !important;
+  font-weight: 400;
+}
+.app-shell .codex-chat .execution-heading :is(button, b, small),
+.app-shell .codex-chat .execution-card > .execution-body :is(p, span, small, button, pre, code) {
+  font-size: var(--text-chat-meta) !important;
+}
+/* The terminal has its own dark surface; keep its annotations readable there. */
+.app-shell .codex-chat .execution-heading :is(button, b),
+.app-shell .codex-chat .execution-meta,
+.app-shell .codex-chat .execution-notice { color: #aeb5be; }

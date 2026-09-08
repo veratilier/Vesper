@@ -1439,11 +1439,11 @@ export default function Home() {
         </div>
         ))}
         <nav className="mobile-navigation" aria-label="常用导航">
-          {nav.filter(({ label }) => ["今日", "聊天", "音乐"].includes(label)).map(({ label, icon }) => (
+          {nav.filter(({ label }) => ["今日", "聊天", "音乐", "设置"].includes(label)).map(({ label, english, icon }) => (
             <button key={label} type="button" aria-current={active === label ? "page" : undefined}
               onClick={() => navigateTo(label)}>
               <NavIcon name={icon} />
-              <span>{label === "今日" ? "Home" : label === "聊天" ? "Chat" : "Music"}</span>
+              <span>{label === "今日" ? "Home" : label === "设置" ? "Setting" : english}</span>
             </button>
           ))}
         </nav>

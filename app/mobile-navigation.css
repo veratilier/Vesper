@@ -26,7 +26,7 @@
     transition: none;
     border: 1px solid var(--ui-line);
     border-radius: 26px;
-    box-shadow: 0 12px 32px rgba(37, 57, 79, .12), 0 2px 8px rgba(37, 57, 79, .05) !important;
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--ui-ink) 12%, transparent), 0 2px 8px color-mix(in srgb, var(--ui-ink) 5%, transparent) !important;
   }
   .app-shell > .drawer-layer > .scrim,
   .app-shell .drawer-head > .icon-button { display: none; }
@@ -55,7 +55,7 @@
     border: 1px solid var(--ui-line);
     border-radius: 999px;
     background: var(--ui-canvas);
-    box-shadow: 0 8px 24px rgba(37, 57, 79, .12), inset 0 1px 1px rgba(255, 255, 255, .8);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ui-ink) 12%, transparent), inset 0 1px 1px color-mix(in srgb, var(--ui-canvas) 80%, transparent);
     color: var(--ui-muted);
   }
   @supports ((backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px))) {

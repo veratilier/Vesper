@@ -501,7 +501,7 @@ const nav = [
   { label: "提醒", english: "Reminders", icon: "check" },
   { label: "纪念日", english: "Dates", icon: "calendar" },
   { label: "音乐", english: "Music", icon: "music" },
-  { label: "相册", english: "Photos", icon: "image" },
+  { label: "相册", english: "Album", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
   { label: "Pandora", english: "Pandora", icon: "box" },
   { label: "欲望", english: "Desire", icon: "heart" },

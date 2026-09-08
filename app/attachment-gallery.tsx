@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 export type GalleryAttachment = { key: string; url: string; name: string; type: string; size: number };
-export function AttachmentGallery({ items, onSaveAsSticker }: { items: GalleryAttachment[]; onSaveAsSticker?: (item: GalleryAttachment) => void }) {
+export function AttachmentGallery({ items, onSaveAsSticker, renderDetail }: { renderDetail?: (item: GalleryAttachment) => ReactNode; items: GalleryAttachment[]; onSaveAsSticker?: (item: GalleryAttachment) => void }) {
   const [index, setIndex] = useState(0);
   const [retry, setRetry] = useState(0);
   const [retriedUrls, setRetriedUrls] = useState<Record<string, string>>({});
@@ -44,11 +44,12 @@ export function AttachmentGallery({ items, onSaveAsSticker }: { items: GalleryAt
     </div>
     {failed[item.url] && <button type="button" onClick={retryImage}>图片加载失败，请打开原图或重试</button>}
     {items.length > 1 && <div className="gallery-controls"><button type="button" aria-label="上一张" onClick={() => move(-1)}>‹</button><button type="button" onClick={() => dialog.current?.showModal()} aria-label="打开整组图片">{active + 1} / {items.length}</button><button type="button" aria-label="下一张" onClick={() => move(1)}>›</button></div>}
-    <dialog className="gallery-dialog" ref={dialog} onClick={e => { if (e.target === e.currentTarget) e.currentTarget.close(); }}>
+    <dialog className={`gallery-dialog${renderDetail ? " album-viewer" : ""}`} ref={dialog} onClick={e => { if (e.target === e.currentTarget) e.currentTarget.close(); }}>
       <header><span>{active + 1} / {items.length}</span><a href={item.url} download={item.name} target="_blank" rel="noreferrer">打开原图</a><button autoFocus type="button" aria-label="关闭图片" onClick={() => dialog.current?.close()}>×</button></header>
       {onSaveAsSticker && <button className="save-as-sticker" type="button" onClick={() => onSaveAsSticker(item)}>保存为表情包</button>}
       <img key={`${item.key}:${retry}`} className="gallery-full-image" src={retriedUrls[item.url] || item.url} alt={item.name} onLoad={imageLoaded} onError={imageFailed} />
       {failed[item.url] && <button type="button" onClick={retryImage}>重新加载原图</button>}
+      {renderDetail && <div className="album-photo-detail">{renderDetail(item)}</div>}
       <nav aria-label="整组图片">{items.map((image, i) => <button type="button" key={image.key} aria-label={`图片 ${i + 1}`} aria-current={active === i ? 'true' : undefined} onClick={() => setIndex(i)}><img src={image.url} alt={image.name} loading="lazy" /></button>)}</nav>
     </dialog>
   </div>;

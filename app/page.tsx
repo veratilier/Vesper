@@ -4734,7 +4734,11 @@ function ConnectedChat({
     const lineHeight = parseFloat(styles.lineHeight) || 20;
     const maxHeight = Math.ceil(lineHeight * 4 + (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0));
     const nextHeight = Math.min(node.scrollHeight, maxHeight);
-    node.style.height = `${Math.max(24, nextHeight)}px`;
+    const fieldHeight = Math.max(24, nextHeight);
+    node.style.height = `${fieldHeight}px`;
+    if (node.parentElement?.classList.contains("compose-text-field")) {
+      node.parentElement.style.height = `${fieldHeight * 0.875}px`;
+    }
     node.style.overflowY = node.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [draft]);
   useLayoutEffect(() => {
@@ -4852,7 +4856,7 @@ function ConnectedChat({
       </button>}
       <div className="chat-compose">
         {pending.length > 0 && <div className="compose-previews">{pending.map((item, index) => <div className="compose-preview" key={`${item.file.name}-${index}`}>{item.file.type.startsWith("image/") ? <img src={item.preview} alt={item.file.name} /> : item.file.type.startsWith("video/") ? <video src={item.preview} muted /> : item.file.type.startsWith("audio/") ? <audio src={item.preview} controls /> : <span><Icon name="archive" />{item.file.name}</span>}<button aria-label="Remove attachment" onClick={() => setPending((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button></div>)}</div>}
-        <textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} />
+        <div className="compose-text-field"><textarea ref={textareaRef} placeholder="Write to Codex…" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /></div>
         <div className="compose-actions"><details className="compose-add-menu"><summary aria-label="添加附件或表情包"><Icon name="plus" /></summary><div className="compose-add-options"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); fileInput.current?.click(); }}><Icon name="file-code" />Files</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setStickerPickerOpen(true); }}><Icon name="sticker" />Stickers</button></div></details><input ref={fileInput} hidden multiple type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.json,.html,.csv,.zip" onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} />
           <span className="composer-status"><i className={online ? "online" : ""} role="img" aria-label={online ? "已连接" : "未连接"} title={online ? "已连接" : "未连接"} /><button className="codex-model-trigger" type="button" aria-label="选择模型与使用强度" aria-haspopup="dialog" disabled={busy || !online} onClick={() => { setModelPickerOpen(true); void refreshModels(); }}><span>{busy ? "回复中…" : listening ? "Listening…" : displayedModelName}</span><small>{nextModel ? "下次 · " : ""}{effortLabel(displayedModel?.effort ?? null)}⌄</small></button></span>
           {busy && <button aria-label="Cancel active response" onClick={() => void cancelActiveTurn()}><Icon name="close" /></button>}<button className={listening ? "active" : ""} aria-label="Voice input" onClick={startStt}><Icon name="mic" /></button><button className="send-message-button" aria-label="Send message" disabled={busy || (!draft.trim() && !pending.length)} onClick={() => void send()}><Icon name="arrow-up" /></button></div>
@@ -5201,39 +5205,39 @@ function SettingsPage({
   return (
     <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
       {category ? <header className="page-intro">
-        <button className="settings-category-back" onClick={() => setCategory(null)} aria-label="返回设置分类"><Icon name="chevron" />设置</button>
+        <button className="settings-category-back" onClick={() => setCategory(null)} aria-label="Back to Settings"><Icon name="chevron" />Settings</button>
         <h1>{category}</h1>
       </header> : <PageIntro
         eyebrow="PREFERENCES"
-        title="设置"
-        text="让 Vesper 以你感到舒服的方式陪伴。"
+        title="Settings"
+        text="Make Vesper feel like you."
       />}
       {!category ? <div className="settings-category-list">
         {[
-          ["sparkles", "模型与声音", "Codex 连接、声音与自主唤醒"],
-          ["heart", "陪伴与纪念", "纪念日、倒计时与关心频率"],
-          ["link", "工具与通知", "MCP 连接、消息通知与定位"],
-          ["settings", "外观", "主题配色与背景"],
-          ["archive", "记忆与数据", "记忆权限、导出与备份"],
-        ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => title === "外观" ? setSelected("Appearance") : setCategory(title)} /></div>)}
+          ["sparkles", "Agent", "Model connection, voice and wake-ups"],
+          ["heart", "Souvenir", "Anniversaries, countdowns and check-ins"],
+          ["link", "Tools", "MCP connections, notifications and location"],
+          ["settings", "Appearance", "Theme colors and background"],
+          ["archive", "Data", "Memory permissions, export and backup"],
+        ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => title === "Appearance" ? setSelected("Appearance") : setCategory(title)} /></div>)}
       </div> : <SettingsGroup title={category}>
-        {category === "模型与声音" && <>
+        {category === "Agent" && <>
           <SettingRow icon="sparkles" title="Codex Server" sub="模型服务与连接" onClick={() => setSelected("Codex Server")} />
           <SettingRow icon="volume" title="Agent 声音（TTS）" sub="声音服务与音色" onClick={() => setSelected("Agent 声音")} />
           <SettingRow icon="sparkles" title="自主唤醒" sub={preferences.careFrequency === "off" ? "当前已关闭" : "查看运行状态与下一次机会"} status={preferences.careFrequency !== "off"} onClick={() => setSelected("自主唤醒")} />
         </>}
-        {category === "陪伴与纪念" && <>
+        {category === "Souvenir" && <>
           <SettingRow icon="calendar" title="纪念日与倒计时" sub="认识的日子，以及期待的日子" onClick={() => onOpenSection("纪念日")} />
           <SettingRow icon="heart" title="关心频率" sub={careLabel} onClick={() => setSelected("关心频率")} />
         </>}
-        {category === "工具与通知" && <>
+        {category === "Tools" && <>
           <SettingRow icon="link" title="MCP Servers" sub="连接外部工具与服务" onClick={() => setSelected("MCP 工具")} />
           <SettingRow icon="link" title="Vesper MCP" sub="让外部 AI 连接日记、便笺与记忆" onClick={() => setSelected("Vesper MCP")} />
           <SettingRow icon="wifi" title="Web Push" sub={notificationLabel} status={notificationPermission === "granted"} onClick={() => setSelected("Web Push")} />
           <SettingRow icon="bell" title="通知偏好" sub={`${preferences.reminders ? "提醒 " : ""}${preferences.anniversaries ? "纪念日 " : ""}${preferences.agentNotes ? "Agent 留言" : ""}`.trim() || "全部关闭"} onClick={() => setSelected("通知偏好")} />
           <SettingRow icon="location" title="定位与环境" sub={locationLabel} status={environment.permission === "granted"} onClick={() => setSelected("定位与环境")} />
         </>}
-        {category === "记忆与数据" && <>
+        {category === "Data" && <>
           <SettingRow icon="lock" title="记忆权限" sub="日记、便笺与聊天可分别控制" onClick={() => setSelected("记忆权限")} />
           <SettingRow icon="archive" title="导出与备份" sub={preferences.lastExportAt ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}` : "本地优先保存 · 应用更新不清除数据"} onClick={() => setSelected("导出与备份")} />
         </>}

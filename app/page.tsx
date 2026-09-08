@@ -1803,13 +1803,15 @@ function useAutonomousWake(onWake: () => void) {
   useEffect(() => {
     if (preferences.careFrequency === "off") return;
     const key = "vesper-wake-runtime-v1";
+    let lastCheck = Date.now();
     const check = () => {
-      if (document.visibilityState !== "visible") return;
       const now = Date.now();
+      const elapsedHours = Math.min(60_000, Math.max(0, now - lastCheck)) / 3_600_000;
+      lastCheck = now;
+      if (document.visibilityState !== "visible") return;
       const hour = new Date(now).getHours();
       if (hour >= 23 || hour < 8) return;
       const state = readLocalValue(key, { checkedAt: now, cumulative: 0, threshold: wakeThreshold(), lastWakeAt: 0, generation: 0 });
-      const elapsedHours = Math.min(6, Math.max(0, now - state.checkedAt) / 3_600_000);
       const rate = preferences.careFrequency === "daily" ? 1 / 14 : 1 / 72;
       const cumulative = state.cumulative + elapsedHours * rate;
       const minimumGap = preferences.careFrequency === "daily" ? 8 : 36;
@@ -1822,8 +1824,9 @@ function useAutonomousWake(onWake: () => void) {
     };
     const timer = window.setInterval(check, 60_000);
     check();
-    document.addEventListener("visibilitychange", check);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", check); };
+    const onVisibility = () => { lastCheck = Date.now(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisibility); };
   }, [preferences.careFrequency]);
 }
 

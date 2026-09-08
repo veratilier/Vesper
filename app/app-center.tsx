@@ -41,5 +41,5 @@ function DesireHistory({ value }: { value: unknown }) {
   const object = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const rows = Array.isArray(value) ? value : [object.events, object.history, object.encounters, object.items].find(Array.isArray);
   if (!rows) return <p>暂时无法识别历史记录格式，原始记录未作修改。</p>;
-  return <div className="desire-history">{rows.length ? rows.map((row, index) => { const item = row as Record<string, unknown>; return <article className="room-card" key={String(item.id || item.encounterId || index)}><p>{typeof item.note === 'string' ? item.note : item.kind === 'absence' ? '一次静候' : '本次未附小记'}</p><small>{String(item.event_at || item.createdAt || item.created_at || '')}</small></article>; }) : <p>还没有记录。</p>}</div>;
+  return <div className="desire-history">{rows.length ? rows.map((row, index) => { const item = row && typeof row === "object" ? row as Record<string, unknown> : {}; return <article className="room-card" key={String(item.id || item.encounterId || index)}><p>{typeof item.note === 'string' ? item.note : item.kind === 'absence' ? '一次静候' : '本次未附小记'}</p><small>{String(item.event_at || item.createdAt || item.created_at || '')}</small></article>; }) : <p>还没有记录。</p>}</div>;
 }

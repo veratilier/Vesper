@@ -503,7 +503,7 @@ const nav = [
   { label: "音乐", english: "Music", icon: "music" },
   { label: "相册", english: "Photos", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
-  { label: "应用中心", english: "Apps", icon: "library" },
+  { label: "Pandora", english: "Pandora", icon: "library" },
   { label: "欲望", english: "Desire", icon: "heart" },
   { label: "设置", english: "Settings", icon: "settings" },
 ];
@@ -1435,14 +1435,14 @@ export default function Home() {
             <PhotoAlbum apiUrl={apiUrl} headers={appHeaders} active={active === "相册"} />
           ) : section === "记忆库" ? (
             <MemoryLibrary />
-          ) : section === "应用中心" ? (
+          ) : section === "Pandora" ? (
             <AppCenter onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
           ) : section === "欲望" ? (
             <DesirePanel apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} />
           ) : section === "设置" ? (
             <SettingsPage
+              onOpenSection={navigateTo}
               accent={accent}
-              background={customBackground}
               onAccent={(value) => setAccent(normalizeNeutralAccent(value))}
               onBackground={(value) => setCustomBackground(normalizeAppBackground(value))}
               environment={environment}
@@ -5131,20 +5131,21 @@ function Todos() {
 }
 
 function SettingsPage({
+  onOpenSection,
   accent,
-  background,
   onAccent,
   onBackground,
   environment,
   onEnvironment,
 }: {
+  onOpenSection: (section: string) => void;
   accent: string;
-  background: string;
   onAccent: (value: string) => void;
   onBackground: (value: string) => void;
   environment: EnvironmentSnapshot;
   onEnvironment: (value: EnvironmentSnapshot) => void;
 }) {
+  const [category, setCategory] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detailClosing, setDetailClosing] = useState(false);
   const [preferences, setPreferences] =
@@ -5185,100 +5186,41 @@ function SettingsPage({
   };
   return (
     <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
-      <PageIntro
-        eyebrow="PREFERENCES"
-        title="设置"
-        text="让 Vesper 以你感到舒服的方式陪伴。"
-      />
-      <SettingsGroup title="CODEx RUNTIME">
-        <SettingRow
-          icon="sparkles"
-          title="Codex Server"
-          sub="One private app-server on your VPS"
-          onClick={() => setSelected("Codex Server")}
-        />
-        <SettingRow
-          icon="link"
-          title="MCP Servers"
-          sub="Add servers with OAuth or no authorization"
-          onClick={() => setSelected("MCP 工具")}
-        />
-        <SettingRow
-          icon="link"
-          title="Vesper MCP"
-          sub="让外部 AI 连接 Vesper 的日记、便笺与记忆"
-          onClick={() => setSelected("Vesper MCP")}
-        />
-        <SettingRow
-          icon="volume"
-          title="Agent 声音（TTS）"
-          sub="尚未连接声音服务"
-          onClick={() => setSelected("Agent 声音")}
-        />
-        <SettingRow
-          icon="wifi"
-          title="Web Push"
-          sub={notificationLabel}
-          status={notificationPermission === "granted"}
-          onClick={() => setSelected("Web Push")}
-        />
-        <SettingRow
-          icon="location"
-          title="定位与环境"
-          sub={locationLabel}
-          status={environment.permission === "granted"}
-          onClick={() => setSelected("定位与环境")}
-        />
-      </SettingsGroup>
-      <SettingsGroup title="体验">
-        <SettingRow
-          icon="settings"
-          title="外观 Appearance"
-          sub={background ? "自定义主题与背景" : "冰灰主题 · 大理石背景"}
-          onClick={() => setSelected("Appearance")}
-        />
-        <SettingRow
-          icon="bell"
-          title="通知偏好"
-          sub={
-            `${preferences.reminders ? "提醒 " : ""}${preferences.anniversaries ? "纪念日 " : ""}${preferences.agentNotes ? "Agent 留言" : ""}`.trim() ||
-            "全部关闭"
-          }
-          onClick={() => setSelected("通知偏好")}
-        />
-        <SettingRow
-          icon="heart"
-          title="关心频率"
-          sub={careLabel}
-          onClick={() => setSelected("关心频率")}
-        />
-        <SettingRow
-          icon="sparkles"
-          title="自主唤醒"
-          sub={preferences.careFrequency === "off" ? "当前已关闭" : "查看运行状态与下一次机会"}
-          status={preferences.careFrequency !== "off"}
-          onClick={() => setSelected("自主唤醒")}
-        />
-      </SettingsGroup>
-      <SettingsGroup title="隐私与数据">
-        <SettingRow
-          icon="lock"
-          title="记忆权限"
-          sub="日记、便笺与聊天可分别控制"
-          onClick={() => setSelected("记忆权限")}
-        />
-        <SettingRow
-          icon="archive"
-          title="导出与备份"
-          sub={
-            preferences.lastExportAt
-              ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}`
-              : "本地优先保存 · 应用更新不清除数据"
-          }
-          onClick={() => setSelected("导出与备份")}
-        />
-      </SettingsGroup>
-      <p className="settings-foot">VESPER 0.5 · CODEX APP-SERVER</p>
+      <div className="settings-overview-head">
+        {category && <button className="settings-category-back" onClick={() => setCategory(null)} aria-label="返回设置分类"><Icon name="chevron" />Setting</button>}
+        <h1>{category || "Setting"}</h1>
+        {!category && <p>把每一处，都调成喜欢的样子。</p>}
+      </div>
+      {!category ? <div className="settings-category-list">
+        {[
+          ["Rowan", "模型连接、声音与自主唤醒"],
+          ["Us", "纪念日与关心偏好"],
+          ["Tools", "MCP、通知与定位"],
+          ["Appearance", "主题、背景与外观"],
+          ["Data", "记忆权限、导出与备份"],
+        ].map(([title, description]) => <button className="settings-category-card" key={title} onClick={() => title === "Appearance" ? setSelected("Appearance") : setCategory(title)}><span><b>{title}</b><small>{description}</small></span><Icon name="chevron" /></button>)}
+      </div> : <SettingsGroup title={category}>
+        {category === "Rowan" && <>
+          <SettingRow icon="sparkles" title="Codex Server" sub="模型服务与连接" onClick={() => setSelected("Codex Server")} />
+          <SettingRow icon="volume" title="Agent 声音（TTS）" sub="声音服务与音色" onClick={() => setSelected("Agent 声音")} />
+          <SettingRow icon="sparkles" title="自主唤醒" sub={preferences.careFrequency === "off" ? "当前已关闭" : "查看运行状态与下一次机会"} status={preferences.careFrequency !== "off"} onClick={() => setSelected("自主唤醒")} />
+        </>}
+        {category === "Us" && <>
+          <SettingRow icon="calendar" title="纪念日与倒计时" sub="认识的日子，以及期待的日子" onClick={() => onOpenSection("纪念日")} />
+          <SettingRow icon="heart" title="关心频率" sub={careLabel} onClick={() => setSelected("关心频率")} />
+        </>}
+        {category === "Tools" && <>
+          <SettingRow icon="link" title="MCP Servers" sub="连接外部工具与服务" onClick={() => setSelected("MCP 工具")} />
+          <SettingRow icon="link" title="Vesper MCP" sub="让外部 AI 连接日记、便笺与记忆" onClick={() => setSelected("Vesper MCP")} />
+          <SettingRow icon="wifi" title="Web Push" sub={notificationLabel} status={notificationPermission === "granted"} onClick={() => setSelected("Web Push")} />
+          <SettingRow icon="bell" title="通知偏好" sub={`${preferences.reminders ? "提醒 " : ""}${preferences.anniversaries ? "纪念日 " : ""}${preferences.agentNotes ? "Agent 留言" : ""}`.trim() || "全部关闭"} onClick={() => setSelected("通知偏好")} />
+          <SettingRow icon="location" title="定位与环境" sub={locationLabel} status={environment.permission === "granted"} onClick={() => setSelected("定位与环境")} />
+        </>}
+        {category === "Data" && <>
+          <SettingRow icon="lock" title="记忆权限" sub="日记、便笺与聊天可分别控制" onClick={() => setSelected("记忆权限")} />
+          <SettingRow icon="archive" title="导出与备份" sub={preferences.lastExportAt ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}` : "本地优先保存 · 应用更新不清除数据"} onClick={() => setSelected("导出与备份")} />
+        </>}
+      </SettingsGroup>}
       {selected === "Appearance" ? (
         <AppearanceModal
           accent={accent}
@@ -5349,7 +5291,7 @@ function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferenc
           <div><small>上次触发</small><b>{runtime.lastWakeAt ? new Date(runtime.lastWakeAt).toLocaleString("zh-CN") : "尚未发生"}</b></div>
           <div><small>预计窗口</small><b>{estimatedHours === null ? "—" : estimatedHours < 1 ? "一小时内" : `约 ${Math.ceil(estimatedHours)} 小时`}</b></div>
         </div>
-        <p className="settings-hint">自动唤醒只在 Vesper 页面打开且可见、白天达到频率阈值时尝试连接聊天；正在回复时跳过。关闭页面后不会继续计时。应用中心也可以手动唤醒。</p>
+        <p className="settings-hint">自动唤醒只在 Vesper 页面打开且可见、白天达到频率阈值时尝试连接聊天；正在回复时跳过。关闭页面后不会继续计时。Pandora 也可以手动唤醒。</p>
         <button className="reset-background" onClick={() => setPreviewPulse((value) => value + 1)}>预览一次脉冲</button>
       </section>
     </div>

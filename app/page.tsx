@@ -1180,7 +1180,8 @@ export default function Home() {
   const shellStyle = {
     "--theme-accent": accent,
     backgroundColor: canvasColor,
-    backgroundImage: active === "音乐" ? "none" : isPhotoBackground ? customBackground : "none",
+    backgroundImage: isPhotoBackground ? customBackground : "none",
+    "--vesper-page-background": isPhotoBackground ? customBackground : "none",
   } as CSSProperties;
   const navigateTo = (label: string) => {
     setDrawerOpen(false);
@@ -6764,7 +6765,6 @@ function MusicPlayerUI({
   const playbackProgress = canSeek ? `${Math.max(0, Math.min(100, displayedTime / Math.max(state.duration, 1) * 100))}%` : "0%";
   const roomStyle = {
     "--music-tint": "99, 99, 96", "--music-on-tint": "17, 17, 17", "--playback-progress": playbackProgress,
-    "--album-background": track?.cover ? `url(${JSON.stringify(track.cover)})` : "none",
   } as CSSProperties;
 
   useEffect(() => {

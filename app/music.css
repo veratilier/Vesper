@@ -10,13 +10,14 @@
 .music-scroll-view { overflow: hidden; padding: 0 !important; background: #111617; }
 
 .listening-player {
+  /* Only the inner player and library content may scroll, including focus scroll. */
+  overflow: clip;
   position: relative;
   --music-tint: 110, 144, 148;
   --music-on-tint: 246, 249, 248;
   display: grid;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
   color: rgb(var(--music-on-tint));
   background:
     radial-gradient(circle at 50% 31%, rgba(var(--music-tint), .33), transparent 31%),

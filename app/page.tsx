@@ -491,7 +491,7 @@ function NavIcon({ name }: { name: string }) {
 }
 const nav = [
   { label: "今日", english: "Today", icon: "home" },
-  { label: "聊天", english: "Letters", icon: "chat" },
+  { label: "聊天", english: "Chat", icon: "chat" },
   { label: "日记", english: "Journal", icon: "diary" },
   { label: "便笺", english: "Notes", icon: "note" },
   { label: "提醒", english: "Reminders", icon: "check" },
@@ -1443,7 +1443,7 @@ export default function Home() {
             <button key={label} type="button" aria-current={active === label ? "page" : undefined}
               onClick={() => navigateTo(label)}>
               <NavIcon name={icon} />
-              <span>{label === "今日" ? "Home" : label === "设置" ? "Setting" : english}</span>
+              <span>{label === "今日" ? "Home" : label === "聊天" ? "Chat" : label === "设置" ? "Setting" : english}</span>
             </button>
           ))}
         </nav>

@@ -1,4 +1,7 @@
 "use client";
+import { AppCenter, DesirePanel } from "./app-center";
+import { WakeCard } from "./wake-card";
+import type { WakeRecord } from "./wake-summary";
 import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
 import { ChatActivity, type TurnActivity } from './chat-activity';
 import { ExecutionCard } from './execution-card';
@@ -500,6 +503,8 @@ const nav = [
   { label: "音乐", english: "Music", icon: "music" },
   { label: "相册", english: "Photos", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
+  { label: "应用中心", english: "Apps", icon: "library" },
+  { label: "欲望", english: "Desire", icon: "heart" },
   { label: "设置", english: "Settings", icon: "settings" },
 ];
 type NoteItem = {
@@ -911,7 +916,11 @@ export default function Home() {
     const timer = window.setInterval(publish, 10_000);
     return () => window.clearInterval(timer);
   }, [activeTracks.length, currentTrack?.id, playbackDuration, playing, setMusicPlayback]);
-  useAutonomousWake(agentName);
+  const [wakeRequest, setWakeRequest] = useState<string | null>(null);
+  useAutonomousWake(() => {
+    setVisitedSections(sections => sections.includes("聊天") ? sections : [...sections, "聊天"]);
+    setWakeRequest(current => current || `auto-${crypto.randomUUID()}`);
+  });
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.has("vesper-pwa")) {
@@ -1366,6 +1375,8 @@ export default function Home() {
             />
           ) : section === "聊天" ? (
               <ConnectedChat
+                wakeRequest={wakeRequest}
+                onWakeHandled={() => setWakeRequest(null)}
                 key={conversationId}
                 conversationId={conversationId}
                 onSelectConversation={setConversationId}
@@ -1424,6 +1435,10 @@ export default function Home() {
             <PhotoAlbum apiUrl={apiUrl} headers={appHeaders} active={active === "相册"} />
           ) : section === "记忆库" ? (
             <MemoryLibrary />
+          ) : section === "应用中心" ? (
+            <AppCenter onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
+          ) : section === "欲望" ? (
+            <DesirePanel apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} />
           ) : section === "设置" ? (
             <SettingsPage
               accent={accent}
@@ -1781,103 +1796,35 @@ async function sendAutonomousPush(
   return response.ok;
 }
 
-function useAutonomousWake(agentName: string) {
+function useAutonomousWake(onWake: () => void) {
   const [preferences] = usePersistentDocument<VesperPreferences>("settings", defaultPreferences);
-  const [, setNotes] = usePersistentDocument<NoteItem[]>("notes", []);
+  const callback = useRef(onWake);
+  callback.current = onWake;
   useEffect(() => {
     if (preferences.careFrequency === "off") return;
-    let running = false;
     const key = "vesper-wake-runtime-v1";
-    const check = async () => {
-      if (running || document.visibilityState !== "visible") return;
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
       const now = Date.now();
       const hour = new Date(now).getHours();
       if (hour >= 23 || hour < 8) return;
-      const state = readLocalValue(key, {
-        checkedAt: now,
-        cumulative: 0,
-        threshold: wakeThreshold(),
-        lastWakeAt: 0,
-        generation: 0,
-      });
+      const state = readLocalValue(key, { checkedAt: now, cumulative: 0, threshold: wakeThreshold(), lastWakeAt: 0, generation: 0 });
       const elapsedHours = Math.min(6, Math.max(0, now - state.checkedAt) / 3_600_000);
       const rate = preferences.careFrequency === "daily" ? 1 / 14 : 1 / 72;
       const cumulative = state.cumulative + elapsedHours * rate;
       const minimumGap = preferences.careFrequency === "daily" ? 8 : 36;
-      const gapHours = (now - state.lastWakeAt) / 3_600_000;
-      if (cumulative < state.threshold || gapHours < minimumGap) {
-        window.localStorage.setItem(key, JSON.stringify({ ...state, checkedAt: now, cumulative }));
+      if (cumulative < state.threshold || (now - state.lastWakeAt) / 3_600_000 < minimumGap) {
+        localStorage.setItem(key, JSON.stringify({ ...state, checkedAt: now, cumulative }));
         return;
       }
-      const generation = state.generation + 1;
-      window.localStorage.setItem(key, JSON.stringify({
-        checkedAt: now,
-        cumulative: 0,
-        threshold: wakeThreshold(),
-        lastWakeAt: now,
-        generation,
-      }));
-      running = true;
-      try {
-        const connections = readLocalValue<AiConnectionStore>("vesper-local-ai-connections-v1", {
-          active: "api", api: {}, mcp: {}, cyberboss: {},
-        });
-        if (connections.active === "cyberboss") return;
-        const configured = connections.active === "api"
-          ? Boolean(connections.api.baseUrl && connections.api.apiKey && connections.api.model)
-          : Boolean(connections.mcp.url);
-        if (!configured) return;
-        const response = await fetch("/api/ai", {
-          method: "POST",
-          headers: deviceHeaders(),
-          body: JSON.stringify({
-            mode: connections.active,
-            connection: connections[connections.active],
-            conversationId: "autonomous-wake",
-            messages: [{
-              role: "user",
-              content: "你是 Vesper。现在是一次自主关心机会。请结合当前时段，用一句自然、克制、不重复的中文留下关心，不要提系统、算法或提醒。",
-            }],
-          }),
-        });
-        const result = (await response.json()) as { content?: string };
-        const latest = readLocalValue<typeof state>(key, state);
-        if (!response.ok || !result.content || latest.generation !== generation) return;
-        const text = result.content.trim().slice(0, 240);
-        setNotes((items) => [{
-          id: crypto.randomUUID(),
-          text,
-          kind: "agent",
-          tone: "mist",
-          createdAt: new Date().toISOString(),
-        }, ...items]);
-        const delivered = await sendAutonomousPush(
-          "note",
-          agentName || "Vesper",
-          `给你留了一张便笺：${text}`,
-          "/?view=notes",
-        );
-        if (!delivered && Notification.permission === "granted") {
-          const registration = await navigator.serviceWorker?.ready;
-          await registration?.showNotification(agentName || "Vesper", {
-            body: `给你留了一张便笺：${text}`,
-            tag: `vesper-wake-${generation}`,
-            icon: "/icon-192-20260901-v1.png",
-          });
-        }
-      } finally {
-        running = false;
-      }
+      localStorage.setItem(key, JSON.stringify({ checkedAt: now, cumulative: 0, threshold: wakeThreshold(), lastWakeAt: now, generation: state.generation + 1 }));
+      callback.current();
     };
-    void check();
-    const timer = window.setInterval(() => void check(), 60_000);
-    const visible = () => void check();
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", visible);
-    };
-  }, [agentName, preferences.careFrequency, setNotes]);
+    const timer = window.setInterval(check, 60_000);
+    check();
+    document.addEventListener("visibilitychange", check);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", check); };
+  }, [preferences.careFrequency]);
 }
 
 function Today({
@@ -2637,6 +2584,7 @@ type BridgeChatMessage = {
   status: string;
   metadata?: {
     execution?: Execution;
+    wake?: WakeRecord;
     thoughtSummary?: string;
     durationMs?: number;
     tools?: string[];
@@ -3784,6 +3732,8 @@ function MusicMessageCard({
 }
 
 function ConnectedChat({
+  wakeRequest,
+  onWakeHandled,
   conversationId,
   onSelectConversation,
   agentName,
@@ -3798,6 +3748,8 @@ function ConnectedChat({
   onOpenMusic,
   onAddMusicToPlaylist,
 }: {
+  wakeRequest?: string | null;
+  onWakeHandled?: () => void;
   conversationId: string;
   onSelectConversation: (id: string) => void;
   agentName: string;
@@ -3813,6 +3765,8 @@ function ConnectedChat({
   onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const wakeConsumed = useRef(new Set<string>());
+  const sending = useRef(false);
   const [expandedActivities, setExpandedActivities] = useState<Record<string, boolean>>({});
   const [messages, setMessages] = useState<BridgeChatMessage[]>(() => mergeCodexMessages(normalizeCodexMessages(readLocalValue(`vesper-codex-chat-${conversationId}`, []), conversationId)).filter((item) => !messageWasDeleted(item, readLocalValue(`vesper-codex-tombstones-${conversationId}`, []))));
   const [pending, setPending] = useState<CodexPendingFile[]>([]);
@@ -4245,6 +4199,7 @@ function ConnectedChat({
       if (completedTurnId) clearApprovalQueue({ threadId: threadId.current, turnId: completedTurnId });
       reasoningSummaries.current = [...new Set([...reasoningSummaries.current, ...Array.from(reasoningBuffers.current.values()).flatMap(cleanReasoningSummary)])];
       setBusy(false);
+      sending.current = false;
       const turnFailed = ["failed", "interrupted"].includes(String((params.turn as Record<string, unknown> | undefined)?.status));
       if (activeTurnUserId.current) {
         updateMessage(activeTurnUserId.current, (item) => ({
@@ -4254,6 +4209,7 @@ function ConnectedChat({
             ...item.metadata,
             turnId: activeTurnId.current || item.metadata?.turnId,
             turnStatus: turnFailed ? "error" : "completed",
+            wake: item.metadata?.wake ? { ...item.metadata.wake, endedAt: new Date().toISOString() } : undefined,
             thoughtSummary: reasoningSummaries.current.length ? reasoningSummaries.current.join("\n") : undefined,
           },
         }));
@@ -4529,29 +4485,31 @@ function ConnectedChat({
       return { type: "image", url: await localImage(new File([blob], sticker.name || "sticker", { type: sticker.mimeType || blob.type })) };
     } catch { return null; }
   };
-  const send = async (selectedSticker?: StickerCatalogItem) => {
-    const content = draft.trim();
-    if ((!content && !pending.length && !selectedSticker) || busy) return;
-    setBusy(true); setError(""); setDraft("");
+  const send = async (selectedSticker?: StickerCatalogItem, wakeId?: string) => {
+    const content = wakeId ? `这是一次 Vesper 主动唤醒，request_id=${wakeId}。这段文字是应用生成的唤醒上下文，不是 Vera 的新聊天消息。结合已有上下文，自行选择一件适合现在做的小事，可以调用已授权工具，然后自然地给 Vera 留话。只报告实际完成的事，不虚构工具调用。若记录这次自主行动，来源使用 automation，同一事件复用 request_id，不重复提交。涉及对外发送或其他需确认的操作仍遵守原有权限。` : draft.trim();
+    if ((!content && !pending.length && !selectedSticker) || busy || sending.current) return;
+    sending.current = true;
+    const outgoingFiles = wakeId ? [] : pending;
+    setBusy(true); setError(""); if (!wakeId) setDraft("");
     pendingAgentStickers.current = [];
     nearBottomRef.current = true;
-    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", type: selectedSticker ? "sticker" : "text", content: content || (selectedSticker ? "[Sticker]" : "Attachment"), status: "thinking", metadata: { attachments: [], sticker: selectedSticker ? { assetId: selectedSticker.assetId, url: selectedSticker.url, width: selectedSticker.width, height: selectedSticker.height, mimeType: selectedSticker.mimeType, alt: selectedSticker.alt || selectedSticker.description || selectedSticker.name || "表情包", description: selectedSticker.description, category: selectedSticker.category } : undefined, turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
+    const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", type: selectedSticker ? "sticker" : "text", content: wakeId ? "唤醒 AI" : content || (selectedSticker ? "[Sticker]" : "Attachment"), status: "thinking", metadata: { wake: wakeId ? { requestId: wakeId, requestedAt: new Date().toISOString(), source: wakeId.startsWith("auto-") ? "automation" : "manual" } : undefined, attachments: [], sticker: selectedSticker ? { assetId: selectedSticker.assetId, url: selectedSticker.url, width: selectedSticker.width, height: selectedSticker.height, mimeType: selectedSticker.mimeType, alt: selectedSticker.alt || selectedSticker.description || selectedSticker.name || "表情包", description: selectedSticker.description, category: selectedSticker.category } : undefined, turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
     activeTurnUserId.current = userMessage.id;
     save([...messagesRef.current, userMessage]);
     if (selectedSticker) void fetch(apiUrl(`/api/stickers/${encodeURIComponent(selectedSticker.assetId)}`), { method: "POST", headers: appHeaders(true), body: JSON.stringify({ action: "use" }) }).catch(() => {});
-    rememberConversation(conversationId, content.slice(0, 28) || (selectedSticker ? "表情包" : "Attachment"));
+    rememberConversation(conversationId, wakeId ? "唤醒 AI" : content.slice(0, 28) || (selectedSticker ? "表情包" : "Attachment"));
     try {
-      void persistCodexMessage(userMessage, content.slice(0, 42) || (selectedSticker ? "表情包" : "Attachment"))
+      void persistCodexMessage(userMessage, wakeId ? "唤醒 AI" : content.slice(0, 42) || (selectedSticker ? "表情包" : "Attachment"))
         .catch(() => setHistoryWarning("历史暂未同步"));
-      if (userMessage.content && userMessage.type !== "sticker") void persistMemoryMessage(userMessage).catch(() => {});
-      const prepared = await Promise.all(pending.map(prepareFile));
+      if (!wakeId && userMessage.content && userMessage.type !== "sticker") void persistMemoryMessage(userMessage).catch(() => {});
+      const prepared = await Promise.all(outgoingFiles.map(prepareFile));
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
       // Opt-in automatic collection is server-owned and classification-gated.
       // This notification deliberately remains non-blocking so an ordinary
       // photo never delays a chat turn or silently turns into a sticker.
       for (const [index, item] of prepared.entries()) {
-        const source = pending[index]?.file;
+        const source = outgoingFiles[index]?.file;
         if (!source?.type.startsWith("image/")) continue;
         void fileSha256(source).then((sha256) => fetch(apiUrl("/api/stickers/collect"), {
           method: "POST", headers: appHeaders(true), body: JSON.stringify({ key: item.attachment.key, messageId: userMessage.id, conversationId, sha256 }),
@@ -4573,7 +4531,7 @@ function ConnectedChat({
       const started = await startCodexTurnWithModel(sendRpc, { threadId: threadId.current, ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), clientUserMessageId: userMessage.id, input, summary: "concise" }, requestedModel, modelCatalog.current);
       // The server has accepted these attachments. Do not wait for the
       // assistant reply (which may time out), or remove newly selected files.
-      const sentFiles = new Set(pending);
+      const sentFiles = new Set(outgoingFiles);
       setPending((current) => current.filter((item) => !sentFiles.has(item)));
       for (const item of sentFiles) URL.revokeObjectURL(item.preview);
       // A rejected RPC must retain the pending selection, not pretend it applied.
@@ -4582,9 +4540,10 @@ function ConnectedChat({
         nextModelRef.current = null;
         setNextModel(null);
       }
-      const turn = (started.result?.turn || {}) as { id?: string };
+      const turn = (started.result?.turn || {}) as { id?: string; createdAt?: unknown };
       activeTurnId.current = turn.id || `turn-${userMessage.id}`;
-      updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking" } }));
+      sending.current = false;
+      updateMessage(userMessage.id, (item) => ({ ...item, metadata: { ...item.metadata, turnId: activeTurnId.current, turnStatus: "thinking", wake: item.metadata?.wake ? { ...item.metadata.wake, startedAt: codexTimestamp(turn.createdAt, new Date().toISOString()) } : undefined } }));
       const completion = await Promise.race([done.then(() => "completed" as const), new Promise<"listening">((resolve) => window.setTimeout(() => resolve("listening"), 120000))]);
       if (completion === "listening") {
         setError("回复仍在服务器上运行，Vesper 会继续监听；也可手动取消。");
@@ -4592,9 +4551,18 @@ function ConnectedChat({
       }
     } catch (reason) {
       updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
-      setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false);
+      if (!wakeId) setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false); sending.current = false;
     }
   };
+  const wakeSender = useRef(send);
+  wakeSender.current = send;
+  useEffect(() => {
+    if (!wakeRequest || !historyReady || wakeConsumed.current.has(wakeRequest)) return;
+    wakeConsumed.current.add(wakeRequest);
+    onWakeHandled?.();
+    if (busy || sending.current) { if (!wakeRequest.startsWith("auto-")) setError("正在回复，这次没有插入新的唤醒。等本轮结束后再唤醒。"); return; }
+    void wakeSender.current(undefined, wakeRequest);
+  }, [wakeRequest, historyReady, busy, onWakeHandled]);
   const saveAttachmentAsSticker = async (attachment: ChatAttachment, item: BridgeChatMessage) => {
     const description = window.prompt("这张表情适合什么时候用？（可留空）", "") ?? null;
     if (description === null) return;
@@ -4859,6 +4827,7 @@ function ConnectedChat({
           const activity = item.metadata?.turnId && activityAnchors.get(item.metadata.turnId) === item.id ? turnActivities.get(item.metadata.turnId) : undefined;
           const activityExpanded = expandedActivities[item.metadata?.turnId || ''] || false;
           const onActivityExpandedChange = (open: boolean) => { const turnId = item.metadata?.turnId; if (turnId) setExpandedActivities(current => current[turnId] === open ? current : { ...current, [turnId]: open }); };
+          if (item.metadata?.wake) return <div className="message-with-date" key={item.id}><WakeCard wake={item.metadata.wake} executions={turnActivities.get(item.metadata.turnId || '')?.executions || []} status={item.metadata.turnStatus || item.status} online={online} /></div>;
           if (activity && item.id.startsWith('activity:')) return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<ChatActivity {...activity} expanded={activityExpanded} onExpandedChange={onActivityExpandedChange} timestamp={formatTurnTimestamp(item.createdAt)} dateTime={Number.isFinite(timestamp) ? item.createdAt : undefined} status={liveTurnStatus === 'tool' ? 'Using a tool…' : 'Thinking…'} /></div>;
           return <div className="message-with-date" key={item.id}>{divider && <div className="chat-date-divider"><span>{divider}</span></div>}<CodexChatMessage item={item} activity={activity} activityExpanded={activityExpanded} onActivityExpandedChange={onActivityExpandedChange} turnInProgress={online && busy && Boolean(activeTurnId.current) && item.metadata?.turnId === activeTurnId.current} agentName={agentName} userName={userName} onThought={setThought} onCopy={copyMessage} favorite={favorites.some((favorite) => favorite.messageId === item.id)} onFavorite={toggleFavorite} onDelete={deleteMessage} onPlayMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-play", { detail: { trackId } }))} onQueueMusic={(trackId) => window.dispatchEvent(new CustomEvent("vesper-music-queue-add", { detail: { trackId } }))} onOpenMusic={onOpenMusic} onAddMusicToPlaylist={onAddMusicToPlaylist} onSaveAttachmentAsSticker={item.role === "user" ? saveAttachmentAsSticker : undefined} /></div>;
         })}
@@ -5377,10 +5346,10 @@ function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferenc
         <div className="wake-status-grid">
           <div><small>当前状态</small><b>{preferences.careFrequency === "off" ? "休眠" : "静候合适时机"}</b></div>
           <div><small>机会累积</small><b>{Math.round(progress * 100)}%</b></div>
-          <div><small>上次行动</small><b>{runtime.lastWakeAt ? new Date(runtime.lastWakeAt).toLocaleString("zh-CN") : "尚未发生"}</b></div>
+          <div><small>上次触发</small><b>{runtime.lastWakeAt ? new Date(runtime.lastWakeAt).toLocaleString("zh-CN") : "尚未发生"}</b></div>
           <div><small>预计窗口</small><b>{estimatedHours === null ? "—" : estimatedHours < 1 ? "一小时内" : `约 ${Math.ceil(estimatedHours)} 小时`}</b></div>
         </div>
-        <p className="settings-hint">Vesper 只在白天、达到频率阈值且 AI 已连接时行动；留言、消息或来电会同时触发 Web Push。</p>
+        <p className="settings-hint">自动唤醒只在 Vesper 页面打开且可见、白天达到频率阈值时尝试连接聊天；正在回复时跳过。关闭页面后不会继续计时。应用中心也可以手动唤醒。</p>
         <button className="reset-background" onClick={() => setPreviewPulse((value) => value + 1)}>预览一次脉冲</button>
       </section>
     </div>

@@ -18,7 +18,7 @@ import {
 } from "react";
 import { anniversaryTarget, anniversaryDays, daysUntil, anniversaryDayLabel, nextAnniversary } from "./anniversary-dates";
 import { codexToolDefinitions, CODEX_TOOL_CATALOG_VERSION, validateCodexToolCatalog } from "@/lib/codex-tool-definitions";
-import { syncCodexThread, createConnectionQueue } from "@/lib/codex-thread-lifecycle";
+import { syncCodexThread, createConnectionQueue, resumeCodexThread } from "@/lib/codex-thread-lifecycle";
 import { FileAttachmentCard } from "./file-attachment-card";
 import { CodexUserInput, type UserInputRequest } from "./codex-user-input";
 import { attachmentInputText, imageAttachmentInput } from "./codex-attachment-input";
@@ -4350,34 +4350,18 @@ function ConnectedChat({
     return thread.id;
   };
   const resumeThread = async (developerInstructions: string) => {
-    // A successful resume is not proof that an older server updated its tool registry.
-    setToolUpgradeNeeded(false);
-    const dynamicTools = await loadDynamicTools();
+    // Dynamic tools belong to thread/start and persisted rollout metadata.
+    // thread/resume cannot replace them, even when it accepts unknown fields.
+    let registeredVersion = "";
+    try { registeredVersion = window.localStorage.getItem(`vesper-thread-tools-${threadId.current}`) || ""; } catch {}
+    setToolUpgradeNeeded(registeredVersion !== CODEX_TOOL_CATALOG_VERSION);
     try {
-      const resumed = await sendRpc("thread/resume", { threadId: threadId.current, developerInstructions, dynamicTools });
+      const resumed = await resumeCodexThread(sendRpc, threadId.current!, developerInstructions);
       syncThreadModel(resumed);
       hydrateThreadSnapshot(resumed);
       appliedDeveloperInstructions.current = developerInstructions;
       setResumeError("");
     } catch (reason) {
-      // A dated app-server can reject the newer `developerInstructions` field.
-      // Continue the conversation without recalled context rather than making
-      // chat availability depend on that optional enhancement.
-      if (developerInstructions) {
-        try {
-          const resumed = await sendRpc("thread/resume", { threadId: threadId.current });
-          syncThreadModel(resumed);
-          hydrateThreadSnapshot(resumed);
-          appliedDeveloperInstructions.current = "";
-          setToolUpgradeNeeded(true);
-          setHistoryWarning("当前 app-server 未接受会话工具更新；文件发送等新工具请在新对话中使用。");
-          setResumeError("");
-          logCodexDiagnostic({ method: "thread/resume/developer-instructions-unsupported", params: {} });
-          return;
-        } catch {
-          // Keep the original resume failure below for the user-facing path.
-        }
-      }
       logCodexDiagnostic({ method: "thread/resume/failed", params: { kind: reason instanceof Error ? reason.name : "unknown" } });
       setResumeError(`会话连接失败：${reason instanceof Error ? reason.message : "未知错误"}。已保存的记录仍可查看。`);
       throw new Error("原会话暂时无法继续，可新建替代会话。 ");
@@ -4844,7 +4828,7 @@ function ConnectedChat({
       <div className="chat-status-stack">
         {error && <div className="chat-restore-error" role="alert"><span>{error}</span>{!online && <button type="button" disabled={busy} onClick={() => void connect().catch(reason => setError(reason instanceof Error ? reason.message : "连接失败，请重试"))}>重试连接</button>}</div>}
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
-        {toolUpgradeNeeded && !resumeError && <div className="chat-history-warning" role="status"><span>这段旧会话的相册工具尚未确认更新；原记录会保留。</span><button type="button" disabled={busy || !online} onClick={() => void createReplacementConversation()}>新建支持相册的会话</button></div>}
+        {toolUpgradeNeeded && !resumeError && <div className="chat-history-warning" role="status"><span>这段会话尚未确认注册文件发送工具。重连不能更新旧会话的工具；新建对话可加载完整工具，原记录会保留。</span><button type="button" disabled={busy || !online} onClick={() => void createReplacementConversation()}>新建支持文件的对话</button></div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">

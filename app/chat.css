@@ -9,6 +9,7 @@
   --chat-avatar-size: 32px;
   --chat-avatar-gap: 7px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   width: 100%;
   height: 100%;
@@ -53,6 +54,8 @@
 
 .codex-chat .chat-history-warning {
   width: max-content;
+  max-width: calc(100% - 24px);
+  overflow-wrap: anywhere;
   margin: 0 auto 6px;
   color: var(--ui-muted);
   font-size: 11px;

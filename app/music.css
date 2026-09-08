@@ -28,7 +28,7 @@
   box-sizing: border-box;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(210px, 1fr) auto auto auto;
   align-content: stretch;
   padding: calc(var(--safe-top) + 58px) 25px calc(8px + var(--safe-bottom));
   overflow: hidden;
@@ -81,14 +81,13 @@
 
 .listening-disc-stage {
   display: grid;
-  container-type: size;
   min-height: 0;
   place-items: center;
-  padding: 22px;
+  padding: 8px 0 16px;
 }
 .sound-halo {
   position: relative;
-  width: min(100cqw, 100cqh, 340px);
+  width: min(73vw, 340px);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -320,16 +319,23 @@
 
 @media (max-height: 720px) {
   .listening-player-main {
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+    grid-template-rows: auto auto minmax(185px, 1fr) auto auto auto;
     padding-top: calc(var(--safe-top) + 48px);
   }
-  .sound-halo { width: min(100cqw, 100cqh, 270px); }
+  .listening-disc-stage { padding-bottom: 8px; }
+  .sound-halo { width: min(59vw, 270px); }
   .listening-controls { min-height: 73px; padding-bottom: 3px; }
 }
 
 @media (max-width: 767px) {
-  /* The navigation already reserves the home-indicator safe area. */
-  .listening-player-main { padding-bottom: 8px; }
+  /* Use the existing bottom padding for controls without reflowing the artwork.
+     The navigation has already reserved the home-indicator safe area. */
+  .listening-track-copy,
+  .listening-progress,
+  .listening-controls {
+    position: relative;
+    top: calc(8px + var(--safe-bottom));
+  }
 }
 
 /* Neutral player palette: cover art keeps its own colour; all product chrome

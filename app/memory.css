@@ -70,4 +70,7 @@
 .memory-revision-list b { color: var(--ui-ink-secondary); font-size: 12px; font-weight: 600; }
 .memory-revision-list span,
 .memory-revision-list p { margin: 0; color: var(--ui-muted); font-size: 11px; line-height: 1.45; }
-@media (min-width: 700px) { .memory-library-page { max-width: 720px; } .memory-modal-layer { place-items: center; } }
+@media (min-width: 700px) {
+  .memory-library-page { width: 100%; max-width: 1080px; margin-inline: auto; }
+  .memory-modal-layer { place-items: center; }
+}

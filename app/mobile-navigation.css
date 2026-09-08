@@ -5,14 +5,14 @@
 /* A single navigation tree: persistent on desktop, a drawer on narrow windows. */
 @media (min-width: 1024px) {
   .stage > .app-shell {
-    --desktop-nav-width: 248px;
+    --desktop-nav-width: 272px;
     width: calc(100% - var(--desktop-nav-width));
     margin-left: var(--desktop-nav-width);
   }
   .app-shell > .drawer-layer {
     position: fixed;
-    inset: 0 auto 0 0;
-    width: var(--desktop-nav-width);
+    inset: 12px auto 12px 12px;
+    width: calc(var(--desktop-nav-width) - 24px);
     visibility: visible;
     pointer-events: auto;
     transition: none;
@@ -24,9 +24,9 @@
     height: 100%;
     transform: none;
     transition: none;
-    border-radius: 0;
-    border-right: 1px solid var(--ui-line);
-    box-shadow: none !important;
+    border: 1px solid var(--ui-line);
+    border-radius: 26px;
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--ui-ink) 12%, transparent), 0 2px 8px color-mix(in srgb, var(--ui-ink) 5%, transparent) !important;
   }
   .app-shell > .drawer-layer > .scrim,
   .app-shell .drawer-head > .icon-button { display: none; }
@@ -35,24 +35,35 @@
 }
 
 @media (max-width: 767px) {
-  .app-shell { --mobile-nav-height: 58px; }
+  .app-shell { --mobile-nav-height: 64px; --mobile-nav-gap: 12px; }
   .app-shell > .scroll-view {
-    height: calc(100% - var(--mobile-nav-height) - var(--safe-bottom));
+    height: calc(100% - var(--mobile-nav-height) - var(--safe-bottom) - var(--mobile-nav-gap) * 2);
     padding-bottom: 10px !important;
   }
   .app-shell > .scroll-view:has(> .codex-chat) { padding-bottom: 0 !important; }
   .app-shell > .mobile-navigation {
     position: absolute;
     z-index: 4;
-    inset: auto 0 0;
+    inset: auto max(16px, env(safe-area-inset-right)) calc(var(--safe-bottom) + var(--mobile-nav-gap)) max(16px, env(safe-area-inset-left));
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    height: calc(var(--mobile-nav-height) + var(--safe-bottom));
-    padding: 0 max(12px, env(safe-area-inset-right)) var(--safe-bottom) max(12px, env(safe-area-inset-left));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: var(--mobile-nav-height);
+    max-width: 420px;
+    margin-inline: auto;
+    padding: 5px;
     box-sizing: border-box;
-    border-top: 1px solid var(--ui-line);
+    border: 1px solid var(--ui-line);
+    border-radius: 999px;
     background: var(--ui-canvas);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ui-ink) 12%, transparent), inset 0 1px 1px color-mix(in srgb, var(--ui-canvas) 80%, transparent);
     color: var(--ui-muted);
+  }
+  @supports ((backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px))) {
+    .app-shell > .mobile-navigation {
+      background: color-mix(in srgb, var(--ui-canvas) 68%, transparent);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
+      backdrop-filter: blur(20px) saturate(150%);
+    }
   }
   .mobile-navigation button {
     display: flex;
@@ -64,13 +75,18 @@
     min-height: 44px;
     padding: 4px;
     border: 0;
+    border-radius: 999px;
     background: transparent;
     color: inherit;
     font: 12px/1.2 var(--font-chinese);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  .mobile-navigation button[aria-current="page"] { color: var(--theme-accent, var(--ui-ink)); font-weight: 600; }
+  .mobile-navigation button[aria-current="page"] {
+    background: color-mix(in srgb, var(--ui-ink) 10%, transparent);
+    color: var(--theme-accent, var(--ui-ink));
+    font-weight: 600;
+  }
   .mobile-navigation button:focus-visible { outline: 2px solid var(--theme-accent, var(--ui-ink)); outline-offset: -4px; border-radius: 8px; }
   .mobile-navigation .nav-icon { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
   .app-shell .codex-chat .chat-compose { margin-bottom: 10px; }

@@ -4560,6 +4560,11 @@ function ConnectedChat({
       const done = new Promise<void>((resolve) => { turnDone.current = () => resolve(); });
       const requestedModel = nextModelRef.current;
       const started = await startCodexTurnWithModel(sendRpc, { threadId: threadId.current, ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")), clientUserMessageId: userMessage.id, input, summary: "concise" }, requestedModel, modelCatalog.current);
+      // The server has accepted these attachments. Do not wait for the
+      // assistant reply (which may time out), or remove newly selected files.
+      const sentFiles = new Set(pending);
+      setPending((current) => current.filter((item) => !sentFiles.has(item)));
+      for (const item of sentFiles) URL.revokeObjectURL(item.preview);
       // A rejected RPC must retain the pending selection, not pretend it applied.
       if (requestedModel) {
         setCurrentModel(requestedModel);
@@ -4574,7 +4579,6 @@ function ConnectedChat({
         setError("回复仍在服务器上运行，Vesper 会继续监听；也可手动取消。");
         return;
       }
-      setPending([]);
     } catch (reason) {
       updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
       setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false);

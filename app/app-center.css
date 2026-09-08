@@ -18,13 +18,32 @@
 .desire-grid { margin-top: 12px; grid-template-columns: repeat(3,minmax(0,1fr)); }
 .desire-value { display: block; font-size: 22px; line-height: 1.2; margin-top: 6px; }
 .desire-history { display: grid; gap: 12px; margin-top: 16px; }
-.wake-session-card { border: 1px solid rgba(255,255,255,.85); border-radius: 24px; color: var(--ui-ink); margin: 14px 0; padding: 16px 20px; background: color-mix(in srgb,var(--ui-surface-muted) 80%,transparent); }
-.wake-session-card header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.wake-session-card small { color: var(--ui-muted); }
-.wake-session-card p,.wake-session-card summary { font-size: 13px; line-height: 1.6; }
-.wake-session-card ul { padding-left: 18px; }
-.wake-session-card li { overflow-wrap: anywhere; font-size: 12px; margin-top: 8px; }
-.wake-session-card li small { margin-left: 10px; }
+.app-shell .wake-session-note {
+  margin: 8px 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: var(--ui-muted);
+  font-size: var(--text-caption, .75rem);
+  line-height: 1.5;
+}
+.app-shell .wake-session-note,
+.app-shell .wake-session-note * { font-style: italic !important; }
+.app-shell .wake-session-note :is(b, small, p, summary, li, span) {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 400;
+}
+.wake-session-note header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.wake-session-note p { margin: 3px 0; }
+.wake-session-note summary { cursor: pointer; }
+.wake-session-note ul { margin: 4px 0; padding-left: 18px; }
+.wake-session-note li { overflow-wrap: anywhere; margin-top: 3px; }
+.wake-session-note li small { margin-left: 8px; }
 /* Use the same type roles as settings and chat, including inherited button text. */
 .app-shell .app-center { font-size: var(--text-body, .875rem); }
 .app-shell .app-center .page-intro { margin-bottom: 18px; padding-bottom: 0; }

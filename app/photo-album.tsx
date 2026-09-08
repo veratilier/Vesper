@@ -58,7 +58,9 @@ export function PhotoAlbum({ apiUrl, headers, active }: { active: boolean; apiUr
     finally { setBusy(false); if (input.current) input.current.value = ''; }
   }
   return <section className="page-body album-page">
-    <div className="album-heading"><h1>Album</h1><button type="button" aria-label="打开分类相册" aria-haspopup="dialog" onClick={() => setCategoriesOpen(true)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 9h18"/></svg><span>分类</span></button></div>
+    <small className="album-eyebrow">KEEPSAKES</small>
+    <div className="album-heading"><h1>相册</h1><button type="button" aria-label="打开分类相册" aria-haspopup="dialog" onClick={() => setCategoriesOpen(true)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 9h18"/></svg><span>分类</span></button></div>
+    <p className="album-intro">把想留下的照片收好，想起时再翻出来。</p>
     {filter && <div className="album-current-category"><button type="button" onClick={() => setFilter('')}>全部相册</button><span> / {filter}</span></div>}
     <form className="album-toolbar" onSubmit={e => { e.preventDefault(); setSearch(query); }}>
       <input aria-label="搜索照片" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索照片、评价或分类" />

@@ -34,3 +34,6 @@
 .album-detail-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
 .album-detail-actions span { opacity: .7; overflow-wrap: anywhere; }
 @media(min-width:700px) { .app-shell .album-page .album-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; } }
+
+.app-shell .album-page .album-eyebrow { display: block; opacity: .7; font-size: 11px; letter-spacing: .12em; }
+.app-shell .album-page .album-intro { margin: 0 0 20px; opacity: .7; }

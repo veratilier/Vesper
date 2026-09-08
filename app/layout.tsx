@@ -15,6 +15,7 @@ import "./home-cards.css";
 import "./floating-interface.css";
 import "./type-scale.css";
 import "./backgrounds.css";
+import "./home-glass.css";
 
 const pinyonScript = Pinyon_Script({
   variable: "--font-pinyon-script",

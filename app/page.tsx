@@ -5189,37 +5189,40 @@ function SettingsPage({
   };
   return (
     <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
-      <div className="settings-overview-head">
-        {category && <button className="settings-category-back" onClick={() => setCategory(null)} aria-label="返回设置分类"><Icon name="chevron" />Setting</button>}
-        <h1>{category || "Setting"}</h1>
-        {!category && <p>把每一处，都调成喜欢的样子。</p>}
-      </div>
+      {category ? <header className="page-intro">
+        <button className="settings-category-back" onClick={() => setCategory(null)} aria-label="返回设置分类"><Icon name="chevron" />设置</button>
+        <h1>{category}</h1>
+      </header> : <PageIntro
+        eyebrow="PREFERENCES"
+        title="设置"
+        text="让 Vesper 以你感到舒服的方式陪伴。"
+      />}
       {!category ? <div className="settings-category-list">
         {[
-          ["Rowan", "模型连接、声音与自主唤醒"],
-          ["Us", "纪念日与关心偏好"],
-          ["Tools", "MCP、通知与定位"],
-          ["Appearance", "主题、背景与外观"],
-          ["Data", "记忆权限、导出与备份"],
-        ].map(([title, description]) => <button className="settings-category-card" key={title} onClick={() => title === "Appearance" ? setSelected("Appearance") : setCategory(title)}><span><b>{title}</b><small>{description}</small></span><Icon name="chevron" /></button>)}
+          ["sparkles", "模型与声音", "Codex 连接、声音与自主唤醒"],
+          ["heart", "陪伴与纪念", "纪念日、倒计时与关心频率"],
+          ["link", "工具与通知", "MCP 连接、消息通知与定位"],
+          ["settings", "外观", "主题配色与背景"],
+          ["archive", "记忆与数据", "记忆权限、导出与备份"],
+        ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => title === "外观" ? setSelected("Appearance") : setCategory(title)} /></div>)}
       </div> : <SettingsGroup title={category}>
-        {category === "Rowan" && <>
+        {category === "模型与声音" && <>
           <SettingRow icon="sparkles" title="Codex Server" sub="模型服务与连接" onClick={() => setSelected("Codex Server")} />
           <SettingRow icon="volume" title="Agent 声音（TTS）" sub="声音服务与音色" onClick={() => setSelected("Agent 声音")} />
           <SettingRow icon="sparkles" title="自主唤醒" sub={preferences.careFrequency === "off" ? "当前已关闭" : "查看运行状态与下一次机会"} status={preferences.careFrequency !== "off"} onClick={() => setSelected("自主唤醒")} />
         </>}
-        {category === "Us" && <>
+        {category === "陪伴与纪念" && <>
           <SettingRow icon="calendar" title="纪念日与倒计时" sub="认识的日子，以及期待的日子" onClick={() => onOpenSection("纪念日")} />
           <SettingRow icon="heart" title="关心频率" sub={careLabel} onClick={() => setSelected("关心频率")} />
         </>}
-        {category === "Tools" && <>
+        {category === "工具与通知" && <>
           <SettingRow icon="link" title="MCP Servers" sub="连接外部工具与服务" onClick={() => setSelected("MCP 工具")} />
           <SettingRow icon="link" title="Vesper MCP" sub="让外部 AI 连接日记、便笺与记忆" onClick={() => setSelected("Vesper MCP")} />
           <SettingRow icon="wifi" title="Web Push" sub={notificationLabel} status={notificationPermission === "granted"} onClick={() => setSelected("Web Push")} />
           <SettingRow icon="bell" title="通知偏好" sub={`${preferences.reminders ? "提醒 " : ""}${preferences.anniversaries ? "纪念日 " : ""}${preferences.agentNotes ? "Agent 留言" : ""}`.trim() || "全部关闭"} onClick={() => setSelected("通知偏好")} />
           <SettingRow icon="location" title="定位与环境" sub={locationLabel} status={environment.permission === "granted"} onClick={() => setSelected("定位与环境")} />
         </>}
-        {category === "Data" && <>
+        {category === "记忆与数据" && <>
           <SettingRow icon="lock" title="记忆权限" sub="日记、便笺与聊天可分别控制" onClick={() => setSelected("记忆权限")} />
           <SettingRow icon="archive" title="导出与备份" sub={preferences.lastExportAt ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}` : "本地优先保存 · 应用更新不清除数据"} onClick={() => setSelected("导出与备份")} />
         </>}

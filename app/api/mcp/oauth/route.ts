@@ -1,5 +1,11 @@
-function json(value: unknown, status = 200) {
-  return Response.json(value, { status });
+import { corsHeaders, optionsResponse } from "@/lib/cors";
+
+export const OPTIONS = optionsResponse;
+
+function json(request: Request, value: unknown, status = 200) {
+  const headers = corsHeaders(request);
+  headers.set("cache-control", "no-store");
+  return Response.json(value, { status, headers });
 }
 
 export async function POST(request: Request) {
@@ -15,9 +21,9 @@ export async function POST(request: Request) {
     };
     const tokenUrl = new URL(body.tokenUrl || "");
     if (tokenUrl.protocol !== "https:")
-      return json({ error: "The Token URL must use HTTPS." }, 400);
+      return json(request, { error: "The Token URL must use HTTPS." }, 400);
     if (!body.code || !body.verifier || !body.clientId || !body.redirectUri)
-      return json({ error: "Incomplete OAuth callback parameters" }, 400);
+      return json(request, { error: "Incomplete OAuth callback parameters" }, 400);
     const form = new URLSearchParams({
       grant_type: "authorization_code",
       code: body.code,
@@ -43,16 +49,16 @@ export async function POST(request: Request) {
       error_description?: string;
     };
     if (!response.ok || !result.access_token)
-      return json(
+      return json(request,
         { error: result.error_description || result.error || `Token service returned ${response.status}` },
         502,
       );
-    return json({
+    return json(request, {
       accessToken: result.access_token,
       tokenType: result.token_type || "Bearer",
       expiresIn: result.expires_in,
     });
   } catch (reason) {
-    return json({ error: reason instanceof Error ? reason.message : "OAuth authorization failed" }, 400);
+    return json(request, { error: reason instanceof Error ? reason.message : "OAuth authorization failed" }, 400);
   }
 }

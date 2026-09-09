@@ -1,7 +1,13 @@
+import { corsHeaders, optionsResponse } from "@/lib/cors";
+
+export const OPTIONS = optionsResponse;
+
 type JsonRecord = Record<string, unknown>;
 
-function json(value: unknown, status = 200) {
-  return Response.json(value, { status });
+function json(request: Request, value: unknown, status = 200) {
+  const headers = corsHeaders(request);
+  headers.set("cache-control", "no-store");
+  return Response.json(value, { status, headers });
 }
 
 function safeHttpsUrl(value: unknown) {
@@ -150,7 +156,7 @@ export async function POST(request: Request) {
         : Array.isArray(metadata.scopes_supported)
           ? metadata.scopes_supported.map(String).join(" ")
           : "");
-    return json({
+    return json(request, {
       authorizationUrl: String(metadata.authorization_endpoint),
       tokenUrl: String(metadata.token_endpoint),
       clientId,
@@ -160,6 +166,6 @@ export async function POST(request: Request) {
       needsClientId: !clientId,
     });
   } catch (reason) {
-    return json({ error: reason instanceof Error ? reason.message : "OAuth discovery failed" }, 400);
+    return json(request, { error: reason instanceof Error ? reason.message : "OAuth discovery failed" }, 400);
   }
 }

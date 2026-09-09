@@ -208,7 +208,7 @@ export const codexToolDefinitions = [
   },
 ].map((definition) => ({ type: "function" as const, ...definition }));
 
-export const CODEX_TOOL_CATALOG_VERSION = "native-desire-2026-09-09-v1";
+export const CODEX_TOOL_CATALOG_VERSION = "independent-desire-2026-09-09-v2";
 export function validateCodexToolCatalog(value: unknown) {
   if (!Array.isArray(value) || !value.length) throw new Error("Vesper 工具目录为空，请检查 API 部署。");
   const required = ["album_save_photo", "album_search_photos", "album_send_photos", "send_chat_file"];

@@ -3,99 +3,83 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { executeDesire } from '/tmp/vesper-desire-native-test.mjs';
-import { recordEncounter } from '/tmp/rowan-encounter-service-test.mjs';
-const start = '2026-09-04T17:04:07.374Z';
 function fixture(t) {
-  const db = new DatabaseSync(":memory:");
-  t.after(() => db.close());
-  for (const file of ["0001_desire_state_and_history.sql", "0002_separate_absence_cursors.sql", "0003_interaction_provenance_and_time.sql"]) {
-    db.exec(readFileSync(new URL(`./migrations/${file}`, import.meta.url), "utf8"));
-  }
-  db.prepare(`INSERT INTO desire_state (user_id,style,longing,tenderness,playfulness,intensity,attachment,possessiveness,
-    last_encounter_at,last_real_interaction_at,longing_calculated_through_at,updated_at,
-    last_absence_evaluated_at,last_intensity_evaluated_at,last_settled_at)
-    VALUES ('veratilier','quiet',100,99,28,22,96,20,?,?,?,?,?,?,?)`).run(...Array(7).fill(start));
-  const kv = new Map();
-  let pushLookups = 0;
-  const env = {
-    DESIRE_DB: {
-      prepare(sql) {
-        return { bind(...values) {
-          return { first: async () => db.prepare(sql).get(...values) ?? null,
-            all: async () => ({ results: db.prepare(sql).all(...values) }), run: async () => db.prepare(sql).run(...values), sql, values };
-        } };
-      },
-      async batch(statements) {
-        db.exec("BEGIN");
-        try {
-          const result = statements.map(({ sql, values }) => db.prepare(sql).run(...values));
-          db.exec("COMMIT"); return result;
-        } catch (error) { db.exec("ROLLBACK"); throw error; }
-      },
+  const db = new DatabaseSync(':memory:'); t.after(() => db.close());
+  const adapter = {
+    prepare(sql) {
+      const statement = (values = []) => ({ sql, values, bind: (...next) => statement(next),
+        first: async () => db.prepare(sql).get(...values) ?? null,
+        all: async () => ({ results: db.prepare(sql).all(...values) }),
+        run: async () => db.prepare(sql).run(...values) });
+      return statement();
     },
-    OAUTH_KV: {
-      async get(key) { if (key.includes("push-subscriptions")) pushLookups++; return kv.get(key) ?? null; },
-      async put(key, value) { kv.set(key, JSON.parse(value)); },
+    async batch(statements) {
+      db.exec('BEGIN');
+      try { const results = statements.map(({sql,values}) => db.prepare(sql).run(...values)); db.exec('COMMIT'); return results; }
+      catch (error) { db.exec('ROLLBACK'); throw error; }
     },
   };
-  return { env: { DESIRE_DB: env.DESIRE_DB, DESIRE_LEGACY_KV: env.OAUTH_KV }, db, pushLookups: () => pushLookups,
-    snapshot: () => db.prepare("SELECT * FROM desire_state").get() };
+  const forbidden = new Proxy({}, { get() { throw Error('Original Desire storage must never be accessed'); } });
+  return { db, env: { DB: adapter, DESIRE_DB: forbidden, DESIRE_LEGACY_KV: forbidden }, snapshot: () => db.prepare('SELECT * FROM vesper_desire_state').get() };
 }
-
-test('native reads reuse the verified original owner without altering state', async t => {
-  const f = fixture(t), before = f.snapshot();
-  const status = await executeDesire(f.env, 'desire_status');
-  assert.equal(status.longing, 100);
-  assert.deepEqual(f.snapshot(), before);
-  const history = await executeDesire(f.env, 'desire_history');
-  assert.deepEqual(history.records, []);
-  assert.deepEqual(f.snapshot(), before);
-});
-test('missing binding or original state fails closed without a default seed', async t => {
-  await assert.rejects(executeDesire({}, 'desire_status'));
-  const f = fixture(t); f.db.exec('DELETE FROM desire_state');
-  await assert.rejects(executeDesire(f.env, 'desire_status'));
-  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM desire_state').get().n, 0);
-});
-test('old MCP encounter replays through Vesper, preserving IDs and history', async t => {
+test('independent initial state and empty history; repeated reads preserve clocks', async t => {
   const f = fixture(t);
-  const input = { kind: 'repair', interaction_source: 'user', request_id: 'before-cutover', note: '  原样保留。\n不重复计分。  ' };
-  const old = await recordEncounter({ DESIRE_DB: f.env.DESIRE_DB, OAUTH_KV: f.env.DESIRE_LEGACY_KV }, 'veratilier', input, new Date(start));
+  const state = await executeDesire(f.env, 'desire_status');
+  assert.equal(state.longing, 18); assert.equal(state.tenderness, 64);
+  assert.equal(state.lastRealInteractionAt, null);
   const before = f.snapshot();
-  const replay = await executeDesire(f.env, 'desire_encounter', input);
-  assert.equal(replay.replayed, true); assert.equal(replay.encounterId, old.encounterId);
+  await executeDesire(f.env, 'desire_status');
   assert.deepEqual(f.snapshot(), before);
-  assert.equal((await executeDesire(f.env, 'desire_history')).records[0].note, input.note);
-  await assert.rejects(executeDesire(f.env, 'desire_encounter', { ...input, note: 'different' }));
+  assert.deepEqual((await executeDesire(f.env, 'desire_history')).records, []);
 });
-test('native validates provenance; automation does not impersonate a real message', async t => {
-  const f = fixture(t), before = f.snapshot();
-  await assert.rejects(executeDesire(f.env, 'desire_encounter', { kind: 'repair', request_id: 'bad' }));
-  await assert.rejects(executeDesire(f.env, 'desire_encounter', { kind: 'absence', interaction_source: 'user', request_id: 'bad' }));
-  assert.deepEqual(f.snapshot(), before);
-  await executeDesire(f.env, 'desire_encounter', { kind: 'warmth', interaction_source: 'automation', request_id: 'wake' });
-  assert.equal(f.snapshot().last_real_interaction_at, before.last_real_interaction_at);
+test('missing Vesper DB cannot fall back to the original Desire bindings', async () => {
+  await assert.rejects(executeDesire({ DESIRE_DB: {}, DESIRE_LEGACY_KV: {} }, 'desire_status'));
 });
-test('record expression and style changes never create a relationship encounter', async t => {
-  const f = fixture(t), before = f.snapshot();
-  const result = await executeDesire(f.env, 'desire_express', { mode: 'record' });
-  assert.equal(result.recorded, true); assert.equal(result.message, undefined);
-  await executeDesire(f.env, 'desire_set_style', { style: 'playful' });
-  assert.equal(f.snapshot().style, 'playful');
-  assert.equal(f.snapshot().last_real_interaction_at, before.last_real_interaction_at);
-  assert.equal((await executeDesire(f.env, 'desire_history')).records.length, 0);
+test('unrelated original-named tables are never read or changed', async t => {
+  const f = fixture(t);
+  f.db.exec("CREATE TABLE desire_state (user_id TEXT, longing INTEGER); INSERT INTO desire_state VALUES ('veratilier',57); CREATE TABLE encounter_history (note TEXT); INSERT INTO encounter_history VALUES ('original note');");
+  await executeDesire(f.env, 'desire_encounter', { kind:'warmth', interaction_source:'user', request_id:'independent-user', note:'Vesper note' });
+  assert.equal(f.db.prepare('SELECT longing FROM desire_state').get().longing,57);
+  assert.equal(f.db.prepare('SELECT note FROM encounter_history').get().note,'original note');
+  const records = (await executeDesire(f.env, 'desire_history')).records;
+  assert.equal(records.length,1); assert.equal(records[0].note,'Vesper note');
 });
-test('native notifications use Vesper subscriptions once, never old PWA subscriptions', async t => {
-  const f = fixture(t); let lookups = 0;
-  f.env.DB = { prepare(sql) { assert.equal(sql, 'SELECT subscription FROM vesper_push_subscriptions'); return { async all() { lookups++; return { results: [] }; } }; } };
-  f.env.VAPID_PUBLIC_KEY = 'unused'; f.env.VAPID_PRIVATE_KEY = 'unused';
-  f.env.DESIRE_LEGACY_KV.get = async key => { assert.ok(!key.includes('push-subscriptions')); return null; };
-  const input = { kind: 'warmth', interaction_source: 'automation', request_id: 'native-notify' };
-  await executeDesire(f.env, 'desire_encounter', input);
-  await executeDesire(f.env, 'desire_encounter', input);
-  assert.equal(lookups, 1);
+test('Vesper requests remain idempotent and preserve notes verbatim', async t => {
+  const f = fixture(t), input = { kind:'repair', interaction_source:'user', request_id:'same-event', note:'  原样\n保留  ' };
+  const first = await executeDesire(f.env,'desire_encounter',input), before = f.snapshot();
+  const again = await executeDesire(f.env,'desire_encounter',input);
+  assert.equal(again.replayed,true); assert.equal(again.encounterId,first.encounterId);
+  assert.deepEqual(f.snapshot(),before);
+  assert.equal((await executeDesire(f.env,'desire_history')).records[0].note,input.note);
+  await assert.rejects(executeDesire(f.env,'desire_encounter',{...input,note:'different'}));
 });
-
+test('invalid provenance never initializes or writes; automation never creates real contact', async t => {
+  const f = fixture(t);
+  await assert.rejects(executeDesire(f.env,'desire_encounter',{kind:'repair',request_id:'bad'}));
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM sqlite_master').get().n,0);
+  await executeDesire(f.env,'desire_encounter',{kind:'absence',interaction_source:'automation',request_id:'wake'});
+  assert.equal(f.snapshot().last_real_interaction_at,null);
+});
+test('style/expression and push deduplication metadata stay in Vesper D1', async t => {
+  const f = fixture(t);
+  f.db.exec('CREATE TABLE vesper_push_subscriptions (subscription TEXT)');
+  f.env.VAPID_PUBLIC_KEY='unused'; f.env.VAPID_PRIVATE_KEY='unused';
+  await executeDesire(f.env,'desire_set_style',{style:'clingy'});
+  const expression = await executeDesire(f.env,'desire_express',{mode:'record'});
+  assert.equal(expression.recorded,true); assert.equal(expression.message,undefined);
+  assert.equal(f.snapshot().style,'clingy');
+  assert.equal((await executeDesire(f.env,'desire_history')).records.length,0);
+  assert.ok(f.db.prepare('SELECT count(*) AS n FROM vesper_desire_kv').get().n > 0);
+});
+test('concurrent first reads initialize one state without overwriting an encounter', async t => {
+  const f = fixture(t);
+  await Promise.all([executeDesire(f.env,'desire_status'),executeDesire(f.env,'desire_history')]);
+  await executeDesire(f.env,'desire_encounter',{kind:'warmth',interaction_source:'user',request_id:'first'});
+  const before=f.snapshot();
+  await executeDesire({...f.env,DB:{...f.env.DB}},'desire_status');
+  assert.deepEqual(f.snapshot(),before);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM vesper_desire_state').get().n,1);
+});
 test('notification click opens Desire without reloading an existing Vesper window', async () => {
   const { runInNewContext } = await import('node:vm');
   const handlers = {}; let message, focused = false, pending;

@@ -1,35 +1,28 @@
-# Native Desire integration — 2026-09-09
+# Independent Desire storage — supersedes the shared-database plan
 
-## Implemented, not yet deployed
+Vera clarified on 2026-09-09 that the official Rowan connection and the Vesper frontend must have separate Desire data.
 
-The uploaded `Archive.zip` contains the September 7 repaired Desire source and its deployment report. `lib/desire/desire-store.ts` and `encounter-input.ts` are copied unchanged. The service keeps its exact scoring, real-interaction provenance, timestamp cursors, transactional state/history writes and SHA-256 request IDs. Its only service change is an injectable post-commit notification transport. The old push module has a typed ArrayBuffer copy for Vesper's TypeScript version.
+## Routing
 
-Vesper's `/api/desire`, five built-in Codex tools and five official MCP tools now share `executeDesire`: `desire_status`, `desire_history`, `desire_encounter`, `desire_set_style`, `desire_express`. Existing Vesper device authentication / owner-only OAuth applies. Built-in tool calls additionally verify the paired owner's memory scope. No caller may choose the Desire owner. Tool metadata retains required `interaction_source` and `request_id`; the service validates again. The Codex catalog version is bumped so existing sessions refresh it.
+- Official Rowan and its existing hourly automation continue using the original `desire.r-vera.com` MCP and its `rowan-desire` D1 database. Keep that service, its state/history and subscriptions intact.
+- The Vesper page, built-in frontend AI tools and Vesper MCP Desire tools use only Vesper's existing `DB` binding: `vesper-db`, database ID `00f8c1ca-f8a3-47d8-9f08-1fec87ec9f4a`.
+- The API and MCP production configs remove the original `DESIRE_DB` and `DESIRE_LEGACY_KV` bindings. The code never falls back to them, even if stale dashboard bindings remain.
+- There is no synchronization, dual write, historical import, or copying official Rowan's current values. Community activity notes still belong in Atlas.
 
-The flower UI reads the native endpoint and no longer opens a separate MCP connection. Existing background, profile name and typography remain inherited. Historical `eventAt` is displayed correctly. Only nonblank notes appear in the recent timeline; blank-note events remain in full history. There is no mass deletion or rewriting of historical notes.
+## Independent data
 
-## Preserve the original database in place
+`lib/desire/storage.ts` maps the unchanged engine's SQL to dedicated `vesper_desire_state` and `vesper_desire_history` tables. Push metadata is kept in `vesper_desire_kv` in the same Vesper D1; no original KV is used. Existing unrelated Vesper tables are preserved.
 
-Both production Worker configs bind **the same existing** `rowan-desire` D1 database (`1668aebc-78ca-4793-aa9f-3029a737f1e7`) as `DESIRE_DB`. The original source's owner check fixes the owner to `veratilier`. This deliberately does not translate the owner to Vesper's `usr_…` memory identifier.
+On first access, idempotent schema creation and INSERT OR IGNORE initialize the Vesper owner `vesper` with the engine defaults: longing 18, tenderness 64, playfulness 28, intensity 22, attachment 41, possessiveness 20, style quiet. Its history is empty and real-interaction/expression timestamps are null. Initialization never creates a user interaction and never overwrites existing Vesper Desire state.
 
-The original KV (`48be10d0a1504a52bdd5ff48442b799c`) is available as `DESIRE_LEGACY_KV`; Vesper MCP's own `OAUTH_KV` stays unchanged. Native reads/writes first require the existing owner row and fail closed if bindings or the row are missing. They never initialize a substitute signal. No SQL migration, data import, deletion, or new production encounter was performed here. The SQL under tests is only an isolated fixture, not a Vesper deployment migration.
+Each frontend AI encounter updates only these independent tables. Provenance, stable request IDs, absence cursors, original scoring and replay protections are preserved. Notification delivery uses Vesper subscriptions and VAPID settings.
 
-New native encounters notify **Vesper's** existing subscriptions using its VAPID configuration. The old PWA subscriptions and keys are not overwritten or used. Retried encounters skip notification as well as scoring. Notification clicks open Vesper Desire, using a service-worker message for an already open window so playback/conversations are not reloaded. Missing push configuration does not roll back a saved encounter.
+## Deploy using computer-side Cloudflare access
 
-## Verification
+This cloud workspace cannot deploy without Cloudflare credentials. Until deployment the currently deployed shared-database version remains active.
 
-Verified locally: **33/33 tests pass**, production web build succeeds, and MCP Worker dry-run bundles successfully. Full TypeScript check reports only the five pre-existing diagnostics described below.
-
-`npm run test:desire` runs the original relevant engine/service/notification/history regressions plus native cutover tests against isolated SQLite. Coverage includes old-request replay through Vesper, no default seeding, read-only status/history, required provenance, same-ID concurrency, absence accumulation, real user return, verbatim notes, style/expression behavior and native notification routing. Legacy renderer fixtures are retained only for original regressions.
-
-`npm run build` and the MCP Worker dry-run must pass. Full `npx tsc --noEmit` has pre-existing music union/callback errors in `app/page.tsx` and TS5097 imports in `tools/test-codex-approval.ts` and `tools/test-stickers.ts`; no new Desire errors are acceptable.
-
-## Production cutover: deployment-side Codex
-
-This workspace has no Cloudflare API credentials. No production deployment, database query or official Vesper MCP call has been verified. The existing automation is intentionally still on the old service until the new tools are deployed and callable.
-
-1. Pull the release commit from `sites-release-ca9c513`. Using existing local Cloudflare access, verify the original database and its `veratilier` row, back up that existing D1, and compare current state/history with the old read-only MCP. Check all original migrations are already applied, as the uploaded September 7 deployment report states. Do not apply test migrations to Vesper DB or initialize another row.
-2. Preserve dashboard variables; deploy existing workers only:
+1. Pull latest `sites-release-ca9c513`; preserve dashboard variables and existing secrets. Back up Vesper D1 using existing operational procedures. No original Desire data migration is needed.
+2. Run:
    ```sh
    npm ci
    npm run test:desire
@@ -37,13 +30,14 @@ This workspace has no Cloudflare API credentials. No production deployment, data
    npx wrangler deploy --config mcp-server/wrangler.jsonc --keep-vars
    npx wrangler deploy --config wrangler.production.jsonc --keep-vars
    ```
-   Verify both use the original `DESIRE_DB` and separate `DESIRE_LEGACY_KV`. Vesper's normal VAPID secrets/subscriptions must be available for notifications. Do not copy Desire's VAPID pair over Vesper's pair.
-3. Check unauthenticated access is rejected, authenticated native status/history match the old service, API tool catalog contains all five tools, production assets include the flower, and official Vesper MCP lists/calls `desire_status` and `desire_history`. Existing ChatGPT connection metadata may need refreshing. Validate an invalid encounter is rejected without changes; do not fabricate a real interaction just to test writes.
-4. Only after those read/metadata checks, update the existing hourly task `6a892bcbede4819186cfbe157bf852fc` in place to call **Vesper's** Desire tools. Keep its schedule and other instructions. Routine activity/tool execution belongs in Atlas; Desire notes only contain a new relationship observation, otherwise omit note. Only a genuinely new Vera message permits `interaction_source=user`; autonomous runs use `automation`. Reuse one stable `request_id` across retries. `desire_express(mode=record)` records an expression without re-sending it.
-5. Verify the next genuine encounter through Vesper produces exactly one original-history event, updates expected values and leaves the real-interaction clock unchanged for automation. Stop referring callers to the old Desire MCP. Keep its deployment/data intact for rollback; do not run duplicate events through old and new tool connections with different request IDs.
+3. Verify both deployed Workers use only the `vesper-db` DB binding for Desire. No migration SQL needs to be applied manually: the isolated tables initialize on first authorized access.
+4. Read authenticated Vesper status/history: the new independent database begins with defaults and empty history. Separately read the original domain's status/history and verify its existing data is unchanged. An unauthorized request must still return 401.
+5. During a genuine frontend interaction, verify Vesper changes independently and the original domain does not. Do not submit a fabricated interaction to test scoring. Keep the official hourly task on the original connection; do not follow the old instruction to switch it to Vesper.
 
-Rollback deploys the previous API/MCP versions and restores the old task tool selection. The shared schema/data were not rewritten, so no reverse data import is needed. Avoid rolling back to pre-September-7 engine code.
+## Verification and rollback
 
-## Visual asset provenance
+Local verification: 34/34 tests pass, web production build succeeds, MCP Worker dry-run succeeds with only the Vesper DB binding, and TypeScript reports only the five existing diagnostics.
 
-`public/desire-petal.webp` is the WebP encoding of the generated transparent ice-blue petal. The UI repeats it six times with independent scale/opacity and reduced-motion support. No mock values or preview screenshot are used as live data.
+The relevant original regressions plus separation tests run with `npm run test:desire`. Tests verify new defaults, no original-binding fallback, untouched original-named sentinel tables, idempotent requests, provenance, repeat initialization, D1 push metadata and notification navigation. The full project TypeScript check has five known pre-existing music/test-import diagnostics; no new Desire errors are acceptable.
+
+Avoid rolling back to the previous shared-database release: it would reconnect Vesper to official Rowan's data. Preserve the independent DB-only routing in any corrective rollback. No production state, history or database has been deleted by this change.

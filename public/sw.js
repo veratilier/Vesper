@@ -73,6 +73,7 @@ self.addEventListener("notificationclick", (event) => {
         const existing = windows.find(window => new URL(window.url).origin === home.origin);
         if (!existing) return self.clients.openWindow(target.href);
         // Route Desire without reloading a running conversation or playback session.
+        if (target.searchParams.get('section') === 'chat') existing.postMessage({type:'vesper-open-section',section:'chat'});
         if (target.searchParams.get('section') === 'desire') existing.postMessage({ type: 'vesper-open-section', section: 'desire' });
         return existing.focus();
       }),

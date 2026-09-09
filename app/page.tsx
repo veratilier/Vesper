@@ -922,10 +922,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [activeTracks.length, currentTrack?.id, playbackDuration, playing, setMusicPlayback]);
   const [wakeRequest, setWakeRequest] = useState<string | null>(null);
-  useAutonomousWake(() => {
-    setVisitedSections(sections => sections.includes("聊天") ? sections : [...sections, "聊天"]);
-    setWakeRequest(current => current || `auto-${crypto.randomUUID()}`);
-  });
+
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.has("vesper-pwa")) {
@@ -944,13 +941,18 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=27", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=28", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
   }, []);
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const openSection = (event: MessageEvent) => {
-      if (event.data?.type !== 'vesper-open-section' || event.data.section !== 'desire') return;
+      if (event.data?.type !== 'vesper-open-section') return;
+      if (event.data.section === 'chat') {
+        setVisitedSections(sections => sections.includes('聊天') ? sections : [...sections, '聊天']);
+        setConversationId('vesper-autonomous-wake'); setActive('聊天'); return;
+      }
+      if (event.data.section !== 'desire') return;
       setVisitedSections(sections => sections.includes('欲望') ? sections : [...sections, '欲望']);
       setActive('欲望');
     };
@@ -959,6 +961,10 @@ export default function Home() {
   }, []);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
+    if (query.get('section') === 'chat' && query.get('conversation') === 'vesper-autonomous-wake') {
+      setVisitedSections(sections => sections.includes('聊天') ? sections : [...sections, '聊天']);
+      setConversationId('vesper-autonomous-wake'); setActive('聊天');
+    }
     if (query.get('section') === 'desire') {
       setVisitedSections(sections => sections.includes('欲望') ? sections : [...sections, '欲望']);
       setActive('欲望');
@@ -1825,39 +1831,6 @@ async function sendAutonomousPush(
   return response.ok;
 }
 
-function useAutonomousWake(onWake: () => void) {
-  const [preferences] = usePersistentDocument<VesperPreferences>("settings", defaultPreferences);
-  const callback = useRef(onWake);
-  callback.current = onWake;
-  useEffect(() => {
-    if (preferences.careFrequency === "off") return;
-    const key = "vesper-wake-runtime-v1";
-    let lastCheck = Date.now();
-    const check = () => {
-      const now = Date.now();
-      const elapsedHours = Math.min(60_000, Math.max(0, now - lastCheck)) / 3_600_000;
-      lastCheck = now;
-      if (document.visibilityState !== "visible") return;
-      const hour = new Date(now).getHours();
-      if (hour >= 23 || hour < 8) return;
-      const state = readLocalValue(key, { checkedAt: now, cumulative: 0, threshold: wakeThreshold(), lastWakeAt: 0, generation: 0 });
-      const rate = preferences.careFrequency === "daily" ? 1 / 14 : 1 / 72;
-      const cumulative = state.cumulative + elapsedHours * rate;
-      const minimumGap = preferences.careFrequency === "daily" ? 8 : 36;
-      if (cumulative < state.threshold || (now - state.lastWakeAt) / 3_600_000 < minimumGap) {
-        localStorage.setItem(key, JSON.stringify({ ...state, checkedAt: now, cumulative }));
-        return;
-      }
-      localStorage.setItem(key, JSON.stringify({ checkedAt: now, cumulative: 0, threshold: wakeThreshold(), lastWakeAt: now, generation: state.generation + 1 }));
-      callback.current();
-    };
-    const timer = window.setInterval(check, 60_000);
-    check();
-    const onVisibility = () => { lastCheck = Date.now(); };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [preferences.careFrequency]);
-}
 
 function Today({
   track,
@@ -4598,15 +4571,43 @@ function ConnectedChat({
       if (sharedFrame) throw reason;
     }
   };
-  const wakeSender = useRef(send);
-  wakeSender.current = send;
   useEffect(() => {
-    if (!wakeRequest || !historyReady || wakeConsumed.current.has(wakeRequest)) return;
-    wakeConsumed.current.add(wakeRequest);
-    onWakeHandled?.();
-    if (busy || sending.current) { if (!wakeRequest.startsWith("auto-")) setError("正在回复，这次没有插入新的唤醒。等本轮结束后再唤醒。"); return; }
-    void wakeSender.current(undefined, wakeRequest);
-  }, [wakeRequest, historyReady, busy, onWakeHandled]);
+    if (!wakeRequest || wakeConsumed.current.has(wakeRequest)) return;
+    wakeConsumed.current.add(wakeRequest); onWakeHandled?.();
+    void fetch(codexHistoryUrl('/wake'), { method: 'POST', headers: codexHistoryHeaders(true),
+      body: JSON.stringify({action: 'request', requestId: wakeRequest}) }).then(async response => {
+      if (!response.ok) throw new Error('后台唤醒暂未连接，请稍后重试。');
+      const result = await response.json() as {conversationId: string};
+      onSelectConversation(result.conversationId);
+    }).catch(reason => setError(reason.message));
+  }, [wakeRequest, onWakeHandled, onSelectConversation]);
+  useEffect(() => {
+    const deviceId = `web-${conversationId}-${crypto.randomUUID()}`;
+    const publish = () => { void fetch(codexHistoryUrl('/wake'), {method:'POST',headers:codexHistoryHeaders(true),
+      body:JSON.stringify({action:'presence',deviceId,busy})}).catch(() => {}); };
+    publish(); const timer=window.setInterval(publish,30000);
+    return () => {window.clearInterval(timer); void fetch(codexHistoryUrl('/wake'), {method:'POST',headers:codexHistoryHeaders(true),
+      body:JSON.stringify({action:'presence',deviceId,busy:false}),keepalive:true}).catch(() => {});};
+  }, [busy, conversationId]);
+  useEffect(() => {
+    if (conversationId !== 'vesper-autonomous-wake' || !historyReady || busy) return;
+    let stopped=false;
+    const refresh=async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response=await fetch(codexHistoryUrl(`/conversations/${conversationId}`), {headers:codexHistoryHeaders(),cache:'no-store'});
+        if (!response.ok) return;
+        const payload=await response.json() as {messages?: BridgeChatMessage[]; tombstones?: CodexMessageTombstone[]};
+        if (!stopped) {
+          tombstonesRef.current=[...tombstonesRef.current,...(payload.tombstones || [])];
+          save(mergeCodexMessages(messagesRef.current, normalizeCodexMessages(payload.messages || [],conversationId)).filter(item=>!messageWasDeleted(item,tombstonesRef.current)));
+        }
+      } catch {}
+    };
+    const timer=window.setInterval(() => void refresh(),5000);
+    document.addEventListener('visibilitychange',refresh);
+    return () => {stopped=true;window.clearInterval(timer);document.removeEventListener('visibilitychange',refresh);};
+  }, [conversationId, historyReady, busy]);
   const saveAttachmentAsSticker = async (attachment: ChatAttachment, item: BridgeChatMessage) => {
     const description = window.prompt("这张表情适合什么时候用？（可留空）", "") ?? null;
     if (description === null) return;
@@ -5316,38 +5317,29 @@ function SettingsPage({
 }
 
 function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferences; onClose: () => void }) {
-  const [tick, setTick] = useState(0);
-  const [previewPulse, setPreviewPulse] = useState(0);
-  const runtime = readLocalValue("vesper-wake-runtime-v1", {
-    checkedAt: 0, cumulative: 0, threshold: 1, lastWakeAt: 0, generation: 0,
-  });
+  const [previewPulse,setPreviewPulse]=useState(0);
+  const [runtime,setRuntime]=useState<{heartbeat?:number;nextAt?:number;lastJob?:{status:string;finished?:number;tools?:number};schedulerError?:string}|null>(null);
   useEffect(() => {
-    const update = () => setTick(new Date().getTime());
-    const initial = window.setTimeout(update, 0);
-    const timer = window.setInterval(update, 1000);
-    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
-  }, []);
-  const elapsed = tick && runtime.checkedAt ? Math.max(0, tick - runtime.checkedAt) / 3_600_000 : 0;
-  const rate = preferences.careFrequency === "daily" ? 1 / 14 : 1 / 72;
-  const progress = preferences.careFrequency === "off" ? 0 : Math.min(1, (runtime.cumulative + elapsed * rate) / Math.max(.01, runtime.threshold));
-  const estimatedHours = preferences.careFrequency === "off" ? null : Math.max(0, (runtime.threshold - runtime.cumulative) / rate - elapsed);
-  return (
-    <div className="modal-layer">
-      <button className="modal-scrim" onClick={onClose} />
-      <section className="connection-modal wake-visualizer" data-tick={tick}>
-        <div className="modal-head"><button className="settings-back" onClick={onClose}><Icon name="chevron" /></button><div><small>AUTONOMOUS WAKE</small><h2>自主唤醒</h2></div></div>
-        <div key={previewPulse} className={`${preferences.careFrequency === "off" ? "wake-orbit asleep" : "wake-orbit"}${previewPulse ? " previewing" : ""}`} style={{ "--wake-progress": progress } as CSSProperties}><i /><i /><span><Icon name="sparkles" /></span></div>
-        <div className="wake-status-grid">
-          <div><small>当前状态</small><b>{preferences.careFrequency === "off" ? "休眠" : "静候合适时机"}</b></div>
-          <div><small>机会累积</small><b>{Math.round(progress * 100)}%</b></div>
-          <div><small>上次触发</small><b>{runtime.lastWakeAt ? new Date(runtime.lastWakeAt).toLocaleString("zh-CN") : "尚未发生"}</b></div>
-          <div><small>预计窗口</small><b>{estimatedHours === null ? "—" : estimatedHours < 1 ? "一小时内" : `约 ${Math.ceil(estimatedHours)} 小时`}</b></div>
-        </div>
-        <p className="settings-hint">自动唤醒只在 Vesper 页面打开且可见、白天达到频率阈值时尝试连接聊天；正在回复时跳过。关闭页面后不会继续计时。Pandora 也可以手动唤醒。</p>
-        <button className="reset-background" onClick={() => setPreviewPulse((value) => value + 1)}>预览一次脉冲</button>
-      </section>
-    </div>
-  );
+    let stopped=false;
+    const refresh=() => {void fetch(codexHistoryUrl('/wake'),{headers:codexHistoryHeaders(),cache:'no-store'}).then(r=>r.ok?r.json():null).then(r=>{if(!stopped)setRuntime(r as typeof runtime);}).catch(()=>{});};
+    refresh();const timer=window.setInterval(refresh,10000);
+    return ()=>{stopped=true;window.clearInterval(timer);};
+  },[]);
+  const alive=!!runtime?.heartbeat && Date.now()/1000-runtime.heartbeat<1000;
+  return <div className="modal-layer"><button className="modal-scrim" onClick={onClose}/>
+    <section className="connection-modal wake-visualizer">
+      <div className="modal-head"><button className="settings-back" onClick={onClose}><Icon name="chevron"/></button><div><small>AUTONOMOUS WAKE</small><h2>自主唤醒</h2></div></div>
+      <div key={previewPulse} className={`wake-orbit${preferences.careFrequency==='off'?' asleep':''}${previewPulse?' previewing':''}`}><i/><i/><span><Icon name="sparkles"/></span></div>
+      <div className="wake-status-grid">
+        <div><small>后台状态</small><b>{!alive?'等待后台连接':preferences.careFrequency==='off'?'自动唤醒已关闭':'VPS 在线'}</b></div>
+        <div><small>最近任务</small><b>{runtime?.lastJob?.status || '尚未发生'}</b></div>
+        <div><small>已执行工具</small><b>{runtime?.lastJob?.tools ?? 0}</b></div>
+        <div><small>下次窗口</small><b>{preferences.careFrequency==='off'?'—':runtime?.nextAt?new Date(runtime.nextAt*1000).toLocaleString('zh-CN'):'等待计划'}</b></div>
+      </div>
+      <p className="settings-hint">VPS 在白天按现有频率自主唤醒，关闭手机页面后仍可执行。回复保存在「主动唤醒」对话中，保存后发送通知；正在聊天时顺延。需要额外授权的操作不会自动批准。</p>
+      {runtime?.schedulerError && <p className="settings-hint">后台暂未完成，请稍后查看状态。</p>}
+      <button className="reset-background" onClick={()=>setPreviewPulse(v=>v+1)}>预览一次脉冲</button>
+    </section></div>;
 }
 
 const VESPER_MCP_URL = "https://mcp.vesper.r-vera.com/mcp";

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
+import vesper_wake_store as wake_store
 
 
 DB_PATH = Path(os.environ.get("VESPER_HISTORY_DB", "/home/ubuntu/.vesper/chat-history.sqlite3"))
@@ -183,7 +184,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(401, {"error": "Unauthorized"})
             return
         path = [unquote(part) for part in urlparse(self.path).path.strip("/").split("/") if part]
-        if path == ["health"] and self.command == "GET":
+        if path == ["wake"] and self.command == "GET":
+            self.send_json(200, wake_store.status())
+        elif path == ["wake"] and self.command == "POST":
+            body = self.body()
+            if body.get("action") == "presence":
+                wake_store.presence(body.get("deviceId", "web"), body.get("busy", False))
+                self.send_json(200, {"ok": True})
+            elif body.get("action") == "request":
+                ident = wake_store.request(body.get("requestId"))
+                self.send_json(202, {"ok": True, "requestId": ident, "conversationId": wake_store.CONVERSATION})
+            else:
+                self.send_json(400, {"error": "Unknown wake action"})
+        elif path == ["health"] and self.command == "GET":
             self.send_json(200, {"ok": True})
         elif path == ["conversations"] and self.command == "GET":
             self.list_conversations()

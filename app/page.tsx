@@ -709,14 +709,14 @@ export default function Home() {
   const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
   const [watchConversationId, setWatchConversationId] = useLocalDocument("watch-conversation", "watch-together");
   const [focusMessageId, setFocusMessageId] = useState("");
-  const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
+  const initialProfile = readLocalValue("vesper-local-profile", { userName: "Vera", agentName: "Rowan", userAvatar: "", agentAvatar: "" });
   const storedAppearance = readLocalValue("vesper-local-appearance", { accent: "#647e94", background: DEFAULT_APP_BACKGROUND });
   const initialAppearance = {
     accent: normalizeNeutralAccent(storedAppearance.accent),
     background: normalizeAppBackground(storedAppearance.background),
   };
-  const [userName, setUserName] = useState(initialProfile.userName);
-  const [agentName, setAgentName] = useState(initialProfile.agentName);
+  const [userName, setUserName] = useState(!initialProfile.userName || initialProfile.userName === "我" ? "Vera" : initialProfile.userName);
+  const [agentName, setAgentName] = useState(!initialProfile.agentName || initialProfile.agentName === "Vesper" ? "Rowan" : initialProfile.agentName);
   const [userAvatar, setUserAvatar] = useState(initialProfile.userAvatar);
   const [agentAvatar, setAgentAvatar] = useState(initialProfile.agentAvatar);
   const [accent, setAccent] = useState(initialAppearance.accent);
@@ -1267,8 +1267,8 @@ export default function Home() {
         const appearance = docs.appearance?.value as
           { accent?: string; background?: string } | undefined;
         if (profile && !hasLocalProfile) {
-          setUserName(profile.userName || "我");
-          setAgentName(profile.agentName || "Vesper");
+          setUserName(!profile.userName || profile.userName === "我" ? "Vera" : profile.userName);
+          setAgentName(!profile.agentName || profile.agentName === "Vesper" ? "Rowan" : profile.agentName);
           setUserAvatar(profile.userAvatar || "");
           setAgentAvatar(profile.agentAvatar || "");
         }
@@ -5107,7 +5107,7 @@ function SettingsPage({
       />}
       {!category ? <div className="settings-category-list">
         {[
-          ["sparkles", "Agent", "Model connection, voice and wake-ups"],
+          ["sparkles", "Agent", "Model connection and voice"],
           ["heart", "Souvenir", "Anniversaries, countdowns and check-ins"],
           ["link", "Tools", "MCP connections, notifications and location"],
           ["archive", "Data", "Memory permissions, export and backup"],
@@ -5116,7 +5116,6 @@ function SettingsPage({
         {category === "Agent" && <>
           <SettingRow icon="sparkles" title="Codex Server" sub="模型服务与连接" onClick={() => setSelected("Codex Server")} />
           <SettingRow icon="volume" title="Agent 声音（TTS）" sub="声音服务与音色" onClick={() => setSelected("Agent 声音")} />
-          <SettingRow icon="sparkles" title="自主唤醒" sub={preferences.careFrequency === "off" ? "当前已关闭" : "查看运行状态与下一次机会"} status={preferences.careFrequency !== "off"} onClick={() => setSelected("自主唤醒")} />
         </>}
         {category === "Souvenir" && <>
           <SettingRow icon="calendar" title="纪念日与倒计时" sub="认识的日子，以及期待的日子" onClick={() => onOpenSection("纪念日")} />
@@ -5140,8 +5139,7 @@ function SettingsPage({
         <ExternalMcpModal onClose={closeDetail} />
       ) : selected === "Vesper MCP" ? (
         <VesperMcpModal onClose={closeDetail} />
-      ) : selected === "自主唤醒" ? (
-        <WakeVisualizer preferences={preferences} onClose={closeDetail} />
+
       ) : selected === "Agent 声音" ? (
         <VoiceSettingsModal onClose={closeDetail} />
       ) : selected &&

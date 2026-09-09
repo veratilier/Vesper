@@ -92,6 +92,9 @@ def context(job):
     return '\n'.join(r['role']+': '+r['content'][:1200] for r in reversed(rows[:12]))[-9000:]
 
 
+def allowed_time():return 8<=datetime.now(ZoneInfo('Asia/Singapore')).hour<23
+
+
 def current_preferences():return policy.preferences(policy.history(HISTORY),time.time())
 
 
@@ -151,7 +154,7 @@ def execute(job):
     if not job.get('conversation_id'):raise RuntimeError('No locked target conversation')
     wake={'requestId':ident,'requestedAt':created,'source':'automation'}
     def permitted():
-        return not current_preferences().get('quiet') and not front_busy(time.time()) and any(
+        return allowed_time() and not current_preferences().get('quiet') and not front_busy(time.time()) and any(
             r['id']==job['user_message_id'] and r['vesper_conversation_id']==job['conversation_id'] and policy.normal(r)
             for r in policy.history(HISTORY))
     def marker(status):
@@ -253,7 +256,7 @@ def execute(job):
 
 def deliver(ident,message):
     with store.db() as con:job=dict(con.execute('SELECT * FROM jobs WHERE id=?',(ident,)).fetchone())
-    if current_preferences().get('quiet') or front_busy(time.time()):return
+    if not allowed_time() or current_preferences().get('quiet') or front_busy(time.time()):return
     receipt=http('/api/wake',{'requestId':ident,'message':message,'conversationId':job['conversation_id']})
     update(ident,status='completed' if receipt.get('delivered',0)>0 else 'push_failed',push_json=json.dumps(receipt),error=None)
 
@@ -273,7 +276,7 @@ def tick():
         saved=con.execute("SELECT id,notification FROM jobs WHERE status='saved'").fetchall()
     prefs=current_preferences()
     with store.db() as con:store.put(con,'preferences',prefs)
-    daylight=8<=datetime.now(ZoneInfo('Asia/Singapore')).hour<23
+    daylight=allowed_time()
     if not daylight or prefs.get('quiet') or front_busy(now):return
     for pending in saved:
         try:deliver(pending['id'],pending['notification'])

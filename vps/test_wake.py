@@ -10,6 +10,7 @@ class WakeTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.addCleanup(patch.stopall)
         patch.object(runner,'current_preferences',lambda:{}).start()
+        patch.object(runner,'allowed_time',lambda:True).start()
         self.old=store.PATH;store.PATH=Path(self.temp.name)/'wake.db';self.addCleanup(lambda:setattr(store,'PATH',self.old))
     def test_real_curl_preserves_utf8_and_json_escapes(self):
         from http.server import BaseHTTPRequestHandler, HTTPServer

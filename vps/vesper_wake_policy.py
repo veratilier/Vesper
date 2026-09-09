@@ -29,7 +29,8 @@ def target(rows):
         meta=json.loads(user['metadata_json'] or '{}')
         turn=user.get('turn_id') or meta.get('turnId')
         if not turn or (meta.get('turnStatus') or user['status'])!='completed':continue
-        if any(a['role']=='agent' and normal(a) and a['content'].strip() and
+        if any(a['role']=='agent' and normal(a) and a['content'].strip() and a.get('message_type','text')=='text' and
+               json.loads(a['metadata_json'] or '{}').get('blockType','agentMessage')=='agentMessage' and
                a['vesper_conversation_id']==user['vesper_conversation_id'] and
                (a.get('turn_id') or json.loads(a['metadata_json'] or '{}').get('turnId'))==turn and
                a['status'] in ('completed','delivered') and
@@ -62,7 +63,7 @@ def preferences(rows,now):
             ttl=(local.replace(hour=0,minute=0,second=0,microsecond=0)+timedelta(days=1)).timestamp()-at
         if at+ttl<=now:continue
         evidence={'messageId':row['id'],'expiresAt':at+ttl}
-        if re.search(r'别打扰我|不要打扰我|让我安静|先别(?:给我)?发消息|不要主动(?:找我|发消息)|我想静静',text):
+        if re.search(r'别打扰我|不要打扰我|(?:先)?别找我|别联系我|让我安静|先别(?:给我)?发消息|不要主动(?:找我|发消息)|我想静静',text):
             result['quiet']=evidence
         elif re.search(r'现在可以(?:找我|发消息)|可以主动找我|不用保持安静',text):result.pop('quiet',None)
         if re.search(r'(?:少|减少)(?:一点)?(?:打扰|主动消息)|别太频繁',text):result['less']=evidence

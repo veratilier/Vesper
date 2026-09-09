@@ -74,3 +74,19 @@ with the existing daily setting. No API key or synthetic Desire encounter was us
 Regression coverage also includes `node tools/test-wake-push.mjs` (authorization
 and concurrent push deduplication). The full build and existing chat/Desire tests
 passed; TypeScript retains only the five previously recorded unrelated diagnostics.
+
+### UTF-8 follow-up
+
+The first acceptance notification arrived but was not readable Chinese: the
+runner embedded JSON in curl's config syntax, which discarded the backslashes
+in Unicode escapes. Transport acceptance alone had missed this encoding bug.
+The runner now supplies a private UTF-8 JSON body file via `--data-binary`, keeping
+payloads out of curl's config parser. A real curl-to-HTTP regression test covers
+Chinese, emoji, quotes, newlines, and literal backslashes.
+
+The two affected assistant messages were restored by exact comparison against
+Codex's original thread snapshot, keeping their IDs and timestamps. The known
+wake label, tool-result labels and conversation title were also repaired after
+a SQLite backup. The corrected replies matched the history HTTP response. One
+corrective push (`<original-job-id>-utf8-fix`) was sent from the saved original
+reply, with 6/6 provider acceptances. No model/tool rerun or extra wake job occurred.

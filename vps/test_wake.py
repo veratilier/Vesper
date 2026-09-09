@@ -8,6 +8,24 @@ class WakeTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.old=store.PATH;store.PATH=Path(self.temp.name)/'wake.db';self.addCleanup(lambda:setattr(store,'PATH',self.old))
+    def test_real_curl_preserves_utf8_and_json_escapes(self):
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import threading
+        received=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_POST(self):
+                received.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200);self.end_headers();self.wfile.write(b'{"ok":true}')
+        server=HTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        token=Path(self.temp.name)/'test-token';token.write_text('fixture-only')
+        payload={'message':'你好，Vera 🌙\n第二行："引号"；路径 C:\\notes；字面量 \\u6211','nested':{'text':'温柔'}}
+        try:
+            with patch.object(runner,'TOKEN',token),patch.object(runner,'ORIGIN',f'http://127.0.0.1:{server.server_port}'):
+                self.assertEqual(runner.http('/test',payload),{'ok':True})
+            self.assertEqual(received,[payload])
+        finally:server.shutdown();server.server_close();thread.join()
     def test_request_is_idempotent_and_joins_pending(self):
         self.assertEqual(store.request('one'),store.request('one'))
         self.assertEqual(store.request('one'),store.request('two'))

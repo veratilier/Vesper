@@ -2,7 +2,7 @@
 """Vesper unattended executor. Uses the installed Codex + its existing ChatGPT login.
 No model API key. Model runs are never automatically replayed after an uncertain failure.
 """
-import argparse, fcntl, json, os, queue, random, signal, sqlite3, subprocess, threading, time
+import argparse, fcntl, json, os, queue, random, signal, sqlite3, subprocess, threading, time, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -33,11 +33,17 @@ def http(path, body=None, history=False):
     header=('Authorization: Bearer ' if history else 'x-vesper-device-token: ')+token
     config='header = '+json.dumps(header)+'\nheader = "Content-Type: application/json"\n'
     args=['curl','--silent','--show-error','--max-time','40','--config','-','--write-out','\n%{http_code}']
-    if body is not None:
-        config+='data = '+json.dumps(json.dumps(body,ensure_ascii=False))+'\n'
-        args+=['--request','POST']
     args+=[('http://127.0.0.1:4510' if history else ORIGIN)+path]
-    r=subprocess.run(args,input=config,text=True,capture_output=True)
+    # curl config syntax is not JSON: it drops the backslash in \u escapes.
+    # Keep the request body out of that parser entirely, including newlines,
+    # literal backslashes, emoji, and Chinese text. Only the header uses config.
+    with tempfile.TemporaryDirectory(prefix='vesper-wake-http-') as directory:
+        if body is not None:
+            body_path=Path(directory)/'body.json'
+            body_path.write_bytes(json.dumps(body,ensure_ascii=False).encode('utf-8'))
+            body_path.chmod(0o600)
+            args+=['--request','POST','--data-binary','@'+str(body_path)]
+        r=subprocess.run(args,input=config,text=True,capture_output=True)
     payload,_,status=r.stdout.rpartition('\n')
     if r.returncode or not status.startswith('2'):raise RuntimeError(f'HTTP {path.split("?")[0]} failed ({status or "network"})')
     return json.loads(payload)

@@ -60,4 +60,14 @@ class PolicyTests(unittest.TestCase):
                 job=con.execute('SELECT * FROM jobs').fetchone()
                 self.assertEqual(job['status'],'skipped');self.assertIsNone(job['conversation_id'])
 
+    def test_history_refuses_background_recreation_of_missing_window(self):
+        import codex_history_server as history
+        with tempfile.TemporaryDirectory() as tmp,patch.object(history,'DB_PATH',Path(tmp)/'history.db'):
+            handler=object.__new__(history.Handler)
+            handler.body=lambda:{'id':'wake-final','role':'agent','content':'Actual result','wakeTargetUserId':'deleted-user'}
+            responses=[];handler.send_json=lambda status,body:responses.append(status)
+            handler.upsert_message('missing-chat')
+            self.assertEqual(responses,[409])
+            with history.db() as con:self.assertEqual(con.execute('SELECT count(*) FROM conversations').fetchone()[0],0)
+
 if __name__=='__main__':unittest.main()

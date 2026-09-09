@@ -298,6 +298,17 @@ class Handler(BaseHTTPRequestHandler):
         source = source if source in {"legacy-vesper", "codex"} else "codex"
         time_source = str(body.get("timeSource") or metadata.get("timeSource") or ("message" if created_at else "unknown"))[:32]
         with db() as connection:
+            if body.get("wakeTargetUserId"):
+                # Serialize with archive/delete: background output must never recreate a window.
+                connection.execute("BEGIN IMMEDIATE")
+                target = connection.execute("""SELECT 1 FROM conversations c JOIN messages m
+                  ON m.vesper_conversation_id=c.vesper_conversation_id
+                  WHERE c.vesper_conversation_id=? AND c.archived_at IS NULL AND m.id=? AND m.role='user'""",
+                  (conversation_id, body["wakeTargetUserId"])).fetchone()
+                if not target:
+                    self.send_json(409, {"error": "Wake target no longer available"})
+                    return
+
             connection.execute("""INSERT INTO conversations
               (vesper_conversation_id, title, created_at, updated_at, archived_at, source)
               VALUES (?, ?, ?, ?, NULL, ?)

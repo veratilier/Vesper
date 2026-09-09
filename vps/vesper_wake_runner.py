@@ -84,7 +84,7 @@ class Rpc:
 
 def save_message(job,ident,role,content,metadata,status='delivered'):
     return http('/conversations/'+job['conversation_id']+'/messages',{
-        'id':ident,'conversationId':job['conversation_id'],'role':role,'content':content,'status':status,'type':'sticker' if metadata.get('sticker') else 'text',
+        'id':ident,'wakeTargetUserId':job['user_message_id'],'conversationId':job['conversation_id'],'role':role,'content':content,'status':status,'type':'sticker' if metadata.get('sticker') else 'text',
         'createdAt':metadata.pop('_createdAt',iso()),'metadata':metadata,'source':'codex','timeSource':'message'},history=True)
 
 def context(job):

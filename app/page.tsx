@@ -1,6 +1,8 @@
 "use client";
 import { VESPER_DESIRE_SESSION_CONFIG, VESPER_DESIRE_INSTRUCTIONS } from "@/lib/desire/routing.js";
 import { Capacitor } from "@capacitor/core";
+import { nativeMcpOAuth } from "./native-mcp-oauth";
+import { nativeOAuthCode, NATIVE_OAUTH_PREFIX } from "@/lib/mcp-oauth-callback";
 import { documentSyncAction } from "@/lib/document-sync";
 import { NotificationSettings } from "./notification-settings";
 import { WindowOpening } from "./window-opening";
@@ -518,6 +520,7 @@ const uiLabel = (key: string) => uiLabels[key] || key;
 const nav = [
   { label: "今日", english: "Today", icon: "home" },
   { label: "聊天", english: "Chat", icon: "chat" },
+  { label: "欲望", english: "Desire", icon: "heart" },
   { label: "日记", english: "Journal", icon: "diary" },
   { label: "便笺", english: "Notes", icon: "note" },
   { label: "提醒", english: "Reminders", icon: "check" },
@@ -526,7 +529,6 @@ const nav = [
   { label: "相册", english: "Album", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
   { label: "Pandora", english: "Pandora", icon: "box" },
-  { label: "欲望", english: "Desire", icon: "heart" },
   { label: "设置", english: "Settings", icon: "settings" },
 ];
 type NoteItem = {
@@ -5238,6 +5240,7 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
     return value;
   });
   const [testingId, setTestingId] = useState("");
+  const [authorizingId, setAuthorizingId] = useState("");
   const [editor, setEditor] = useState<ExternalMcpEntry | null>(() => context === "desire" && !servers.some(server => /desire|欲望/i.test(server.name))
     ? { id: crypto.randomUUID(), name: "Desire", url: "", token: "", enabled: true, authMode: "none" }
     : null);
@@ -5333,14 +5336,18 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
     }
   }, [servers]);
   const authorize = async (server: ExternalMcpEntry) => {
+    if (authorizingId) return;
     if (!server.url) {
       setMessage("Enter the MCP server URL first.");
       return;
     }
+    setAuthorizingId(server.id);
     try {
+      const native = Capacitor.getPlatform() === "ios";
+      if (native && !Capacitor.isPluginAvailable("VesperOAuth")) throw new Error("Install the updated Vesper App to authorize MCP connections.");
       setMessage("Opening authorization page…");
-      const redirectUri = `${window.location.origin}/mcp/oauth/callback`;
-      const discoveryResponse = await fetch("/api/mcp/oauth/discover", {
+      const redirectUri = native ? "https://vesper.r-vera.com/mcp/oauth/callback" : `${window.location.origin}/mcp/oauth/callback`;
+      const discoveryResponse = await fetch(apiUrl("/api/mcp/oauth/discover"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
@@ -5376,20 +5383,14 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
         .replaceAll("+", "-")
         .replaceAll("/", "_")
         .replaceAll("=", "");
-      const state = crypto.randomUUID();
-      window.sessionStorage.setItem(
-        "vesper-mcp-oauth-pending",
-        JSON.stringify({
-          serverId: server.id,
-          state,
-          verifier,
-          tokenUrl: discovered.tokenUrl,
-          clientId: discovered.clientId,
-          clientSecret: discovered.clientSecret || server.clientSecret,
-          redirectUri,
-          resource: discovered.resource,
-        }),
-      );
+      const state = `${native ? NATIVE_OAUTH_PREFIX : ""}${crypto.randomUUID()}`;
+      const pending = {
+        serverId: server.id, state, verifier,
+        tokenUrl: discovered.tokenUrl, clientId: discovered.clientId,
+        clientSecret: discovered.clientSecret || server.clientSecret,
+        redirectUri, resource: discovered.resource,
+      };
+      if (!native) window.sessionStorage.setItem("vesper-mcp-oauth-pending", JSON.stringify(pending));
       update(server.id, { oauthStatus: "pending" });
       const target = new URL(discovered.authorizationUrl);
       target.searchParams.set("response_type", "code");
@@ -5400,10 +5401,36 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
       target.searchParams.set("code_challenge_method", "S256");
       if (discovered.scopes) target.searchParams.set("scope", discovered.scopes);
       target.searchParams.set("resource", discovered.resource || server.url);
-      window.location.assign(target.toString());
+      if (!native) {
+        window.location.assign(target.toString());
+        return;
+      }
+      const callback = await nativeMcpOAuth.authorize({ url: target.toString() });
+      const code = nativeOAuthCode(callback.url, state);
+      const exchange = await fetch(apiUrl("/api/mcp/oauth"), {
+        method: "POST", headers: appHeaders(true),
+        body: JSON.stringify({ ...pending, code }),
+      });
+      const result = await exchange.json() as { accessToken?: string; error?: string };
+      if (!exchange.ok || !result.accessToken) throw new Error(result.error || "OAuth authorization failed");
+      const authorized = { ...server, token: result.accessToken, oauthStatus: "authorized" as const };
+      const signature = `${server.id}:${server.url}:${result.accessToken}:${server.enabled}`;
+      syncedConnections.current.add(signature);
+      update(server.id, { token: result.accessToken, oauthStatus: "authorized" });
+      window.sessionStorage.removeItem("vesper-mcp-return");
+      try {
+        await syncToCodex(authorized);
+        setMessage("Authorized and synced. Start a new conversation to use these tools.");
+      } catch {
+        syncedConnections.current.delete(signature);
+        setMessage("Authorized. Tool sync failed; use Test to retry.");
+      }
     } catch (reason) {
-      update(server.id, { oauthStatus: undefined });
+      update(server.id, { oauthStatus: server.token ? "authorized" : undefined });
+      window.sessionStorage.removeItem("vesper-mcp-return");
       setMessage(reason instanceof Error ? reason.message : "Could not open the OAuth authorization page");
+    } finally {
+      setAuthorizingId("");
     }
   };
   const test = async (server: ExternalMcpEntry) => {
@@ -5461,7 +5488,7 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
                   </div>
                   <div className="mcp-card-actions">
                     <button disabled={testingId === server.id} onClick={() => void test(server)}>{testingId === server.id ? "Testing" : "Test"}</button>
-                    {server.authMode === "oauth" && <button onClick={() => void authorize(server)}>Authorize</button>}
+                    {server.authMode === "oauth" && <button disabled={Boolean(authorizingId)} onClick={() => void authorize(server)}>{authorizingId === server.id ? "Authorizing…" : "Authorize"}</button>}
                     <button onClick={() => openEditor(server)}>Edit</button>
                     <button onClick={() => void (async () => {
                       try {

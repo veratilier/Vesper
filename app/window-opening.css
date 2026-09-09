@@ -2,12 +2,14 @@
 .window-opening::backdrop{background:transparent}
 .opening-art{position:absolute;inset:0;overflow:hidden}
 .opening-plate{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;pointer-events:none;opacity:1}
+.opening-depth-0{opacity:0}
+.opening-ready .opening-depth-0{animation:opening-appear .9s ease-in-out both}
 .opening-ready .opening-depth-4{animation:opening-appear 1.3s .15s ease-in-out both}
 .opening-ready .opening-depth-3{animation:opening-appear 1.3s 1s ease-in-out both}
 .opening-ready .opening-depth-2{animation:opening-appear 1.3s 1.85s ease-in-out both}
 .opening-ready .opening-depth-1{animation:opening-appear 1.3s 2.7s ease-in-out both}
 .opening-plate:not(.opening-depth-0){opacity:0}
-.opening-hold .opening-plate:not(.opening-depth-0){opacity:1;animation:none}
+.opening-hold .opening-plate{opacity:1;animation:none}
 .window-opening .opening-enter{position:absolute;left:50%;bottom:calc(8% + env(safe-area-inset-bottom,0px));transform:translateX(-50%);margin:0;padding:13px 30px;border:1px solid #ebf5ff70;border-radius:40px;background:#e2efff20;box-shadow:0 4px 24px #1d385928,inset 0 1px 0 #ffffff30;backdrop-filter:blur(10px);color:#f4f8ff;font:italic 20px Georgia,serif;letter-spacing:.05em;white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .55s;cursor:pointer}
 .opening-hold .opening-enter{opacity:1;visibility:visible}
 .opening-enter span{margin-left:15px;font-style:normal}

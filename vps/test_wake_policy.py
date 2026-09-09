@@ -27,6 +27,10 @@ class PolicyTests(unittest.TestCase):
         allow=row('allow',at=1200);allow['content']='现在可以找我'
         self.assertNotIn('quiet',policy.preferences([allow,quiet],1300))
         self.assertEqual(policy.preferences([row('silent')],1100),{})
+    def test_token_budget_distinguishes_repeated_cached_input(self):
+        self.assertEqual(runner.token_budget({'totalTokens':34247,'cachedInputTokens':16640}),(34247,17607))
+        self.assertEqual(runner.token_budget({'totalTokens':33000}),(33000,33000))
+
     def test_interval_bounds_and_longing_direction(self):
         low=[policy.interval(0,{},random.Random(n)) for n in range(100)]
         high=[policy.interval(100,{},random.Random(n)) for n in range(100)]

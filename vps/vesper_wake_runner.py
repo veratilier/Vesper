@@ -92,6 +92,12 @@ def context(job):
     return '\n'.join(r['role']+': '+r['content'][:1200] for r in reversed(rows[:12]))[-9000:]
 
 
+def token_budget(usage):
+    total=max(0,int(usage.get('totalTokens',0)))
+    fresh=max(0,total-max(0,int(usage.get('cachedInputTokens',0))))
+    return total,fresh
+
+
 def allowed_time():return 8<=datetime.now(ZoneInfo('Asia/Singapore')).hour<23
 
 
@@ -192,9 +198,9 @@ def execute(job):
                 final.append(item['text'])
         elif method=='thread/tokenUsage/updated':
             usage=p.get('tokenUsage',{}).get('total',{})
-            tokens=usage.get('totalTokens',0)
-            update(ident,tokens=tokens)
-            if tokens>32000:raise RuntimeError('Wake token budget exceeded (32000); no retry')
+            tokens,fresh=token_budget(usage)
+            update(ident,tokens=tokens,budget_tokens=fresh)
+            if fresh>32000 or tokens>128000:raise RuntimeError('Wake token budget exceeded (32000 new / 128000 total); no retry')
         elif method=='turn/started':
             turn_id=p.get('turn',{}).get('id',turn_id);update(ident,turn_id=turn_id)
         elif method=='turn/completed':
@@ -283,7 +289,7 @@ def tick():
         except Exception:pass
     with store.db() as con:
         # Rolling 24h bounds, including failures; no paid API fallback or automatic model retries.
-        usage=con.execute('SELECT count(*),coalesce(sum(tokens),0) FROM jobs WHERE started>?',(now-86400,)).fetchone()
+        usage=con.execute('SELECT count(*),coalesce(sum(coalesce(budget_tokens,tokens)),0) FROM jobs WHERE started>?',(now-86400,)).fetchone()
         if usage[0]>=24 or usage[1]>=160000:return
     if frequency!='off' and now>=next_at:store.request('auto-'+str(int(next_at)),source='automation')
     with store.db() as con:

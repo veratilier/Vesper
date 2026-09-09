@@ -18,7 +18,7 @@ Model output is structured `{share, message}`. Silent rounds only retain their a
 
 ## Bounds and recovery
 
-One model turn per job, 600-second execution deadline, eight distinct tool calls, a 32,000 reported-token stop threshold, and at most 24 started rounds / 160,000 reported tokens in a rolling 24 hours. Token notifications are retrospective, so token thresholds are circuit breakers rather than exact billing caps. Subscription limits still apply. No extra paid API is configured. Context is bounded to 12 normal messages / 9,000 characters; final publication is bounded to 1,600 characters.
+One model turn per job, 600-second execution deadline, eight distinct tool calls, a 32,000 non-cached-token / 128,000 total-token stop threshold, and at most 24 started rounds / 160,000 non-cached tokens in a rolling 24 hours. All input/output tokens are still recorded; previously cached input is not counted twice against the new-token budget. Token notifications are retrospective, so token thresholds are circuit breakers rather than exact billing caps. Subscription limits still apply. No extra paid API is configured. Context is bounded to 12 normal messages / 9,000 characters; final publication is bounded to 1,600 characters.
 
 SQLite job IDs, process flock and per-item tool records prevent replay. An interrupted model/tool is never rerun automatically. Once saved, only the same idempotent push is retried. Unknown push delivery is not blindly resent. Note/journal writes remain allowed; deleting data, altering settings, official Desire tools and Desire encounter writes are unavailable. Database migrations are additive. Existing history and the legacy wake conversation remain untouched.
 

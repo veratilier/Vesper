@@ -283,3 +283,43 @@
   line-height: 1.45;
   text-align: left;
 }
+
+/* Center detail cards between the header and dock; long forms scroll inside. */
+.app-shell .settings-page.detail-active .modal-layer {
+  position: fixed;
+  inset: calc(var(--safe-top) + 70px) 20px calc(var(--safe-bottom) + 20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+}
+.app-shell .settings-page.detail-active .modal-layer > section {
+  flex: 0 1 640px;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  max-height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  border-radius: 24px;
+  padding: 24px 22px !important;
+  overscroll-behavior: contain;
+}
+.app-shell .settings-page.detail-active .modal-layer > .external-mcp-modal {
+  height: 100%;
+}
+@media (max-width: 767px) {
+  .app-shell .settings-page.detail-active .modal-layer {
+    bottom: calc(var(--safe-bottom) + var(--mobile-nav-height, 64px) + var(--mobile-nav-gap, 18px) + 14px);
+  }
+  html[data-mobile-keyboard="true"] .app-shell .settings-page.detail-active .modal-layer {
+    bottom: 12px;
+  }
+}
+@media (min-width: 1024px) {
+  .app-shell .settings-page.detail-active .modal-layer {
+    left: calc(var(--desktop-nav-width, 272px) + 20px);
+  }
+}

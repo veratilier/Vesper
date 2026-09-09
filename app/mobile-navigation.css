@@ -112,3 +112,16 @@
     padding-bottom: 12px !important;
   }
 }
+
+/* Chat also extends behind the dock instead of ending above it. */
+@media (max-width: 767px) {
+  .app-shell > .scroll-view:has(> .codex-chat) {
+    height: 100%;
+  }
+  .app-shell > .scroll-view > .codex-chat:not(.watch-chat) {
+    --floating-compose-gap: calc(var(--safe-bottom) + var(--mobile-nav-height) + var(--mobile-nav-gap) + 12px);
+  }
+  html[data-mobile-keyboard="true"] .app-shell > .scroll-view > .codex-chat:not(.watch-chat) {
+    --floating-compose-gap: 6px;
+  }
+}

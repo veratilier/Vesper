@@ -4665,6 +4665,22 @@ function ConnectedChat({
     };
   }, [conversationId]);
   useLayoutEffect(() => {
+    const composer = textareaRef.current?.closest(".chat-compose") as HTMLElement | null;
+    const chat = composer?.closest(".codex-chat") as HTMLElement | null;
+    if (!composer || !chat || chat.classList.contains("watch-chat")) return;
+    const measure = () => {
+      chat.style.setProperty("--floating-compose-height", `${composer.getBoundingClientRect().height}px`);
+      if (nearBottomRef.current) {
+        const stream = streamEnd.current?.closest(".chat-stream") as HTMLElement | null;
+        if (stream) stream.scrollTop = stream.scrollHeight;
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, [conversationId]);
+  useLayoutEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
     node.style.height = "24px";
@@ -5109,7 +5125,7 @@ function SettingsPage({
         {[
           ["sparkles", "Agent", "Model connection and voice"],
           ["heart", "Souvenir", "Anniversaries, countdowns and check-ins"],
-          ["link", "Tools", "MCP connections, notifications and location"],
+          ["link", "Tools", "MCP connections and notifications"],
           ["archive", "Data", "Memory permissions, export and backup"],
         ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => setCategory(title)} /></div>)}
       </div> : <SettingsGroup title={category}>
@@ -5126,7 +5142,6 @@ function SettingsPage({
           <SettingRow icon="link" title="Vesper MCP" sub="让外部 AI 连接日记、便笺与记忆" onClick={() => setSelected("Vesper MCP")} />
           <SettingRow icon="wifi" title="Web Push" sub={notificationLabel} status={notificationPermission === "granted"} onClick={() => setSelected("Web Push")} />
           <SettingRow icon="bell" title="通知偏好" sub={`${preferences.reminders ? "提醒 " : ""}${preferences.anniversaries ? "纪念日 " : ""}${preferences.agentNotes ? "Agent 留言" : ""}`.trim() || "全部关闭"} onClick={() => setSelected("通知偏好")} />
-          <SettingRow icon="location" title="定位与环境" sub={locationLabel} status={environment.permission === "granted"} onClick={() => setSelected("定位与环境")} />
         </>}
         {category === "Data" && <>
           <SettingRow icon="lock" title="记忆权限" sub="日记、便笺与聊天可分别控制" onClick={() => setSelected("记忆权限")} />

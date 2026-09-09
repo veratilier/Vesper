@@ -17,3 +17,7 @@
 .opening-reduced .opening-enter{transition:none}
 @keyframes opening-appear{from{opacity:0}to{opacity:1}}
 @keyframes opening-exit{from{opacity:1;filter:blur(0)}to{opacity:0;filter:blur(9px)}}
+
+@media (display-mode: standalone) {
+  .window-opening { height: 100vh; bottom: auto; }
+}

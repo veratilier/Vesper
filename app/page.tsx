@@ -4920,137 +4920,62 @@ function MessageAttachments({ items, onSaveAsSticker }: { items: ChatAttachment[
   );
 }
 
+type DiaryActivity = { user: number; agent: number; autonomous: number; total: number };
+const emptyDiaryActivity: DiaryActivity = { user: 0, agent: 0, autonomous: 0, total: 0 };
+function diaryToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
 function Diary() {
-  const [entries, setEntries] = usePersistentDocument<DiaryDocument>(
-    "diary",
-    {},
-  );
-  const [month, setMonth] = useState(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-  );
+  const [entries, setEntries] = usePersistentDocument<DiaryDocument>("diary", {});
+  const [month, setMonth] = useState(() => new Date(`${diaryToday().slice(0, 7)}-01T12:00:00`));
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [activity, setActivity] = useState<{ month: string; days: Record<string, DiaryActivity> } | null>(null);
+  const [error, setError] = useState(false);
+  const [refresh, setRefresh] = useState(0);
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
-  const firstWeekday = new Date(year, monthIndex, 1).getDay();
-  const dayCount = new Date(year, monthIndex + 1, 0).getDate();
-  const cells = Array.from({ length: 42 }, (_, index) => {
-    const day = index - firstWeekday + 1;
-    return day >= 1 && day <= dayCount ? day : null;
-  });
-  const keyFor = (day: number) =>
-    `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const selected = selectedKey
-    ? entries[selectedKey] || { user: "", agent: "", updatedAt: "" }
-    : null;
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+  useEffect(() => {
+    let alive = true;
+    let pending = false;
+    const controller = new AbortController();
+    const read = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await fetch(codexHistoryUrl(`/activity?month=${monthKey}`), { headers: codexHistoryHeaders(), signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error("Activity unavailable");
+        const data = await response.json() as { month: string; days: Record<string, DiaryActivity> };
+        if (data.month !== monthKey || !data.days) throw new Error("Invalid activity");
+        if (alive) { setActivity(data); setError(false); }
+      } catch { if (alive) setError(true); }
+      finally { pending = false; }
+    };
+    void read();
+    const update = () => { if (!document.hidden) void read(); };
+    const timer = window.setInterval(update, 30000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => { alive = false; controller.abort(); clearInterval(timer); window.removeEventListener("focus", update); document.removeEventListener("visibilitychange", update); };
+  }, [monthKey, refresh]);
+  const ready = activity?.month === monthKey;
+  const selected = selectedKey ? entries[selectedKey] || { user: "", agent: "", updatedAt: "" } : null;
+  const stats = selectedKey && ready ? activity.days[selectedKey] || emptyDiaryActivity : null;
   const saveUser = (value: string) => {
     if (!selectedKey) return;
-    setEntries((current) => ({
-      ...current,
-      [selectedKey]: {
-        ...(current[selectedKey] || { agent: "" }),
-        user: value,
-        updatedAt: new Date().toISOString(),
-      },
-    }));
+    setEntries(current => ({ ...current, [selectedKey]: { ...(current[selectedKey] || { agent: "" }), user: value, updatedAt: new Date().toISOString() } }));
   };
-  return (
-    <div className="page-body">
-      <PageIntro
-        eyebrow={`${year} · ${String(monthIndex + 1).padStart(2, "0")}`}
-        title="日记"
-        text="点击日期查看或编辑当天日记。"
-      />
-      <div className="calendar-head">
-        <button
-          aria-label="上个月"
-          onClick={() => setMonth(new Date(year, monthIndex - 1, 1))}
-        >
-          ‹
-        </button>
-        <h2>
-          {year}年 {monthIndex + 1}月
-        </h2>
-        <button
-          aria-label="下个月"
-          onClick={() => setMonth(new Date(year, monthIndex + 1, 1))}
-        >
-          ›
-        </button>
-      </div>
-      <div className="calendar surface">
-        <div className="week">
-          {["日", "一", "二", "三", "四", "五", "六"].map((label) => (
-            <span key={label}>{label}</span>
-          ))}
-        </div>
-        <div className="calendar-grid">
-          {cells.map((day, index) => {
-            if (!day) return <span className="calendar-blank" key={index} />;
-            const key = keyFor(day);
-            const entry = entries[key];
-            const today = key === new Date().toLocaleDateString("en-CA");
-            return (
-              <button
-                key={key}
-                className={`${today ? "today " : ""}${entry?.user || entry?.agent ? "has-entry" : ""}`}
-                onClick={() => setSelectedKey(key)}
-              >
-                <b>{day}</b>
-                {(entry?.user || entry?.agent) && <i />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="diary-legend">
-        <span>
-          <i className="user-dot" />
-          我的日记
-        </span>
-        <span>
-          <i className="agent-dot" />
-          Agent 日记
-        </span>
-      </div>
-      <div className="month-memory surface">
-        <span>本月记录</span>
-        <b>
-          {
-            Object.keys(entries).filter((key) =>
-              key.startsWith(
-                `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
-              ),
-            ).length
-          }{" "}
-          天
-        </b>
-      </div>
-      {selectedKey && selected && (
-        <div className="modal-layer">
-          <button
-            className="modal-scrim"
-            onClick={() => setSelectedKey(null)}
-          />
-          <section className="diary-modal">
-            <div className="modal-head">
-              <div>
-                <small>
-                  {new Date(`${selectedKey}T12:00:00`).toLocaleDateString(
-                    "zh-CN",
-                    {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    },
-                  )}
-                </small>
-                <h2>这一天的日记</h2>
-              </div>
-              <button onClick={() => setSelectedKey(null)}>
-                <Icon name="close" />
-              </button>
-            </div>
+  const status = error ? <button className="diary-count-status" onClick={() => setRefresh(v => v + 1)}>聊天统计暂时不可用，点此重试</button> : !ready ? <p className="diary-count-status">正在读取聊天记录……</p> : null;
+  if (selectedKey && selected) return (
+    <div className="page-body diary-day-page">
+      <button className="diary-back" onClick={() => setSelectedKey(null)}>‹ 返回日历</button>
+      <PageIntro eyebrow={selectedKey} title="这一天" text={new Date(`${selectedKey}T12:00:00+08:00`).toLocaleDateString("zh-CN", { weekday: "long", timeZone: "Asia/Shanghai" })} />
+      {status}
+      <section className="surface diary-day-counts" aria-label="当天消息统计">
+        <div><strong>{stats?.total ?? "—"}</strong><span>条聊天消息</span></div>
+        <p>你发了 {stats?.user ?? "—"} 条 · Agent 回复 {stats?.agent ?? "—"} 条</p>
+        <small>自主留言 {stats?.autonomous ?? "—"} 条，单独记录</small>
+      </section>
             <label className="diary-sheet user-sheet">
               <span>
                 <b>USER</b>
@@ -5077,9 +5002,38 @@ function Diary() {
               </span>
               <p>{selected.agent || "Agent 尚未记录这一天。"}</p>
             </article>
-          </section>
-        </div>
-      )}
+
+    </div>
+  );
+  const firstWeekday = new Date(year, monthIndex, 1).getDay();
+  const dayCount = new Date(year, monthIndex + 1, 0).getDate();
+  const cells = Array.from({ length: Math.ceil((firstWeekday + dayCount) / 7) * 7 }, (_, i) => { const d = i - firstWeekday + 1; return d > 0 && d <= dayCount ? d : null; });
+  return (
+    <div className="page-body diary-activity-page">
+      <PageIntro eyebrow={`${year} · ${String(monthIndex + 1).padStart(2, "0")}`} title="日记" text="聊天的深浅，日子的片段。点击日期查看。" />
+      <div className="calendar-head">
+        <button aria-label="上个月" onClick={() => setMonth(new Date(year, monthIndex - 1, 1))}>‹</button>
+        <h2>{year}年 {monthIndex + 1}月</h2>
+        <button aria-label="下个月" onClick={() => setMonth(new Date(year, monthIndex + 1, 1))}>›</button>
+      </div>
+      <div className="calendar surface">
+        <div className="week">{["日", "一", "二", "三", "四", "五", "六"].map(label => <span key={label}>{label}</span>)}</div>
+        <div className="calendar-grid diary-heat-grid">{cells.map((day, index) => {
+          if (!day) return <span key={`blank-${index}`} />;
+          const key = `${monthKey}-${String(day).padStart(2, "0")}`;
+          const count = ready ? activity.days[key]?.total || 0 : null;
+          const level = count === null || count === 0 ? 0 : count < 10 ? 1 : count < 30 ? 2 : count < 60 ? 3 : 4;
+          const entry = entries[key];
+          return <button key={key} className={`diary-heat-${level}${key === diaryToday() ? " today" : ""}`} aria-label={`${key}${count === null ? "" : `，${count}条聊天消息`}${entry?.user ? "，有我的日记" : ""}${entry?.agent ? "，有Agent日记" : ""}`} onClick={() => setSelectedKey(key)}>
+            <b>{day}</b><small>{key > diaryToday() ? "" : count === null ? "—" : `${count}条`}</small>
+            <span className="diary-entry-dots">{entry?.user && <i className="user-dot" />}{entry?.agent && <i className="agent-dot" />}</span>
+          </button>;
+        })}</div>
+      </div>
+      <div className="diary-heat-legend"><span>少</span>{[0, 1, 2, 3, 4].map(n => <i key={n} className={`diary-heat-${n}`} />)}<span>多</span></div>
+      <div className="diary-legend"><span><i className="user-dot" />我的日记</span><span><i className="agent-dot" />Agent 日记</span></div>
+      {status}
+      <p className="diary-count-status">按北京时间统计 · 自主留言在当天详情中单列</p>
     </div>
   );
 }

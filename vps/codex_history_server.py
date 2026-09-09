@@ -10,7 +10,8 @@ import sqlite3
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, parse_qs
+import vesper_activity as activity
 import vesper_wake_store as wake_store
 import vesper_watch as watch
 
@@ -217,6 +218,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(202, {"ok": True, "requestId": ident, "conversationId": None})
             else:
                 self.send_json(400, {"error": "Unknown wake action"})
+        elif path == ["activity"] and self.command == "GET":
+            try:
+                month = parse_qs(urlparse(self.path).query).get("month", [""])[0]
+                with db() as connection:
+                    result = activity.month_activity(connection, month)
+                self.send_json(200, result)
+            except ValueError:
+                self.send_json(400, {"error": "Expected month YYYY-MM"})
         elif path == ["health"] and self.command == "GET":
             self.send_json(200, {"ok": True})
         elif path == ["conversations"] and self.command == "GET":

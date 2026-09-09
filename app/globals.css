@@ -5018,3 +5018,28 @@ body {
 
 .file-download-status { margin: 4px 0; font-size: 12px; color: var(--ui-muted); overflow-wrap: anywhere; }
 .file-download-status button { margin-left: 8px; }
+
+/* Journal: message activity and an inline day detail page. */
+.diary-activity-page .diary-heat-grid { gap: 8px 4px; }
+.diary-activity-page .diary-heat-grid button { height: 66px; border-radius: 12px; gap: 3px; padding: 5px 0; }
+.diary-heat-grid button small { font-size: 9px; opacity: .72; line-height: 12px; }
+.diary-heat-grid button b { display: grid; place-items: center; width: 25px; height: 25px; }
+.diary-heat-grid .diary-entry-dots { display: flex; gap: 3px; height: 4px; }
+.diary-heat-grid .diary-entry-dots i { position: static; display: block; width: 3px; height: 3px; }
+.diary-entry-dots .user-dot { background: #b6917c; }
+.diary-entry-dots .agent-dot { background: #728984; }
+.diary-activity-page .diary-heat-0 { background: rgba(222,234,243,.2); }
+.diary-activity-page .diary-heat-1 { background: rgba(201,223,241,.45); }
+.diary-activity-page .diary-heat-2 { background: rgba(166,203,231,.55); }
+.diary-activity-page .diary-heat-3 { background: rgba(130,182,219,.6); }
+.diary-activity-page .diary-heat-4 { background: rgba(93,153,199,.65); }
+.diary-heat-legend { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 18px; font-size: 10px; color: var(--muted); }
+.diary-heat-legend i { width: 11px; height: 11px; border-radius: 3px; }
+.diary-count-status { display: block; text-align: center; margin: 14px auto; color: var(--muted); font-size: 11px; border: 0; background: none; }
+.diary-back { border: 0; background: none; color: inherit; padding: 8px 0 18px; font-size: 13px; }
+.diary-day-counts { padding: 24px; margin-bottom: 20px; }
+.diary-day-counts strong { font-size: 32px; font-weight: 400; margin-right: 8px; }
+.diary-day-counts span, .diary-day-counts p { font-size: 13px; }
+.diary-day-counts small { font-size: 11px; color: var(--muted); }
+.diary-day-page .diary-sheet { margin: 16px 0; }
+.diary-day-page .diary-sheet textarea { min-height: 180px; }

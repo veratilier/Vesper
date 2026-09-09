@@ -12,10 +12,11 @@ export function DesireFlower({ data }: { data: Record<string, unknown> | null })
         {desireMetrics.map(([key, label], index) => {
           const number = metricValue(data?.[key]);
           const position = positions[index];
-          // Keep the petal bases wide and overlapping; values change their reach, not the shared center.
-          const reach = number === null ? .78 : .78 + number * .0022;
+          // Map each metric independently: 0 → 45%, 100 → 100%.
+          // Single-argument CSS scale is valid; overlapping bases stay under the center.
+          const size = number === null ? .45 : .45 + number * .0055;
           return <g key={key} transform={`translate(180 153) rotate(${position.angle})`}>
-            <g className={`desire-petal${selected === index ? ' selected' : ''}`} style={{ transform: `scale(1 ${reach})`, opacity: number === null ? .3 : .65 + number * .0035 }} role="button" tabIndex={0} aria-label={`${label} ${number ?? '尚未读取'}`} aria-pressed={selected === index} onClick={() => setSelected(index)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(index); } }}>
+            <g className={`desire-petal${selected === index ? ' selected' : ''}`} style={{ transform: `scale(${size})`, opacity: number === null ? .3 : .65 + number * .0035 }} role="button" tabIndex={0} aria-label={`${label} ${number ?? '尚未读取'}`} aria-pressed={selected === index} onClick={() => setSelected(index)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(index); } }}>
               <image href="/desire-petal.webp" x="-58" y="-126" width="116" height="140" preserveAspectRatio="none" />
               <path className="desire-petal-focus" d="M0 10 C-62 -40 -48 -89 0 -120 C50 -82 56 -36 0 10Z" />
             </g>

@@ -2,6 +2,7 @@
 import { VESPER_DESIRE_SESSION_CONFIG, VESPER_DESIRE_INSTRUCTIONS } from "@/lib/desire/routing.js";
 import { Capacitor } from "@capacitor/core";
 import { documentSyncAction } from "@/lib/document-sync";
+import { NotificationSettings } from "./notification-settings";
 import { WindowOpening } from "./window-opening";
 import { WatchPlayer } from "./watch-player";
 import type { WatchFrame } from "./watch-context";
@@ -5124,7 +5125,6 @@ function SettingsPage({
       {!category ? <div className="settings-category-list">
         {[
           ["sparkles", "Agent", "Model connection and voice"],
-          ["heart", "Souvenir", "Anniversaries, countdowns and check-ins"],
           ["link", "Tools", "MCP connections and notifications"],
           ["archive", "Data", "Memory permissions, export and backup"],
         ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => setCategory(title)} /></div>)}
@@ -5133,14 +5133,10 @@ function SettingsPage({
           <SettingRow icon="sparkles" title="Codex Server" sub="模型服务与连接" onClick={() => setSelected("Codex Server")} />
           <SettingRow icon="volume" title="Agent 声音（TTS）" sub="声音服务与音色" onClick={() => setSelected("Agent 声音")} />
         </>}
-        {category === "Souvenir" && <>
-          <SettingRow icon="calendar" title="纪念日与倒计时" sub="认识的日子，以及期待的日子" onClick={() => onOpenSection("纪念日")} />
-          <SettingRow icon="heart" title="关心频率" sub={careLabel} onClick={() => setSelected("关心频率")} />
-        </>}
         {category === "Tools" && <>
           <SettingRow icon="link" title="MCP Servers" sub="连接外部工具与服务" onClick={() => setSelected("MCP 工具")} />
           <SettingRow icon="link" title="Vesper MCP" sub="让外部 AI 连接日记、便笺与记忆" onClick={() => setSelected("Vesper MCP")} />
-          <SettingRow icon="wifi" title="Web Push" sub={notificationLabel} status={notificationPermission === "granted"} onClick={() => setSelected("Web Push")} />
+          <SettingRow icon="bell" title="Notification" sub="Web Push 与苹果通知权限" onClick={() => setSelected("Notification")} />
           <SettingRow icon="bell" title="通知偏好" sub={`${preferences.reminders ? "提醒 " : ""}${preferences.anniversaries ? "纪念日 " : ""}${preferences.agentNotes ? "Agent 留言" : ""}`.trim() || "全部关闭"} onClick={() => setSelected("通知偏好")} />
         </>}
         {category === "Data" && <>
@@ -5148,7 +5144,9 @@ function SettingsPage({
           <SettingRow icon="archive" title="导出与备份" sub={preferences.lastExportAt ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}` : "本地优先保存 · 应用更新不清除数据"} onClick={() => setSelected("导出与备份")} />
         </>}
       </SettingsGroup>}
-      {selected === "Codex Server" ? (
+      {selected === "Notification" ? (
+        <NotificationSettings onClose={closeDetail} onWebPush={() => setSelected("Web Push")} />
+      ) : selected === "Codex Server" ? (
         <CodexConnectionModal onClose={closeDetail} />
       ) : selected === "MCP 工具" ? (
         <ExternalMcpModal onClose={closeDetail} />
@@ -5174,7 +5172,7 @@ function SettingsPage({
             environment={environment}
             onEnvironment={onEnvironment}
             onNotificationPermission={setNotificationPermission}
-            onClose={closeDetail}
+            onClose={selected === "Web Push" ? () => setSelected("Notification") : closeDetail}
           />
         )
       )}
@@ -6445,6 +6443,7 @@ function ConnectionModal({
         }
         await new Audio(URL.createObjectURL(await response.blob())).play();
       } else if (type === "Web Push") {
+        if (Capacitor.isNativePlatform()) throw new Error("请在浏览器或主屏幕 PWA 中启用 Web Push；原生 App 请使用苹果通知权限");
         if (!window.matchMedia("(display-mode: standalone)").matches && /iPhone|iPad|iPod/.test(navigator.userAgent))
           throw new Error("iPhone 需要先将 Vesper 添加到主屏幕，再从 PWA 内启用推送");
         await navigator.serviceWorker.register("/sw.js", { scope: "/" });

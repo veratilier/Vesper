@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -25,6 +26,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 // Keep the web artwork visible beneath the system status bar.
 class VesperViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(VesperNotificationPermission())
+    }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard let scrollView = webView?.scrollView else { return }
@@ -32,6 +36,51 @@ class VesperViewController: CAPBridgeViewController {
         if #available(iOS 26.0, *) {
             scrollView.topEdgeEffect.isHidden = true
             scrollView.bottomEdgeEffect.isHidden = true
+        }
+    }
+}
+
+// Permission only: APNs registration and server delivery are configured separately.
+@objc(VesperNotificationPermission)
+public class VesperNotificationPermission: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "VesperNotificationPermission"
+    public let jsName = "VesperNotificationPermission"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "check", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func check(_ call: CAPPluginCall) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let status: String
+            switch settings.authorizationStatus {
+            case .authorized: status = "granted"
+            case .denied: status = "denied"
+            case .provisional: status = "provisional"
+            case .ephemeral: status = "ephemeral"
+            case .notDetermined: status = "default"
+            @unknown default: status = "unknown"
+            }
+            call.resolve(["status": status])
+        }
+    }
+
+    @objc func request(_ call: CAPPluginCall) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, error in
+            if let error = error { call.reject(error.localizedDescription); return }
+            self.check(call)
+        }
+    }
+
+    @objc func openSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                call.reject("无法打开系统设置"); return
+            }
+            UIApplication.shared.open(url, options: [:]) { success in
+                if success { call.resolve() } else { call.reject("无法打开系统设置") }
+            }
         }
     }
 }

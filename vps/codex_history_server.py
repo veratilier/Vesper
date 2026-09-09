@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 import vesper_wake_store as wake_store
+import vesper_watch as watch
 
 
 DB_PATH = Path(os.environ.get("VESPER_HISTORY_DB", "/home/ubuntu/.vesper/chat-history.sqlite3"))
@@ -139,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: object) -> None:
         # Never log query strings because the WebSocket capability token is passed there.
-        print(f'{self.address_string()} {self.command} {urlparse(self.path).path} {fmt % args}')
+        print(f'{self.address_string()} {self.command} {urlparse(self.path).path}')
 
     def origin(self) -> str | None:
         value = self.headers.get("Origin")
@@ -179,12 +180,32 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Origin")
         self.end_headers()
 
+    def watch_secret(self):
+        return TOKEN_PATH.read_text(encoding="utf-8").strip()
+
     def dispatch(self) -> None:
+        parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "watch" and parts[2] == "stream" and self.command == "GET":
+            watch.serve(self, parts[1])
+            return
         if not self.authenticated():
             self.send_json(401, {"error": "Unauthorized"})
             return
         path = [unquote(part) for part in urlparse(self.path).path.strip("/").split("/") if part]
-        if path == ["wake"] and self.command == "GET":
+        if path and path[0] == "watch":
+            try:
+                if path == ["watch"] and self.command == "POST":
+                    self.send_json(202, watch.start(self.body().get("url")))
+                elif len(path) == 2 and self.command == "GET":
+                    data = watch.read(path[1])
+                    if data["status"] == "ready":
+                        expiry = int(data["created"] + watch.TTL)
+                        data["streamPath"] = f'/watch/{path[1]}/stream?expires={expiry}&ticket={watch.ticket(path[1], expiry, self.watch_secret())}'
+                    self.send_json(200, data)
+                else: self.send_json(405, {"error": "Method not allowed"})
+            except (ValueError, OSError):
+                self.send_json(400, {"error": "导入不可用：请确认完整 B 站链接，且没有其他视频正在准备或缓存已满。"})
+        elif path == ["wake"] and self.command == "GET":
             self.send_json(200, wake_store.status())
         elif path == ["wake"] and self.command == "POST":
             body = self.body()

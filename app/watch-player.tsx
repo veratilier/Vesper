@@ -14,6 +14,59 @@ export function WatchPlayer({ active, busy, captureRef, onShare }: {
   const alive = useRef(true);
   const capturing = useRef(false);
   const [source, setSource] = useState('');
+  const [link, setLink] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [remote, setRemote] = useState(false);
+  const [job, setJob] = useState('');
+  const [pollRetry, setPollRetry] = useState(0);
+  const watchBase = 'https://codex.r-vera.com/history';
+  async function watchRequest(path: string, url?: string) {
+    const response = await fetch(`${watchBase}${path}`, {
+      method: url ? 'POST' : 'GET', cache: 'no-store',
+      headers: { authorization: `Bearer ${localStorage.getItem('vesper-device-token') || ''}`, ...(url ? { 'content-type': 'application/json' } : {}) },
+      ...(url ? { body: JSON.stringify({ url }) } : {}), signal: AbortSignal.timeout(15000),
+    });
+    if (response.status === 404) throw new Error('服务器尚未安装视频导入功能，请先部署 VPS 更新。');
+    if (response.status === 401) throw new Error('请先在设置中连接你的 Codex 服务。');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || '视频导入失败。');
+    return data;
+  }
+  useEffect(() => { setJob(sessionStorage.getItem('vesper-watch-job') || ''); }, []);
+  useEffect(() => {
+    if (!job || !active) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const data = await watchRequest(`/watch/${job}`);
+        if (cancelled) return;
+        if (data.status === 'ready') {
+          if (typeof data.streamPath !== 'string' || !data.streamPath.startsWith(`/watch/${job}/stream?`)) throw new Error('播放地址无效。');
+          release(); setScreen(false); setRemote(true); setAutomatic(false);
+          setSource(watchBase + data.streamPath); setTitle(data.title);
+          setCues(data.subtitleText ? parseSubtitles(data.subtitleText) : data.cues || []);
+          setJob(''); setImporting(false); sessionStorage.removeItem('vesper-watch-job');
+        } else if (data.status === 'failed') {
+          setJob(''); sessionStorage.removeItem('vesper-watch-job');
+          throw new Error(data.error || '视频准备失败。');
+        } else { setImporting(true); timer = setTimeout(poll, 3000); }
+      } catch (reason) {
+        if (!cancelled) { setError(reason instanceof Error ? reason.message : '无法查询视频状态。'); setImporting(false); }
+      }
+    };
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [job, active, pollRetry]);
+  async function importLink() {
+    if (importing) return;
+    setImporting(true); setError('');
+    try {
+      const data = await watchRequest('/watch', link.trim());
+      if (!alive.current) return;
+      sessionStorage.setItem('vesper-watch-job', data.id); setJob(data.id);
+    } catch (reason) { if (alive.current) { setError(reason instanceof Error ? reason.message : '导入失败。'); setImporting(false); } }
+  }
   const [screen, setScreen] = useState(false);
   const [title, setTitle] = useState('');
   const [cues, setCues] = useState<SubtitleCue[]>([]);
@@ -52,6 +105,7 @@ export function WatchPlayer({ active, busy, captureRef, onShare }: {
   }, [screen, source]);
   function chooseVideo(file?: File) {
     if (!file) return;
+    setJob(''); sessionStorage.removeItem('vesper-watch-job'); setImporting(false); setRemote(false);
     release(); setAutomatic(false); setCues([]); setError(''); setScreen(false);
     objectUrl.current = URL.createObjectURL(file);
     setSource(objectUrl.current); setTitle(file.name);
@@ -62,6 +116,7 @@ export function WatchPlayer({ active, busy, captureRef, onShare }: {
     try {
       const media = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
       if (!alive.current || request !== session.current || !active || document.hidden) { media.getTracks().forEach(track => track.stop()); return; }
+      setJob(''); sessionStorage.removeItem('vesper-watch-job'); setImporting(false); setRemote(false);
       release(); stream.current = media; setSource(`screen:${session.current}`); setScreen(true); setTitle('共享的影片窗口'); setCues([]); setAutomatic(false);
       media.getVideoTracks()[0].onended = () => { release(); setScreen(false); setSource(''); setAutomatic(false); };
     } catch (reason) { if (alive.current) setError(reason instanceof Error ? reason.message : '无法共享屏幕，请选择本地视频。'); }
@@ -98,7 +153,13 @@ export function WatchPlayer({ active, busy, captureRef, onShare }: {
     return () => clearInterval(timer);
   }, [automatic, active]);
   return <section className="watch-player" aria-label="一起看电影播放器">
-    <video ref={video} src={screen ? undefined : source || undefined} controls={!screen} muted={screen} playsInline preload="metadata" onError={() => setError('视频无法播放，请换用浏览器支持的 MP4 视频。')} />
+    <video crossOrigin="anonymous" ref={video} src={screen ? undefined : source || undefined} controls={!screen} muted={screen} playsInline preload="metadata" onError={() => setError('视频无法播放，请换用浏览器支持的 MP4 视频。')} />
+    <form className="watch-import" onSubmit={event => { event.preventDefault(); void importLink(); }}>
+      <input aria-label="B 站视频链接" type="url" placeholder="粘贴 B 站视频或番剧完整链接" value={link} onChange={event => setLink(event.target.value)} required disabled={importing} />
+      <button type="submit" disabled={importing || !link.trim()}>{importing ? '正在准备视频…' : '导入 B 站视频'}</button>
+    </form>
+    {job && !importing && <button type="button" onClick={() => { setError(''); setImporting(true); setPollRetry(value => value + 1); }}>重新查询准备状态</button>}
+    {importing && <p className="watch-player-note" role="status">服务器正在准备视频，长视频需要一些时间；你可以稍后回来。</p>}
     <div className="watch-player-actions">
       <label className="watch-file-button">选择视频<input type="file" accept="video/*" onChange={event => { chooseVideo(event.target.files?.[0]); event.target.value = ''; }} /></label>
       {canShareScreen && <button type="button" onClick={() => void shareScreen()}>共享影片窗口</button>}
@@ -114,7 +175,7 @@ export function WatchPlayer({ active, busy, captureRef, onShare }: {
       <label className="watch-auto"><input type="checkbox" checked={automatic} disabled={!source && !screen} onChange={event => setAutomatic(event.target.checked)} />每 30 秒分享画面</label>
     </div>
     <p className="watch-player-note">{title || '选择本地视频，在这里边看边聊。'}{cues.length ? ` · 已载入 ${cues.length} 条字幕` : ''}</p>
-    <p className="watch-player-note">发消息会附上当前画面和进度；视频留在本机，只发送截图与对应字幕。暂不传送电影声音。{!canShareScreen ? '此浏览器请使用页内视频播放。' : ''}</p>
+    <p className="watch-player-note">发消息会附上当前画面和进度；{remote ? 'B 站视频在服务器临时缓存，只发送截图与对应字幕给 AI。' : '本地视频留在本机，只发送截图与对应字幕。'}暂不传送电影声音。{!canShareScreen ? '此浏览器请使用页内视频播放。' : ''}</p>
     {error && <p role="alert">{error}</p>}
   </section>;
 }

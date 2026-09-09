@@ -1,5 +1,6 @@
 "use client";
 import { VESPER_DESIRE_SESSION_CONFIG, VESPER_DESIRE_INSTRUCTIONS } from "@/lib/desire/routing.js";
+import { WindowOpening } from "./window-opening";
 import { WatchPlayer } from "./watch-player";
 import type { WatchFrame } from "./watch-context";
 import { AppCenter } from "./app-center";
@@ -1317,6 +1318,7 @@ export default function Home() {
     );
   return (
     <main className="stage" style={shellStyle}>
+      <WindowOpening />
       <audio
         ref={globalPlayer}
         src={currentTrack?.url}

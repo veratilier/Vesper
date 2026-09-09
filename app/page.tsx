@@ -1,7 +1,8 @@
 "use client";
 import { WatchPlayer } from "./watch-player";
 import type { WatchFrame } from "./watch-context";
-import { AppCenter, DesirePanel } from "./app-center";
+import { AppCenter } from "./app-center";
+import { DesirePanel } from "./desire-panel";
 import { WakeCard } from "./wake-card";
 import type { WakeRecord } from "./wake-summary";
 import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
@@ -1453,7 +1454,7 @@ export default function Home() {
           ) : section === "Pandora" ? (
             <AppCenter renderWatch={() => conversationId === watchConversationId && active !== "Pandora" ? null : <ConnectedChat key={watchConversationId} watchMode watchActive={active === "Pandora"} conversationId={watchConversationId} onSelectConversation={setWatchConversationId} agentName={agentName} userName={userName} favorites={favorites} setFavorites={setFavorites} playing={playing} onToggleMusic={() => setPlaying(value => !value)} onNextMusic={() => { if (activeTracks.length) setTrackIndex(index => (index + 1) % activeTracks.length); }} onOpenMusic={() => navigateTo("音乐")} onAddMusicToPlaylist={card => { setMusicPlaylistIntent(card); navigateTo("音乐"); }} />} onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
           ) : section === "欲望" ? (
-            <DesirePanel apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} renderConnection={(onClose) => <ExternalMcpModal onClose={onClose} context="desire" />} />
+            <DesirePanel agentName={agentName} apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} renderConnection={(onClose) => <ExternalMcpModal onClose={onClose} context="desire" />} />
           ) : section === "设置" ? (
             <SettingsPage
               onOpenSection={navigateTo}

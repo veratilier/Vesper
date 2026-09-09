@@ -5043,19 +5043,3 @@ body {
 .diary-day-counts small { font-size: 11px; color: var(--muted); }
 .diary-day-page .diary-sheet { margin: 16px 0; }
 .diary-day-page .diary-sheet textarea { min-height: 180px; }
-
-/* Standalone viewport trial: one full-height basis, with descendants inheriting it.
- * Keep browser-tab sizing and the visualViewport keyboard override unchanged. */
-@media (display-mode: standalone) {
-  html, body {
-    height: 100vh !important;
-    min-height: 0 !important;
-    overflow: hidden;
-  }
-  .stage {
-    top: 0;
-    bottom: auto;
-    height: 100vh !important;
-  }
-  .app-shell { height: 100% !important; }
-}

@@ -16,9 +16,14 @@ export function WindowOpening() {
     const change = () => {setReduced(query.matches); if(query.matches) setHold(true);};
     change(); query.addEventListener("change", change);
     let cancelled = false;
-    Promise.all(LAYERS.map(src => new Promise<void>((resolve,reject) => {
-      const img = new Image(); img.onload=()=>resolve(); img.onerror=reject; img.src=src;
-    }))).then(()=>{if(!cancelled) setReady(true);}).catch(()=>{if(!cancelled) {setReady(true);setHold(true);}});
+    // Decode the displayed elements, not duplicate preload objects. A downloaded
+    // PNG can still need decoding before the browser can paint it.
+    const plates = Array.from(node?.querySelectorAll<HTMLImageElement>(".opening-plate") || []);
+    Promise.allSettled(plates.map(img => img.decode())).then(results => {
+      if (cancelled) return;
+      setReady(true);
+      if (results.some(result => result.status === "rejected")) setHold(true);
+    });
     // A stalled image request exposes the entry button, never auto-enters the app.
     const fallback = setTimeout(()=>{if(!cancelled) setHold(true);},15000);
     return ()=>{cancelled=true;clearTimeout(fallback);query.removeEventListener("change",change);node?.close();};
@@ -36,7 +41,7 @@ export function WindowOpening() {
   if(!visible) return null;
   return <dialog ref={dialog} className={`window-opening${ready?' opening-ready':''}${hold?' opening-hold':''}${reduced?' opening-reduced':''}${leaving?' opening-leaving':''}`} aria-label="Vesper opening" onCancel={e=>{e.preventDefault();setLeaving(true);}}>
     <div className="opening-art" aria-hidden="true">
-      {LAYERS.map((src,i)=><img key={src} src={src} className={`opening-plate opening-depth-${i}`} alt="" draggable={false}/>)}
+      {LAYERS.map((src,i)=><img key={src} src={src} className={`opening-plate opening-depth-${i}`} alt="" draggable={false} loading="eager" fetchPriority={i===0?"high":"auto"}/>)}
     </div>
     <button className="opening-enter" disabled={!hold || leaving} onClick={()=>setLeaving(true)}>Enter Vesper <span aria-hidden="true">›</span></button>
   </dialog>;

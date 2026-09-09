@@ -65,6 +65,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en-US">
+      <head><link rel="preload" as="image" href="/opening/sky-v5.png" fetchPriority="high" /></head>
       <body className={`${pinyonScript.variable} antialiased`}>
         {children}
       </body>

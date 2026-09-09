@@ -1,3 +1,4 @@
+import { legacyDesireRead } from './desire/routing.js';
 import { env } from 'cloudflare:workers';
 import { executeDesire, type NativeDesireEnv } from './desire/native';
 import { desireTools } from './desire/tools';
@@ -127,6 +128,13 @@ async function readMusicStatus() {
 }
 
 export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope, context: CodexToolContext = {}) {
+  if (name === "call_configured_mcp_tool") {
+    const nativeRead = legacyDesireRead(input.toolName);
+    if (nativeRead) {
+      const args = input.arguments && typeof input.arguments === "object" && !Array.isArray(input.arguments) ? input.arguments as ToolInput : {};
+      return executeCodexTool(nativeRead, args, memoryScope, context);
+    }
+  }
   if (desireTools.some(tool => tool.name === name)) {
     const bindings = env as NativeDesireEnv & { VESPER_APP_TOKEN?: string };
     if (!memoryScope || !bindings.VESPER_APP_TOKEN) throw new Error('Owner context required');

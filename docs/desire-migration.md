@@ -41,3 +41,27 @@ Local verification: 34/34 tests pass, web production build succeeds, MCP Worker 
 The relevant original regressions plus separation tests run with `npm run test:desire`. Tests verify new defaults, no original-binding fallback, untouched original-named sentinel tables, idempotent requests, provenance, repeat initialization, D1 push metadata and notification navigation. The full project TypeScript check has five known pre-existing music/test-import diagnostics; no new Desire errors are acceptable.
 
 Avoid rolling back to the previous shared-database release: it would reconnect Vesper to official Rowan's data. Preserve the independent DB-only routing in any corrective rollback. No production state, history or database has been deleted by this change.
+
+## Vesper AI routing audit (2026-09-09)
+
+The split database release alone did not remove alternate AI tools. Production
+execution records showed `asdk_app_6a92be9d9e1c819197f58017d0e2b985.desire_status`
+returning the official state, while Vesper D1 held quiet/18/64 and empty history.
+Vesper Settings also retained an enabled external `desire.r-vera.com` connection.
+
+Vesper now disables that official app in **thread-scoped** start/resume config
+(with both connector ID forms); it does not change the official app globally.
+New frontend instructions distinguish old official results from native state.
+The generic MCP catalog excludes reserved Desire tools, and the outbound gateway
+rejects them before reading credentials or making network requests. For old
+threads, generic `desire_status`/`desire_history` requests route through the same
+owner-checked native executor. Legacy writes fail explicitly instead of silently
+moving an intended official write to Vesper. Saved connections and histories stay
+intact. Reload Vesper to apply the session settings; old threads lacking native
+write tools can create a new conversation without deleting the original.
+
+Native route: browser dynamic tool → POST `/api/codex/tools` →
+`executeCodexTool` → `executeDesire` → the three `vesper_desire_*` tables in
+`vesper-db`. Vesper MCP and `/api/desire` use the same executor/storage.
+Regression checks: `node tools/test-desire-routing.mjs`,
+`node tools/test-codex-thread-lifecycle.mjs`, `npm run test:desire`.

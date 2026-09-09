@@ -1,4 +1,5 @@
 "use client";
+import { VESPER_DESIRE_SESSION_CONFIG, VESPER_DESIRE_INSTRUCTIONS } from "@/lib/desire/routing.js";
 import { WatchPlayer } from "./watch-player";
 import type { WatchFrame } from "./watch-context";
 import { AppCenter } from "./app-center";
@@ -3240,7 +3241,7 @@ function isVesperInternalContextText(value: unknown) {
 }
 
 function vesperDeveloperInstructions(memoryBackground = "") {
-  return [VESPER_CONVERSATIONAL_STYLE, memoryBackground.trim()].filter(Boolean).join("\n\n");
+  return [VESPER_CONVERSATIONAL_STYLE, VESPER_DESIRE_INSTRUCTIONS, memoryBackground.trim()].filter(Boolean).join("\n\n");
 }
 
 const CODEX_ASSISTANT_ITEM_TYPES = new Set(["agentMessage", "assistantMessage", "outputMessage"]);
@@ -4338,6 +4339,7 @@ function ConnectedChat({
   const startThreadWithTools = async (dynamicTools: typeof CODEX_DYNAMIC_TOOLS, developerInstructions: string) => {
     const result = await sendRpc("thread/start", {
       dynamicTools,
+      config: VESPER_DESIRE_SESSION_CONFIG,
       ...workspaceOptions(readLocalValue("vesper-codex-workspace", "")),
       approvalPolicy: "on-request",
       summary: "concise",
@@ -4860,7 +4862,7 @@ function ConnectedChat({
       <div className="chat-status-stack">
         {error && <div className="chat-restore-error" role="alert"><span>{error}</span>{!online && <button type="button" disabled={busy} onClick={() => void connect().catch(reason => setError(reason instanceof Error ? reason.message : "连接失败，请重试"))}>重试连接</button>}</div>}
         {historyWarning && <div className="chat-history-warning" role="status">{historyWarning}</div>}
-        {toolUpgradeNeeded && !resumeError && <div className="chat-history-warning" role="status"><span>这段会话尚未确认注册文件发送工具。重连不能更新旧会话的工具；新建对话可加载完整工具，原记录会保留。</span><button type="button" disabled={busy || !online} onClick={() => void createReplacementConversation()}>新建支持文件的对话</button></div>}
+        {toolUpgradeNeeded && !resumeError && <div className="chat-history-warning" role="status"><span>这段会话使用旧工具目录。新建对话可加载 Vesper 独立 Desire 等完整工具，原记录会保留。</span><button type="button" disabled={busy || !online} onClick={() => void createReplacementConversation()}>新建使用新版工具的对话</button></div>}
         {resumeError && <div className="chat-restore-error" role="alert"><span>{resumeError}</span><button onClick={() => void createReplacementConversation()}>继续为新会话</button></div>}
       </div>
       <div className="chat-stream">

@@ -1,3 +1,4 @@
+import { isDesireTool } from './desire/routing.js';
 import { env } from "cloudflare:workers";
 import { ensureSchema, getDb } from "@/lib/db";
 import type { MemoryScope } from "@/lib/memory";
@@ -287,8 +288,8 @@ export async function configuredMcpTools(scope: MemoryScope) {
     connectionId: connection.id,
     connectionName: connection.name,
     authorized: connection.authorized,
-    tools: connection.tools.map((tool) => ({ ...tool })),
-  }));
+    tools: connection.tools.filter((tool) => !isDesireTool(tool.name)).map((tool) => ({ ...tool })),
+  })).filter((connection) => connection.tools.length > 0);
 }
 
 function boundedResult(value: unknown) {
@@ -300,6 +301,7 @@ function boundedResult(value: unknown) {
 export async function callConfiguredMcpTool(scope: MemoryScope, input: { connectionId?: unknown; toolName?: unknown; arguments?: unknown }) {
   const id = cleanText(input.connectionId, 160);
   const toolName = cleanText(input.toolName, 128);
+  if (isDesireTool(toolName)) throw new Error("External Desire tools are disabled in Vesper; use the native Desire tools.");
   const connection = await scopedConnection(scope, id);
   if (!connection || Number(connection.enabled) !== 1) throw new Error("这个 MCP 连接不存在或尚未启用");
   const tool = rowTools(connection).find((candidate) => candidate.name === toolName);

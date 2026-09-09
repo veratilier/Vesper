@@ -43,6 +43,10 @@ export function WindowOpening() {
     <div className="opening-art" aria-hidden="true">
       {LAYERS.map((src,i)=><img key={src} src={src} className={`opening-plate opening-depth-${i}`} alt="" draggable={false} loading="eager" fetchPriority={i===0?"high":"auto"}/>)}
     </div>
+    <div className="opening-dedication">
+      <h1 className="opening-title">Vesper</h1>
+      <p className="opening-subtitle">Somewhere we belong.</p>
+    </div>
     <button className="opening-enter" disabled={!hold || leaving} onClick={()=>setLeaving(true)}>Enter Vesper <span aria-hidden="true">›</span></button>
   </dialog>;
 }

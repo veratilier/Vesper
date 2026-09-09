@@ -60,3 +60,12 @@
 .desire-toolbar small { color: var(--ui-muted); font-size: var(--text-caption, .75rem); }
 .desire-error { font-size: var(--text-caption, .75rem); line-height: 1.5; overflow-wrap: anywhere; }
 @media(max-width:340px) { .desire-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+.watch-room-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.watch-room-toolbar > span { font-size: 10px; letter-spacing: .12em; color: var(--ui-muted); }
+.watch-room-frame { display: block; width: 100%; height: 65dvh; min-height: 280px; border: 1px solid var(--ui-line); border-radius: 16px; background: var(--ui-surface); }
+.watch-room-empty { padding: 28px 16px; margin-bottom: 16px; border: 1px solid var(--ui-line); border-radius: 16px; background: color-mix(in srgb,var(--ui-surface) 72%,transparent); }
+.watch-room-empty p { line-height: 1.6; }
+.watch-room-empty p + p { color: var(--ui-muted); font-size: var(--text-caption, .75rem); }
+.watch-room > button { margin-right: 8px; }
+.app-shell .watch-room .room-link-form input { box-sizing: border-box; font-size: 16px; }

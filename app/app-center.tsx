@@ -7,13 +7,33 @@ export function AppCenter({ onWake, onDesire }: Props) {
   const [links, setLinks] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const [url, setUrl] = useState('');
+  const [watchOpen, setWatchOpen] = useState(false);
+  const [frameVersion, setFrameVersion] = useState(0);
   const [error, setError] = useState('');
   useEffect(() => { const timer = setTimeout(() => { try { setLinks(JSON.parse(localStorage.getItem('vesper-room-links-v1') || '{}')); } catch { /* New device */ } }, 0); return () => clearTimeout(timer); }, []);
   function save(event: React.FormEvent) {
     event.preventDefault();
     try { const parsed = new URL(url); if (parsed.protocol !== 'https:' || parsed.username || parsed.password) throw Error(); const next = { ...links, [editing!]: parsed.href }; localStorage.setItem('vesper-room-links-v1', JSON.stringify(next)); setLinks(next); setEditing(null); setError(''); } catch { setError('请填写不含账号密码的 HTTPS 应用地址。'); }
   }
-  return <div className="page-body app-center"><div className="page-intro"><span>OUR LITTLE ROOMS</span><h1>Pandora</h1><p>学习、共读，也一起消磨一场电影。</p></div><div className="room-grid">{rooms.map(room => <article className="room-card" key={room.id}><small>{room.mark}</small><h2>{room.title}</h2><p>{room.caption}</p>{links[room.id] ? <a href={links[room.id]} target="_blank" rel="noopener noreferrer">打开房间 ↗</a> : <span className="room-unconnected">{room.id === 'watch' ? '桌面陪看待接入' : '尚未连接房间'}</span>}<button onClick={() => { setEditing(room.id); setUrl(links[room.id] || ''); setError(''); }}>{links[room.id] ? '修改地址' : '连接房间'}</button></article>)}<article className="room-card desire-entry"><small>DESIRE</small><h2>欲望</h2><p>看看此刻的状态和留下的小记。</p><button onClick={onDesire}>打开 Desire →</button></article></div><section className="room-wake"><div><h2>唤醒 AI</h2><p>在当前聊天开始一轮行动，展示真实活动概括，消息照常发来。</p></div><button onClick={onWake}>唤醒</button></section><p className="room-caption">手动唤醒需要保持 Vesper 打开并连接。正在回复时不会插入新一轮。</p>{editing && <form className="room-link-form" onSubmit={save}><h2>连接{rooms.find(room => room.id === editing)?.title}</h2><label>应用地址<input type="url" required value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" /></label><p>房间在新标签页打开；地址保存在当前设备。这里不会自动部署房间。</p>{error && <p role="alert">{error}</p>}<button type="submit">保存</button><button type="button" onClick={() => setEditing(null)}>取消</button></form>}</div>;
+  const connectionForm = editing && <form className="room-link-form" onSubmit={save}>
+    <h2>连接{rooms.find(room => room.id === editing)?.title}</h2>
+    <label>应用地址<input type="url" required value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" /></label>
+    <p>{editing === 'watch' ? '陪看房间会显示在当前页面，需使用支持嵌入的房间地址。' : '房间在新标签页打开；地址保存在当前设备。'}</p>
+    {error && <p role="alert">{error}</p>}
+    <button type="submit">保存</button><button type="button" onClick={() => setEditing(null)}>取消</button>
+  </form>;
+  if (watchOpen) return <div className="page-body app-center watch-room">
+    <div className="watch-room-toolbar"><button type="button" onClick={() => { setWatchOpen(false); setEditing(null); }}>‹ Pandora</button><span>WATCH TOGETHER</span></div>
+    <div className="page-intro"><h1>一起看电影</h1><p>一起看，也一起聊。</p></div>
+    {links.watch ? <>
+      <iframe key={`${links.watch}:${frameVersion}`} className="watch-room-frame" title="一起看电影房间" src={links.watch} sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+      <p className="room-caption">房间若显示空白或拒绝连接，请检查地址是否支持嵌入。</p>
+      <button type="button" onClick={() => setFrameVersion(value => value + 1)}>重新加载</button>
+    </> : <div className="watch-room-empty"><p>陪看房间尚未接入。</p><p>连接后会在这里打开；AI 看画面和陪聊还需要接入陪看服务。</p></div>}
+    <button type="button" onClick={() => { setEditing('watch'); setUrl(links.watch || ''); setError(''); }}>{links.watch ? '修改房间地址' : '连接陪看房间'}</button>
+    {connectionForm}
+  </div>;
+  return <div className="page-body app-center"><div className="page-intro"><span>OUR LITTLE ROOMS</span><h1>Pandora</h1><p>学习、共读，也一起消磨一场电影。</p></div><div className="room-grid">{rooms.map(room => <article className="room-card" key={room.id}><small>{room.mark}</small><h2>{room.title}</h2><p>{room.caption}</p>{room.id === 'watch' ? <button type="button" onClick={() => { setEditing(null); setWatchOpen(true); }}>进入房间 →</button> : <>{links[room.id] ? <a href={links[room.id]} target="_blank" rel="noopener noreferrer">打开房间 ↗</a> : <span className="room-unconnected">尚未连接房间</span>}<button onClick={() => { setEditing(room.id); setUrl(links[room.id] || ''); setError(''); }}>{links[room.id] ? '修改地址' : '连接房间'}</button></>}</article>)}<article className="room-card desire-entry"><small>DESIRE</small><h2>欲望</h2><p>看看此刻的状态和留下的小记。</p><button onClick={onDesire}>打开 Desire →</button></article></div><section className="room-wake"><div><h2>唤醒 AI</h2><p>在当前聊天开始一轮行动，展示真实活动概括，消息照常发来。</p></div><button onClick={onWake}>唤醒</button></section><p className="room-caption">手动唤醒需要保持 Vesper 打开并连接。正在回复时不会插入新一轮。</p>{connectionForm}</div>;
 }
 function unpack(input: unknown): unknown {
   if (!input || typeof input !== 'object') return input;

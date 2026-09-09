@@ -116,3 +116,5 @@
 .home-cards .home-quick-grid { gap: 16px; }
 .home-cards .home-quick-grid .home-panel-heading { gap: 6px; }
 .home-cards .home-letter { min-height: 72px; }
+
+.home-cards .home-reminders-heading { width: 100%; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }

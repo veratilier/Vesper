@@ -1436,7 +1436,6 @@ export default function Home() {
               track={currentTrack}
               playing={playing}
               onToggle={() => setPlaying(!playing)}
-              environment={environment}
               userName={userName}
               onOpenSection={(section) => setActive(section)}
             />
@@ -1866,14 +1865,12 @@ function Today({
   track,
   playing,
   onToggle,
-  environment,
   userName,
   onOpenSection,
 }: {
   track?: Track;
   playing: boolean;
   onToggle: () => void;
-  environment: EnvironmentSnapshot;
   userName: string;
   onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐" | "日记") => void;
 }) {
@@ -1903,11 +1900,6 @@ function Today({
           : hour < 18
             ? "Good afternoon"
             : "Good evening";
-  const weather =
-    environment.permission === "granted" &&
-    environment.temperature !== undefined
-      ? `${Math.round(environment.temperature)}°`
-      : "--°";
   const homeSignal =
     hour < 6
       ? "Take the night slowly."
@@ -1950,7 +1942,7 @@ function Today({
   return (
     <div className="today-home home-overview home-cards">
       <section className="welcome">
-        <div className="date-row"><span>{dateText}</span><span className="weather-pill"><Icon name="cloud" />{weather}</span></div>
+        <div className="date-row"><span>{dateText}</span></div>
         <h1>{greeting}, {userName}</h1>
         <p className="home-return-signal">{homeSignal}</p>
       </section>
@@ -1972,7 +1964,7 @@ function Today({
           <span className="home-diary-preview">{diaryPreview}</span>
         </button>
       <section className="home-reminders-card">
-        <button className="home-panel-heading" onClick={() => onOpenSection("提醒")}><span className="home-card-label">Little things</span><span>All reminders<Icon name="chevron" /></span></button>
+        <button className="home-card-label home-reminders-heading" onClick={() => onOpenSection("提醒")}>Little things<Icon name="chevron" /></button>
         {pendingTodos.slice(0, 1).map((item) => (
           <button className="reminder-row" key={item.id} aria-pressed={item.done} onClick={() => setTodos((items) => items.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>
             <span className={item.done ? "round-check checked" : "round-check"}>{item.done && <Icon name="check" />}</span>

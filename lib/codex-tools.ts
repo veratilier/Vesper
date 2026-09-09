@@ -169,6 +169,30 @@ export async function executeCodexTool(name: string, input: ToolInput, memorySco
     }
     return { attachments, message: String(input.message || '').slice(0, 2000) };
   }
+  if (name === "reading_room_read" || name === "reading_room_annotate") {
+    const books = await readDocument("readingRoom") as import("@/app/reading-room").ReadingBook[];
+    if (!Array.isArray(books)) throw new Error("Reading room data unavailable");
+    if (name === "reading_room_read" && !input.bookId) return { books: books.map(book => ({ id: book.id, title: book.title, page: book.page, pages: Math.ceil(book.text.length / 1800), notes: book.notes.length })) };
+    const book = books.find(item => item.id === input.bookId);
+    if (!book) throw new Error("Book not found. Read the bookshelf first.");
+    const page = input.page === undefined ? book.page : input.page;
+    const pages = book.text.match(/[\s\S]{1,1800}/g) || [];
+    if (typeof page !== "number" || !Number.isInteger(page) || page < 0 || page >= pages.length) throw new Error("Page out of range");
+    if (name === "reading_room_read") return { id: book.id, title: book.title, page, pages: pages.length, text: pages[page], notes: book.notes.filter(note => note.page === page) };
+    if (typeof input.text !== "string" || !input.text.trim() || input.text.length > 10000 || typeof input.noteId !== "string" || !input.noteId.trim() || input.noteId.length > 100) throw new Error("Provide noteId and annotation text");
+    if (input.quote !== undefined && (typeof input.quote !== "string" || input.quote.length > 1800)) throw new Error("Invalid quote");
+    const existing = book.notes.find(note => note.id === input.noteId);
+    if (existing) {
+      if (existing.text !== input.text.trim() || existing.page !== page || existing.quote !== (input.quote || "")) throw new Error("noteId already used for a different annotation");
+      return { note: existing, replayed: true };
+    }
+    const previous = JSON.stringify(books);
+    const note = { id: input.noteId, page, text: input.text.trim(), quote: String(input.quote || ""), author: "Rowan", date: new Date().toISOString() };
+    book.notes.push(note);
+    const result = await getDb().prepare("UPDATE vesper_documents SET value = ?, updated_at = ? WHERE key = ? AND value = ?").bind(JSON.stringify(books), new Date().toISOString(), "readingRoom", previous).run();
+    if (!result.meta.changes) throw new Error("Reading room changed. Read again and retry with the same noteId.");
+    return { note, replayed: false };
+  }
   if (name === "read_vesper_state") {
     const section = String(input.section || "notes").toLowerCase();
     if (section === "memory") {

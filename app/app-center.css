@@ -69,3 +69,10 @@
 .watch-room-empty p + p { color: var(--ui-muted); font-size: var(--text-caption, .75rem); }
 .watch-room > button { margin-right: 8px; }
 .app-shell .watch-room .room-link-form input { box-sizing: border-box; font-size: 16px; }
+
+.app-shell .app-center .room-grid { grid-template-columns:1fr; gap:8px; }
+.app-shell .app-center .room-grid .room-card { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:3px; padding:12px 14px; border-radius:13px; box-shadow:none; }
+.app-shell .app-center .room-card h2 { margin:0; font-size:.875rem !important; }
+.app-shell .app-center .room-card p { grid-column:1; margin:0; font-size:.72rem !important; }
+.app-shell .app-center .room-card > button { grid-column:2; grid-row:1 / 3; align-self:center; margin:0; padding:8px; font-size:.72rem !important; background:transparent; border:0; }
+.app-shell .app-center .room-wake { margin-top:12px; padding:12px 14px; border-radius:13px; }

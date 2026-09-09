@@ -54,3 +54,9 @@
   .app-shell .drawer-head { margin-bottom: 8px; }
   .app-shell .drawer-footer { padding-top: 8px; }
 }
+
+.app-shell .drawer nav { gap:1px; }
+.app-shell .drawer .nav-row { height:38px; min-height:38px; gap:10px; }
+.app-shell .drawer .nav-row span { font-size:14px; }
+.app-shell .drawer .nav-row > .nav-icon { width:21px; height:21px; flex-basis:21px; }
+.app-shell .drawer-bottom { padding-top:6px; }

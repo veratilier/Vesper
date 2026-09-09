@@ -6,6 +6,8 @@ import { NotificationSettings } from "./notification-settings";
 import { WindowOpening } from "./window-opening";
 import { WatchPlayer } from "./watch-player";
 import type { WatchFrame } from "./watch-context";
+import { ReadingRoom, type ReadingBook } from "./reading-room";
+import { SubscriptionUsage } from "./subscription-usage";
 import { AppCenter } from "./app-center";
 import { DesirePanel } from "./desire-panel";
 import { WakeCard } from "./wake-card";
@@ -1502,7 +1504,7 @@ export default function Home() {
           ) : section === "记忆库" ? (
             <MemoryLibrary />
           ) : section === "Pandora" ? (
-            <AppCenter renderWatch={() => conversationId === watchConversationId && active !== "Pandora" ? null : <ConnectedChat key={watchConversationId} watchMode watchActive={active === "Pandora"} conversationId={watchConversationId} onSelectConversation={setWatchConversationId} agentName={agentName} userName={userName} favorites={favorites} setFavorites={setFavorites} playing={playing} onToggleMusic={() => setPlaying(value => !value)} onNextMusic={() => { if (activeTracks.length) setTrackIndex(index => (index + 1) % activeTracks.length); }} onOpenMusic={() => navigateTo("音乐")} onAddMusicToPlaylist={card => { setMusicPlaylistIntent(card); navigateTo("音乐"); }} />} onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
+            <AppCenter renderReading={() => <InternalReadingRoom />} renderWatch={() => conversationId === watchConversationId && active !== "Pandora" ? null : <ConnectedChat key={watchConversationId} watchMode watchActive={active === "Pandora"} conversationId={watchConversationId} onSelectConversation={setWatchConversationId} agentName={agentName} userName={userName} favorites={favorites} setFavorites={setFavorites} playing={playing} onToggleMusic={() => setPlaying(value => !value)} onNextMusic={() => { if (activeTracks.length) setTrackIndex(index => (index + 1) % activeTracks.length); }} onOpenMusic={() => navigateTo("音乐")} onAddMusicToPlaylist={card => { setMusicPlaylistIntent(card); navigateTo("音乐"); }} />} onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
           ) : section === "欲望" ? (
             <DesirePanel agentName={agentName} apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} />
           ) : section === "设置" ? (
@@ -1579,6 +1581,7 @@ export default function Home() {
                 <span>Settings</span>
                 {active === "设置" && <i />}
               </button>
+              <SubscriptionUsage active={desktopNavigation || drawerOpen} socketUrl={codexSocketUrl} />
             </div>
           </aside>
         </div>
@@ -7149,4 +7152,9 @@ function Placeholder({ title }: { title: string }) {
       <p>Nothing here yet.</p>
     </div>
   );
+}
+
+function InternalReadingRoom() {
+  const [books, setBooks] = usePersistentDocument<ReadingBook[]>("readingRoom", []);
+  return <ReadingRoom books={books} setBooks={setBooks} />;
 }

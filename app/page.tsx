@@ -5345,7 +5345,6 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
     setAuthorizingId(server.id);
     try {
       const native = Capacitor.getPlatform() === "ios";
-      if (native && !Capacitor.isPluginAvailable("VesperOAuth")) throw new Error("Install the updated Vesper App to authorize MCP connections.");
       setMessage("Opening authorization page…");
       const redirectUri = native ? "https://vesper.r-vera.com/mcp/oauth/callback" : `${window.location.origin}/mcp/oauth/callback`;
       const discoveryResponse = await fetch(apiUrl("/api/mcp/oauth/discover"), {

@@ -5343,12 +5343,14 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
       return;
     }
     setAuthorizingId(server.id);
+    let stage = "Reading OAuth configuration";
     try {
       const native = Capacitor.getPlatform() === "ios";
-      setMessage("Opening authorization page…");
+      setMessage(`${stage}…`);
       const redirectUri = native ? "https://vesper.r-vera.com/mcp/oauth/callback" : `${window.location.origin}/mcp/oauth/callback`;
       const discoveryResponse = await fetch(apiUrl("/api/mcp/oauth/discover"), {
         method: "POST",
+        signal: AbortSignal.timeout(60000),
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: server.url, redirectUri, clientId: server.clientId }),
       });
@@ -5405,10 +5407,14 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
         window.location.assign(target.toString());
         return;
       }
+      stage = "Waiting for iOS authorization";
+      setMessage(`${stage}…`);
       const callback = await nativeMcpOAuth.authorize({ url: target.toString() });
       const code = nativeOAuthCode(callback.url, state);
+      stage = "Completing OAuth authorization";
+      setMessage(`${stage}…`);
       const exchange = await fetch(apiUrl("/api/mcp/oauth"), {
-        method: "POST", headers: appHeaders(true),
+        method: "POST", signal: AbortSignal.timeout(30000), headers: appHeaders(true),
         body: JSON.stringify({ ...pending, code }),
       });
       const result = await exchange.json() as { accessToken?: string; error?: string };
@@ -5428,7 +5434,7 @@ function ExternalMcpModal({ onClose, context }: { onClose: () => void; context?:
     } catch (reason) {
       update(server.id, { oauthStatus: server.token ? "authorized" : undefined });
       window.sessionStorage.removeItem("vesper-mcp-return");
-      setMessage(reason instanceof Error ? reason.message : "Could not open the OAuth authorization page");
+      setMessage(`${stage}: ${reason instanceof Error ? reason.message : "Authorization failed"}`);
     } finally {
       setAuthorizingId("");
     }

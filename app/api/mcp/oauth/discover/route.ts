@@ -34,6 +34,7 @@ async function readJson(url: URL) {
     },
     cache: "no-store",
     redirect: "manual",
+    signal: AbortSignal.timeout(10000),
   });
   if (!response.ok) throw new Error(`metadata HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
@@ -70,6 +71,7 @@ async function discoverResource(resource: URL) {
         params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "Vesper", version: "1.0" } },
       }),
       redirect: "manual",
+    signal: AbortSignal.timeout(10000),
     });
     challenge = probe.headers.get("www-authenticate") || "";
   } catch (reason) {
@@ -141,6 +143,7 @@ export async function POST(request: Request) {
           response_types: ["code"],
         }),
         redirect: "manual",
+    signal: AbortSignal.timeout(10000),
       });
       const registered = (await registration.json()) as { client_id?: string; client_secret?: string; error_description?: string };
       if (!registration.ok || !registered.client_id)

@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     if (body.resource) form.set("resource", body.resource);
     const response = await globalThis.fetch(tokenUrl.toString(), {
       method: "POST",
+      signal: AbortSignal.timeout(20000),
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         accept: "application/json",

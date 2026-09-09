@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import UserNotifications
+import AuthenticationServices
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -28,6 +29,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 class VesperViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(VesperNotificationPermission())
+        bridge?.registerPluginInstance(VesperOAuth())
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -82,5 +84,62 @@ public class VesperNotificationPermission: CAPPlugin, CAPBridgedPlugin {
                 if success { call.resolve() } else { call.reject("无法打开系统设置") }
             }
         }
+    }
+}
+
+
+// Keep authorization inside an authentication session so Safari's storage is
+// never mistaken for the initiating WKWebView's storage.
+@objc(VesperOAuth)
+public class VesperOAuth: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentationContextProviding {
+    public let identifier = "VesperOAuth"
+    public let jsName = "VesperOAuth"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "authorize", returnType: CAPPluginReturnPromise)
+    ]
+    private var session: ASWebAuthenticationSession?
+
+    @objc func authorize(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard self.session == nil else {
+                call.reject("Authorization is already open."); return
+            }
+            guard let raw = call.getString("url"), let url = URL(string: raw),
+                  url.scheme == "https", url.host != nil,
+                  url.user == nil, url.password == nil else {
+                call.reject("Authorization requires a valid HTTPS URL."); return
+            }
+            guard self.bridge?.viewController?.view.window != nil else {
+                call.reject("Reopen Vesper before authorizing."); return
+            }
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.rvera.vesper") { [weak self] callback, error in
+                DispatchQueue.main.async {
+                    self?.session = nil
+                    if let error = error {
+                        if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
+                            call.reject("Authorization cancelled.")
+                        } else {
+                            call.reject("Authorization could not complete. Please try again.")
+                        }
+                        return
+                    }
+                    guard let callback = callback else {
+                        call.reject("The authorization service did not return a callback."); return
+                    }
+                    call.resolve(["url": callback.absoluteString])
+                }
+            }
+            session.presentationContextProvider = self
+            session.prefersEphemeralWebBrowserSession = false
+            self.session = session
+            if !session.start() {
+                self.session = nil
+                call.reject("Could not open the authorization window.")
+            }
+        }
+    }
+
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return bridge?.viewController?.view.window ?? ASPresentationAnchor()
     }
 }

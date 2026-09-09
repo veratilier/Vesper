@@ -20,6 +20,11 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array><dict>
+		<key>CFBundleURLName</key><string>com.rvera.vesper.oauth</string>
+		<key>CFBundleURLSchemes</key><array><string>com.rvera.vesper</string></array>
+	</dict></array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -118,29 +118,45 @@ public class VesperOAuth: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresen
             guard self.bridge?.viewController?.view.window != nil else {
                 call.reject("Reopen Vesper before authorizing."); return
             }
+            var completed = false
+            func rejectOnce(_ message: String) {
+                guard !completed else { return }
+                completed = true
+                self.session = nil
+                call.reject(message)
+            }
+            print("[VesperOAuth] authorize entered; window attached=true")
             let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.rvera.vesper") { [weak self] callback, error in
                 DispatchQueue.main.async {
-                    self?.session = nil
+                    guard !completed else { return }
                     if let error = error {
+                        let nativeError = error as NSError
+                        print("[VesperOAuth] error domain=\(nativeError.domain) code=\(nativeError.code)")
                         if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
-                            call.reject("Authorization cancelled.")
+                            rejectOnce("Authorization cancelled.")
                         } else {
-                            call.reject("Authorization could not complete. Please try again.")
+                            rejectOnce("Authorization could not complete (\(nativeError.domain), code \(nativeError.code)).")
                         }
                         return
                     }
                     guard let callback = callback else {
-                        call.reject("The authorization service did not return a callback."); return
+                        rejectOnce("The authorization service did not return a callback."); return
                     }
+                    completed = true
+                    self?.session = nil
                     call.resolve(["url": callback.absoluteString])
                 }
             }
             session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false
             self.session = session
-            if !session.start() {
-                self.session = nil
-                call.reject("Could not open the authorization window.")
+            let started = session.start()
+            print("[VesperOAuth] session.start=\(started)")
+            if !started {
+                // Allow the system completion to report its precise error first.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    rejectOnce("Could not open the authorization window.")
+                }
             }
         }
     }

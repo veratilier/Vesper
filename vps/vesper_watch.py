@@ -56,7 +56,7 @@ def read(ident):
 
 def prepare(ident, url):
     path = folder(ident)
-    state = {'id': ident, 'status': 'preparing', 'created': time.time()}
+    state = {'id': ident, 'status': 'preparing', 'created': time.time(), 'sourceHash': hashlib.sha256(url.encode()).hexdigest()}
     save(path, state)
     proc = None
     try:
@@ -112,6 +112,17 @@ def prepare(ident, url):
 
 def start(url):
     url = canonical(url)
+    source_hash = hashlib.sha256(url.encode()).hexdigest()
+    # Same private source within the existing TTL joins its import or reuses its file.
+    for state_file in ROOT.glob('*/state.json'):
+        if not re.fullmatch('[a-f0-9]{32}', state_file.parent.name): continue
+        try:
+            data = json.loads(state_file.read_text())
+            if data.get('sourceHash') != source_hash or not 0 <= time.time() - data['created'] < TTL: continue
+            ready = data.get('status') == 'ready' and (state_file.parent / 'media.mp4').is_file()
+            pending = data.get('status') == 'preparing' and LOCK.locked()
+            if ready or pending: return {'id': state_file.parent.name, 'status': data['status']}
+        except (OSError, ValueError, KeyError, TypeError): continue
     if not LOCK.acquire(blocking=False):
         raise ValueError('另一个视频正在准备，请稍后再试。')
     try:
@@ -123,7 +134,7 @@ def start(url):
             raise ValueError('临时视频缓存已满，过期清理后再试。')
         ident = secrets.token_hex(16)
         path = folder(ident); path.mkdir(mode=0o700)
-        save(path, {'id': ident, 'status': 'preparing', 'created': time.time()})
+        save(path, {'id': ident, 'status': 'preparing', 'created': time.time(), 'sourceHash': source_hash})
         threading.Thread(target=prepare, args=(ident, url), daemon=True).start()
         return {'id': ident, 'status': 'preparing'}
     except Exception:

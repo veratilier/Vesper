@@ -9,6 +9,14 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(w.canonical('https://www.bilibili.com/video/BV1abc?p=2&foo=secret'), 'https://www.bilibili.com/video/BV1abc?p=2')
         for url in ['http://www.bilibili.com/video/BV1abc', 'https://127.0.0.1/video/BV1abc', 'https://www.bilibili.com.evil.test/video/BV1abc', 'https://user@www.bilibili.com/video/BV1abc', 'https://www.bilibili.com/redirect', 'https://www.bilibili.com/video/BV1abc?p=0']:
             with self.assertRaises(ValueError): w.canonical(url)
+    def test_repeat_link_reuses_ready_private_import(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(w, 'ROOT', Path(tmp)), patch.object(w.threading, 'Thread') as thread:
+            ident='c'*32;path=w.folder(ident);path.mkdir();(path/'media.mp4').write_bytes(b'fixture')
+            url=w.canonical('https://www.bilibili.com/video/BV1abc/')
+            w.save(path,{'id':ident,'status':'ready','created':w.time.time(),'sourceHash':w.hashlib.sha256(url.encode()).hexdigest()})
+            self.assertEqual(w.start(url+'&tracking=ignored'),{'id':ident,'status':'ready'})
+            thread.assert_not_called()
+
     def test_range_for_seeking(self):
         self.assertEqual(w.byte_range(None, 100), (0, 99, 200))
         self.assertEqual(w.byte_range('bytes=20-39', 100), (20, 39, 206))

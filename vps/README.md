@@ -54,3 +54,23 @@ wake with `python3 vesper_wake_runner.py --schedule-verification 120`, then conf
 PWA closure before its due time. Check job completion, saved messages, native
 read calls, and push receipt independently. Do not claim end-to-end acceptance
 from timer activation alone. Test with `python3 -m unittest discover -s vps -p test_wake.py`.
+
+### Closed-PWA acceptance — 2026-09-09
+
+Implementation `bc66168`, API Worker version
+`1c76a0ad-998e-4979-a63b-de240177ae3c`.
+The user confirmed all Vesper PWA windows closed before the queued verification.
+The existing systemd timer (not a browser or a direct model invocation) claimed
+job `75f5652f-c4d5-4370-a2f7-c0da883ee2af` at 17:20:01 Asia/Singapore.
+The VPS used ChatGPT managed login, completed native `desire_status` and
+`read_vesper_state`, saved the wake card, two agent message items and two tool
+observations, and finished around 17:20:13. Web Push returned delivered=6/6;
+the user separately confirmed receiving the phone notification while PWA closed.
+Repeated submission of the same request ID left one job and two executed calls.
+All 776 pre-existing history message IDs, roles, and contents matched the SQLite
+backup (zero missing, zero content changes). The normal timer remains enabled
+with the existing daily setting. No API key or synthetic Desire encounter was used.
+
+Regression coverage also includes `node tools/test-wake-push.mjs` (authorization
+and concurrent push deduplication). The full build and existing chat/Desire tests
+passed; TypeScript retains only the five previously recorded unrelated diagnostics.

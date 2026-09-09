@@ -144,3 +144,7 @@
     margin-block: 0;
   }
 }
+
+/* Keep image-stack gestures on the compositor while vertical chat scrolling stays native. */
+.photo-stack .photo-open { touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; will-change: transform; }
+.photo-stack .photo-open img { -webkit-user-drag: none; }

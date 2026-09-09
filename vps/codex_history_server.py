@@ -193,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {"ok": True})
             elif body.get("action") == "request":
                 ident = wake_store.request(body.get("requestId"))
-                self.send_json(202, {"ok": True, "requestId": ident, "conversationId": wake_store.CONVERSATION})
+                self.send_json(202, {"ok": True, "requestId": ident, "conversationId": None})
             else:
                 self.send_json(400, {"error": "Unknown wake action"})
         elif path == ["health"] and self.command == "GET":

@@ -941,16 +941,16 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js?v=28", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
+      void navigator.serviceWorker.register("/sw.js?v=29", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update());
     }
   }, []);
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const openSection = (event: MessageEvent) => {
       if (event.data?.type !== 'vesper-open-section') return;
-      if (event.data.section === 'chat') {
+      if (event.data.section === 'chat' && typeof event.data.conversationId === 'string' && /^[a-zA-Z0-9:_-]{1,128}$/.test(event.data.conversationId)) {
         setVisitedSections(sections => sections.includes('聊天') ? sections : [...sections, '聊天']);
-        setConversationId('vesper-autonomous-wake'); setActive('聊天'); return;
+        setConversationId(event.data.conversationId); setActive('聊天'); return;
       }
       if (event.data.section !== 'desire') return;
       setVisitedSections(sections => sections.includes('欲望') ? sections : [...sections, '欲望']);
@@ -961,9 +961,9 @@ export default function Home() {
   }, []);
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    if (query.get('section') === 'chat' && query.get('conversation') === 'vesper-autonomous-wake') {
+    if (query.get('section') === 'chat' && /^[a-zA-Z0-9:_-]{1,128}$/.test(query.get('conversation') || '')) {
       setVisitedSections(sections => sections.includes('聊天') ? sections : [...sections, '聊天']);
-      setConversationId('vesper-autonomous-wake'); setActive('聊天');
+      setConversationId(query.get('conversation')!); setActive('聊天');
     }
     if (query.get('section') === 'desire') {
       setVisitedSections(sections => sections.includes('欲望') ? sections : [...sections, '欲望']);
@@ -4578,7 +4578,7 @@ function ConnectedChat({
       body: JSON.stringify({action: 'request', requestId: wakeRequest}) }).then(async response => {
       if (!response.ok) throw new Error('后台唤醒暂未连接，请稍后重试。');
       const result = await response.json() as {conversationId: string};
-      onSelectConversation(result.conversationId);
+      if (result.conversationId) onSelectConversation(result.conversationId);
     }).catch(reason => setError(reason.message));
   }, [wakeRequest, onWakeHandled, onSelectConversation]);
   useEffect(() => {
@@ -4590,7 +4590,7 @@ function ConnectedChat({
       body:JSON.stringify({action:'presence',deviceId,busy:false}),keepalive:true}).catch(() => {});};
   }, [busy, conversationId]);
   useEffect(() => {
-    if (conversationId !== 'vesper-autonomous-wake' || !historyReady || busy) return;
+    if (!conversationId || !historyReady || busy) return;
     let stopped=false;
     const refresh=async () => {
       if (document.visibilityState !== 'visible') return;
@@ -5336,7 +5336,7 @@ function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferenc
         <div><small>已执行工具</small><b>{runtime?.lastJob?.tools ?? 0}</b></div>
         <div><small>下次窗口</small><b>{preferences.careFrequency==='off'?'—':runtime?.nextAt?new Date(runtime.nextAt*1000).toLocaleString('zh-CN'):'等待计划'}</b></div>
       </div>
-      <p className="settings-hint">VPS 在白天按现有频率自主唤醒，关闭手机页面后仍可执行。回复保存在「主动唤醒」对话中，保存后发送通知；正在聊天时顺延。需要额外授权的操作不会自动批准。</p>
+      <p className="settings-hint">VPS 在 08:00–23:00 按独立 Desire 抽取 30–120 分钟间隔，计划重启后保留。明确要求安静或正在聊天时顺延；没有值得分享的内容就保持安静。留言进入最近已完成正常回复的聊天，保存后推送，不新建窗口。</p>
       {runtime?.schedulerError && <p className="settings-hint">后台暂未完成，请稍后查看状态。</p>}
       <button className="reset-background" onClick={()=>setPreviewPulse(v=>v+1)}>预览一次脉冲</button>
     </section></div>;

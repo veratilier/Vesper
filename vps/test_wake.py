@@ -3,10 +3,13 @@ from pathlib import Path
 from unittest.mock import patch
 import vesper_wake_store as store
 import vesper_wake_runner as runner
+import vesper_wake_policy as policy
 
 class WakeTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.addCleanup(patch.stopall)
+        patch.object(runner,'current_preferences',lambda:{}).start()
         self.old=store.PATH;store.PATH=Path(self.temp.name)/'wake.db';self.addCleanup(lambda:setattr(store,'PATH',self.old))
     def test_real_curl_preserves_utf8_and_json_escapes(self):
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -35,8 +38,9 @@ class WakeTests(unittest.TestCase):
         with patch.object(runner,'HISTORY',Path(self.temp.name)/'absent'):
             self.assertTrue(runner.front_busy(time.time()))
             self.assertFalse(runner.front_busy(time.time()+91))
-    def test_full_runner_saves_before_push_and_deduplicates_tools(self):
+    def test_full_runner_saves_before_push_and_deduplicates_tools(self, share=True):
         ident=store.request('verify',source='verification');messages={};calls=[];push=[]
+        runner.update(ident,conversation_id='chat-existing',user_message_id='real-user',user_turn_id='normal-turn')
         with store.db() as con:job=dict(con.execute('SELECT * FROM jobs').fetchone())
         class Rpc:
             def __init__(self):self.handler=None;self.queue=[]
@@ -52,40 +56,49 @@ class WakeTests(unittest.TestCase):
                     for n,tool in enumerate(['desire_status','read_vesper_state']):
                         message={'id':100+n,'method':'item/tool/call','params':{'name':tool,'itemId':str(n),'arguments':{}}}
                         self.queue.extend([message,message])
-                    self.queue.extend([{'method':'item/completed','params':{'item':{'id':'answer','type':'agentMessage','text':'A real saved reply'}}},
+                    self.queue.extend([{'method':'item/completed','params':{'item':{'id':'answer','type':'agentMessage','text':json.dumps({'share':share,'message':'A real saved reply' if share else ''})}}},
                         {'method':'turn/completed','params':{'turn':{'status':'completed'}}}])
                     return {'turn':{'id':'turn'}}
                 return {}
             def next(self,timeout):return self.queue.pop(0)
         def http(path,body=None,history=False):
             if path=='/api/codex/tools' and body is None:return {'tools':[{'name':n} for n in runner.ALLOWED]}
-            if path=='/api/codex/tools':calls.append(body);return {'result':{'style':'quiet'}}
+            if path=='/api/codex/tools':
+                assert body['conversationId']=='chat-existing'
+                calls.append(body);return {'result':{'style':'quiet'}}
             if path.endswith('/messages'):messages[body['id']]=body;return {}
             if path=='/api/wake':
                 assert any(m['role']=='agent' for m in messages.values())
                 with store.db() as con:assert con.execute('SELECT status FROM jobs').fetchone()[0]=='saved'
                 push.append(body);return {'status':'sent','delivered':1}
             return {}
-        with patch.object(runner,'Rpc',Rpc),patch.object(runner,'http',http),patch.object(runner,'context',lambda:''):
+        with patch.object(runner,'Rpc',Rpc),patch.object(runner,'http',http),patch.object(runner,'context',lambda job:''),patch.object(runner,'front_busy',lambda n:False),patch.object(policy,'history',lambda p:[{'id':'real-user','vesper_conversation_id':'chat-existing','metadata_json':'{}','content':'Hello'}]):
             runner.execute(job)
-        self.assertEqual(len(calls),2);self.assertEqual(len(push),1)
+        self.assertEqual(len(calls),2)
+        if not share:
+            self.assertEqual(messages,{});self.assertEqual(push,[])
+            self.assertEqual(store.status()['lastJob']['status'],'silent');return
+        self.assertEqual(len(push),1)
         self.assertEqual(store.status()['lastJob']['status'],'completed')
         self.assertEqual(sum(m['role']=='agent' for m in messages.values()),1)
+    def test_silent_round_records_tools_without_message_or_push(self):
+        self.test_full_runner_saves_before_push_and_deduplicates_tools(False)
     def test_off_does_not_auto_start_and_partial_turn_is_not_replayed(self):
         store.request('interrupted')
         runner.update('interrupted',status='running')
-        with patch.object(runner,'http',lambda *a,**kw:{'value':{'careFrequency':'off'}}),patch.object(runner,'front_busy',lambda n:False),patch.object(runner,'execute') as execute:
+        with patch.object(runner,'http',lambda *a,**kw:{'value':{'careFrequency':'off'}}),patch.object(runner,'front_busy',lambda n:False),patch.object(runner,'reschedule'),patch.object(runner,'execute') as execute:
             runner.tick()
             execute.assert_not_called()
         self.assertEqual(store.status()['lastJob']['status'],'interrupted')
     def test_busy_defers_manual_job(self):
         store.request('wait')
-        with patch.object(runner,'http',lambda *a,**kw:{'value':{'careFrequency':'daily'}}),patch.object(runner,'front_busy',lambda n:True),patch.object(runner,'execute') as execute:
+        with patch.object(runner,'http',lambda *a,**kw:{'value':{'careFrequency':'daily'}}),patch.object(runner,'front_busy',lambda n:True),patch.object(runner,'reschedule'),patch.object(runner,'execute') as execute:
             runner.tick();execute.assert_not_called()
         self.assertEqual(store.status()['lastJob']['status'],'queued')
     def test_no_api_key_fallback(self):
         # Execution refuses an API-key account before starting any model turn.
         ident=store.request('no-api')
+        runner.update(ident,conversation_id='chat-existing',user_message_id='real-user',user_turn_id='normal-turn')
         with store.db() as con:job=dict(con.execute('SELECT * FROM jobs').fetchone())
         class Rpc:
             def call(self,m,p):return {'account':{'type':'apiKey'}} if m=='account/read' else {}

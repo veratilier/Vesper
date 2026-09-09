@@ -1,7 +1,7 @@
 .window-opening{position:fixed;inset:0;margin:0;border:0;padding:0;width:100%;height:100dvh;max-width:none;max-height:none;overflow:hidden;background:#476889;color:#f2f6ff;z-index:2147483000;}
 .window-opening::backdrop{background:transparent}
 .opening-art{position:absolute;inset:0;overflow:hidden}
-.opening-plate{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;pointer-events:none;opacity:1}
+.opening-plate{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;pointer-events:none;opacity:1}
 .opening-ready .opening-depth-4{animation:opening-appear 1.3s .15s ease-in-out both}
 .opening-ready .opening-depth-3{animation:opening-appear 1.3s 1s ease-in-out both}
 .opening-ready .opening-depth-2{animation:opening-appear 1.3s 1.85s ease-in-out both}

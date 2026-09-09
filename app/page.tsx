@@ -1,5 +1,7 @@
 "use client";
 import { VESPER_DESIRE_SESSION_CONFIG, VESPER_DESIRE_INSTRUCTIONS } from "@/lib/desire/routing.js";
+import { Capacitor } from "@capacitor/core";
+import { documentSyncAction } from "@/lib/document-sync";
 import { WindowOpening } from "./window-opening";
 import { WatchPlayer } from "./watch-player";
 import type { WatchFrame } from "./watch-context";
@@ -679,6 +681,9 @@ export default function Home() {
     () => true,
     () => false,
   );
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) document.documentElement.dataset.native = "true";
+  }, []);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [desktopNavigation, setDesktopNavigation] = useState(false);
   useEffect(() => {
@@ -698,7 +703,7 @@ export default function Home() {
     setActiveSection(section);
   }, []);
   useMobileViewport();
-  const [profileOpen, setProfileOpen] = useState(false);
+
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
@@ -722,6 +727,16 @@ export default function Home() {
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [tracks, setTracks] = usePersistentDocument<Track[]>("music", []);
   const [queue, setQueue] = usePersistentDocument<Track[]>("musicQueue", []);
+  const avatarInput = useRef<HTMLInputElement>(null);
+  const agentAvatarInput = useRef<HTMLInputElement>(null);
+  const changeAvatar = async (file: File | undefined, setter: (photo: string) => void) => {
+    if (!file) return;
+    try {
+      const preview = await localImage(file, 640, 0.88);
+      setter(preview);
+      try { const { url } = await uploadImage(file); setter(url); } catch { /* Keep the local preview for profile sync. */ }
+    } catch { window.alert("图片读取失败，请重新选择图片。"); }
+  };
   const [favorites, setFavorites] = usePersistentDocument<FavoriteItem[]>("favorites", []);
   const [musicControl, setMusicControl] = usePersistentDocument<MusicControl | null>("musicControl", null);
   const [, setMusicPlayback] = usePersistentDocument<MusicPlaybackState>("musicPlayback", {});
@@ -1319,6 +1334,8 @@ export default function Home() {
   return (
     <main className="stage" style={shellStyle}>
       <WindowOpening />
+      <input ref={avatarInput} type="file" accept="image/*" hidden onChange={e => { void changeAvatar(e.target.files?.[0], setUserAvatar); e.target.value = ""; }} />
+      <input ref={agentAvatarInput} type="file" accept="image/*" hidden onChange={e => { void changeAvatar(e.target.files?.[0], setAgentAvatar); e.target.value = ""; }} />
       <audio
         ref={globalPlayer}
         src={currentTrack?.url}
@@ -1353,8 +1370,8 @@ export default function Home() {
               className="chat-identity"
               aria-label={`${userName} 与 ${agentName}`}
             >
-              <AvatarMark src={userAvatar} label={userName} kind="user" />
-              <AvatarMark src={agentAvatar} label={agentName} kind="agent" />
+              <button className="identity-avatar" aria-label="更换我的头像" onClick={() => avatarInput.current?.click()}><AvatarMark src={userAvatar} label={userName} kind="user" /></button>
+              <button className="identity-avatar" aria-label="更换 Agent 头像" onClick={() => agentAvatarInput.current?.click()}><AvatarMark src={agentAvatar} label={agentName} kind="agent" /></button>
             </div>
           ) : (
             <h1 className="page-name">{nav.find((item) => item.label === active)?.english || active}</h1>
@@ -1389,7 +1406,7 @@ export default function Home() {
           ) : (
             <button
               className="avatar-button"
-              onClick={() => setProfileOpen(true)}
+              onClick={() => avatarInput.current?.click()}
             >
               {userAvatar ? (
                 <AvatarMark src={userAvatar} label={userName} kind="user" />
@@ -1550,39 +1567,9 @@ export default function Home() {
                 <span>Settings</span>
                 {active === "设置" && <i />}
               </button>
-            <button
-              className="drawer-footer"
-              onClick={() => {
-                setDrawerOpen(false);
-                window.setTimeout(() => setProfileOpen(true), 290);
-              }}
-            >
-              <span className="footer-avatar">{userName.slice(0, 1)}</span>
-              <span>
-                <b>Vesper</b>
-                <small>编辑用户与 Agent 名称</small>
-              </span>
-              <Icon name="chevron" />
-            </button>
             </div>
           </aside>
         </div>
-        {profileOpen && (
-          <ProfileModal
-            userName={userName}
-            agentName={agentName}
-            userAvatar={userAvatar}
-            agentAvatar={agentAvatar}
-            onSave={(user, agent, userPhoto, agentPhoto) => {
-              setUserName(user || "我");
-              setAgentName(agent || "Vesper");
-              setUserAvatar(userPhoto);
-              setAgentAvatar(agentPhoto);
-              setProfileOpen(false);
-            }}
-            onClose={() => setProfileOpen(false)}
-          />
-        )}{" "}
         {historyOpen && (
           <HistoryModal
             activeId={conversationId}
@@ -1689,11 +1676,14 @@ function usePersistentDocument<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => readLocalValue<T>(storageKey, initial));
   const [ready, setReady] = useState(false);
   const lastSerialized = useRef(
-    typeof window === "undefined" ? "" : window.localStorage.getItem(storageKey) || "",
+    JSON.stringify(readLocalValue<T>(storageKey, initial)),
   );
   useEffect(() => {
     let live = true;
+    let syncing = false;
     const reconcile = async (initialLoad = false) => {
+      if (syncing) return;
+      syncing = true;
       const localRaw = window.localStorage.getItem(storageKey);
       const localMeta = readLocalValue<{ updatedAt?: string }>(metaKey, {});
       try {
@@ -1703,15 +1693,37 @@ function usePersistentDocument<T>(key: string, initial: T) {
         });
         if (!response.ok) throw new Error("sync unavailable");
         const remote = (await response.json()) as { value: T | null; updatedAt?: string };
-        const remoteTime = remote.updatedAt ? Date.parse(remote.updatedAt) : 0;
-        const localTime = localMeta.updatedAt ? Date.parse(localMeta.updatedAt) : 0;
-        if (remote.value !== null && (localRaw === null || (localTime > 0 && remoteTime > localTime))) {
+        if (!live || window.localStorage.getItem(storageKey) !== localRaw) return;
+        // One-time recovery of favorites kept in the old PWA before empty-state sync was fixed.
+        const migrationKey = "vesper-favorites-sync-v2";
+        if (key === "favorites" && !window.localStorage.getItem(migrationKey)) {
+          const localItems = localRaw ? JSON.parse(localRaw) as FavoriteItem[] : [];
+          const remoteItems = Array.isArray(remote.value) ? remote.value as FavoriteItem[] : [];
+          if (Array.isArray(localItems) && localItems.length) {
+            window.localStorage.setItem("vesper-favorites-before-sync-v2", localRaw!);
+            const merged = [...new Map([...remoteItems, ...localItems].map(item => [`${item.conversationId}:${item.messageId}`, item])).values()];
+            const upload = await fetch(apiUrl("/api/state"), { method: "PUT", headers: appHeaders(true), body: JSON.stringify({ key, value: merged }) });
+            if (!upload.ok) throw new Error("favorites recovery pending");
+            const result = await upload.json() as { updatedAt: string };
+            if (!live || window.localStorage.getItem(storageKey) !== localRaw) return;
+            const serialized = JSON.stringify(merged);
+            window.localStorage.setItem(storageKey, serialized);
+            window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt, source: "remote" }));
+            lastSerialized.current = serialized;
+            setValue(merged as T);
+            window.localStorage.setItem(migrationKey, "done");
+            return;
+          }
+          window.localStorage.setItem(migrationKey, "done");
+        }
+        const action = documentSyncAction(localRaw, localMeta.updatedAt, remote.value, remote.updatedAt);
+        if (action === "download") {
           const serialized = JSON.stringify(remote.value);
           lastSerialized.current = serialized;
           window.localStorage.setItem(storageKey, serialized);
           window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: remote.updatedAt, source: "remote" }));
-          if (live) setValue(remote.value);
-        } else if (localRaw !== null && (!remote.updatedAt || localTime === 0)) {
+          if (live) setValue(remote.value as T);
+        } else if (action === "upload" && localRaw !== null) {
           const upload = await fetch(apiUrl("/api/state"), {
             method: "PUT",
             headers: appHeaders(true),
@@ -1719,12 +1731,13 @@ function usePersistentDocument<T>(key: string, initial: T) {
           });
           if (upload.ok) {
             const result = (await upload.json()) as { updatedAt?: string };
-            window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt || new Date().toISOString(), source: "local" }));
+            if (window.localStorage.getItem(storageKey) === localRaw) window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt || new Date().toISOString(), source: "local" }));
           }
         }
       } catch {
         // Local data remains authoritative while offline or when cloud sync is unavailable.
       } finally {
+        syncing = false;
         if (live && initialLoad) setReady(true);
       }
     };
@@ -1732,11 +1745,13 @@ function usePersistentDocument<T>(key: string, initial: T) {
     const refresh = () => {
       if (document.visibilityState === "visible") void reconcile(false);
     };
+    const refreshTimer = window.setInterval(refresh, 15000);
     window.addEventListener("focus", refresh);
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       live = false;
+      window.clearInterval(refreshTimer);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", refresh);
@@ -1772,7 +1787,7 @@ function usePersistentDocument<T>(key: string, initial: T) {
         .then(async (response) => {
           if (!response.ok) return;
           const result = (await response.json()) as { updatedAt?: string };
-          window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt || new Date().toISOString(), source: "local" }));
+          if (window.localStorage.getItem(storageKey) === serialized) window.localStorage.setItem(metaKey, JSON.stringify({ updatedAt: result.updatedAt || new Date().toISOString(), source: "local" }));
         })
         .catch(() => {});
     }, 260);
@@ -2468,116 +2483,6 @@ function VoiceCallModal({
             </button>
           </div>
         )}
-      </section>
-    </div>
-  );
-}
-
-function ProfileModal({
-  userName,
-  agentName,
-  userAvatar,
-  agentAvatar,
-  onSave,
-  onClose,
-}: {
-  userName: string;
-  agentName: string;
-  userAvatar: string;
-  agentAvatar: string;
-  onSave: (
-    user: string,
-    agent: string,
-    userPhoto: string,
-    agentPhoto: string,
-  ) => void;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(userName === "我" ? "" : userName);
-  const [agent, setAgent] = useState(agentName);
-  const [userPhoto, setUserPhoto] = useState(userAvatar);
-  const [agentPhoto, setAgentPhoto] = useState(agentAvatar);
-  const [birthday, setBirthday] = useState("");
-  const loadPhoto = async (
-    file: File | undefined,
-    setter: (value: string) => void,
-  ) => {
-    if (!file) return;
-    const preview = await localImage(file, 640, 0.88);
-    setter(preview);
-    try {
-      const { url } = await uploadImage(file);
-      setter(url);
-    } catch {}
-  };
-  return (
-    <div className="modal-layer profile-layer">
-      <button className="modal-scrim" onClick={onClose} />
-      <section className="profile-modal">
-        <div className="modal-head">
-          <div>
-            <small>USER & AGENT</small>
-            <h2>我的 Vesper</h2>
-          </div>
-          <button onClick={onClose}>
-            <Icon name="close" />
-          </button>
-        </div>
-        <div className="avatar-editor-pair">
-          <label>
-            <AvatarMark src={userPhoto} label={name || "我"} kind="user" />
-            <i>
-              <Icon name="edit" />
-            </i>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => loadPhoto(e.target.files?.[0], setUserPhoto)}
-            />
-            <small>User 头像</small>
-          </label>
-          <label>
-            <AvatarMark src={agentPhoto} label={agent || "V"} kind="agent" />
-            <i>
-              <Icon name="edit" />
-            </i>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => loadPhoto(e.target.files?.[0], setAgentPhoto)}
-            />
-            <small>Agent 头像</small>
-          </label>
-        </div>
-        <label className="profile-field">
-          <span>用户名称</span>
-          <input
-            placeholder="未填写时显示“我”"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <label className="profile-field">
-          <span>Agent 昵称</span>
-          <input value={agent} onChange={(e) => setAgent(e.target.value)} />
-        </label>
-        <label className="profile-field">
-          <span>生日</span>
-          <input
-            type="date"
-            value={birthday}
-            onChange={(e) => setBirthday(e.target.value)}
-          />
-        </label>
-        <p className="profile-note">
-          头像和名称会同步显示在聊天顶部与消息中；生日只用于纪念日和个性化陪伴。
-        </p>
-        <button
-          className="save-profile"
-          onClick={() => onSave(name, agent, userPhoto, agentPhoto)}
-        >
-          保存资料
-        </button>
       </section>
     </div>
   );
@@ -5205,9 +5110,8 @@ function SettingsPage({
           ["sparkles", "Agent", "Model connection, voice and wake-ups"],
           ["heart", "Souvenir", "Anniversaries, countdowns and check-ins"],
           ["link", "Tools", "MCP connections, notifications and location"],
-          ["settings", "Appearance", "Theme colors and background"],
           ["archive", "Data", "Memory permissions, export and backup"],
-        ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => title === "Appearance" ? setSelected("Appearance") : setCategory(title)} /></div>)}
+        ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => setCategory(title)} /></div>)}
       </div> : <SettingsGroup title={category}>
         {category === "Agent" && <>
           <SettingRow icon="sparkles" title="Codex Server" sub="模型服务与连接" onClick={() => setSelected("Codex Server")} />
@@ -5230,14 +5134,7 @@ function SettingsPage({
           <SettingRow icon="archive" title="导出与备份" sub={preferences.lastExportAt ? `上次导出：${new Date(preferences.lastExportAt).toLocaleString("zh-CN")}` : "本地优先保存 · 应用更新不清除数据"} onClick={() => setSelected("导出与备份")} />
         </>}
       </SettingsGroup>}
-      {selected === "Appearance" ? (
-        <AppearanceModal
-          accent={accent}
-          onAccent={onAccent}
-          onBackground={onBackground}
-          onClose={closeDetail}
-        />
-      ) : selected === "Codex Server" ? (
+      {selected === "Codex Server" ? (
         <CodexConnectionModal onClose={closeDetail} />
       ) : selected === "MCP 工具" ? (
         <ExternalMcpModal onClose={closeDetail} />

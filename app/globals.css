@@ -5043,3 +5043,20 @@ body {
 .diary-day-counts small { font-size: 11px; color: var(--muted); }
 .diary-day-page .diary-sheet { margin: 16px 0; }
 .diary-day-page .diary-sheet textarea { min-height: 180px; }
+
+/* Compact journal overview and direct header avatar editing. */
+.identity-avatar { padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; }
+.identity-avatar:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 3px; }
+.diary-activity-page .calendar-grid b,
+.diary-activity-page .calendar-grid small { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; font-style: normal !important; }
+.diary-activity-page .page-intro { margin-bottom: 0; padding-bottom: 12px; }
+.diary-activity-page .page-intro h1 { margin-block: 8px; }
+.diary-activity-page .page-intro p { margin-block: 8px; }
+.diary-activity-page .diary-heat-grid { gap: 4px; }
+.diary-activity-page .diary-heat-grid button { height: clamp(39px, 6vh, 48px); gap: 1px; padding: 2px 0; }
+.diary-activity-page .calendar { padding-block: 12px 8px; }
+.diary-activity-page .diary-heat-legend { margin-top: 8px; }
+.diary-activity-page .diary-count-status { margin-block: 6px; }
+
+html[data-native="true"] .app-header { background: transparent !important; }
+html[data-native="true"] .app-shell::after { content: none !important; display: none !important; }

@@ -6,7 +6,7 @@ function json(value: unknown, status = 200) {
 
 function safeHttpsUrl(value: unknown) {
   const url = new URL(String(value || ""));
-  if (url.protocol !== "https:") throw new Error("MCP 与 OAuth 地址必须使用 HTTPS");
+  if (url.protocol !== "https:") throw new Error("MCP and OAuth URLs must use HTTPS.");
   const host = url.hostname.toLowerCase();
   if (
     host === "localhost" ||
@@ -15,7 +15,7 @@ function safeHttpsUrl(value: unknown) {
     /^10\./.test(host) ||
     /^192\.168\./.test(host) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-  ) throw new Error("不能访问本机或私网 OAuth 地址");
+  ) throw new Error("Local and private OAuth addresses are not allowed.");
   return url;
 }
 
@@ -31,7 +31,7 @@ async function readJson(url: URL) {
   });
   if (!response.ok) throw new Error(`metadata HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > 1_000_000) throw new Error("OAuth 元数据过大");
+  if (contentLength > 1_000_000) throw new Error("OAuth metadata is too large.");
   return (await response.json()) as JsonRecord;
 }
 
@@ -81,7 +81,7 @@ async function discoverResource(resource: URL) {
     resource: resource.toString(),
     diagnostics,
   });
-  throw new Error("无法读取 MCP 的 OAuth 元数据");
+  throw new Error("Could not read MCP OAuth metadata");
 }
 
 async function discoverAuthorizationServer(issuer: URL) {
@@ -97,7 +97,7 @@ async function discoverAuthorizationServer(issuer: URL) {
       if (value?.authorization_endpoint && value?.token_endpoint) return value;
     } catch {}
   }
-  throw new Error("无法从授权服务器发现授权端点");
+  throw new Error("Could not discover the authorization endpoint");
 }
 
 export async function POST(request: Request) {
@@ -112,13 +112,13 @@ export async function POST(request: Request) {
     const { value: protectedResource, challenge } = await discoverResource(resource);
     const authorizationServers = protectedResource.authorization_servers;
     if (!Array.isArray(authorizationServers) || !authorizationServers.length)
-      throw new Error("MCP 元数据没有声明授权服务器");
+      throw new Error("MCP metadata does not specify an authorization server.");
     const issuer = safeHttpsUrl(authorizationServers[0]);
     const metadata = await discoverAuthorizationServer(issuer);
     const methods = Array.isArray(metadata.code_challenge_methods_supported)
       ? metadata.code_challenge_methods_supported.map(String)
       : [];
-    if (!methods.includes("S256")) throw new Error("该授权服务器没有声明支持 PKCE S256");
+    if (!methods.includes("S256")) throw new Error("The authorization server does not declare PKCE S256 support.");
 
     let clientId = body.clientId?.trim() || "";
     let clientSecret = "";
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       });
       const registered = (await registration.json()) as { client_id?: string; client_secret?: string; error_description?: string };
       if (!registration.ok || !registered.client_id)
-        throw new Error(registered.error_description || "OAuth 客户端自动注册失败");
+        throw new Error(registered.error_description || "OAuth client registration failed");
       clientId = registered.client_id;
       clientSecret = registered.client_secret || "";
     }
@@ -160,6 +160,6 @@ export async function POST(request: Request) {
       needsClientId: !clientId,
     });
   } catch (reason) {
-    return json({ error: reason instanceof Error ? reason.message : "OAuth 自动发现失败" }, 400);
+    return json({ error: reason instanceof Error ? reason.message : "OAuth discovery failed" }, 400);
   }
 }

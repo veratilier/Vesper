@@ -81,7 +81,7 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = { title: "Vesper", body: "你有一条新消息", url: "/" };
+  let payload = { title: "Vesper", body: "You have a new message", url: "/" };
   try {
     if (event.data) payload = { ...payload, ...event.data.json() };
   } catch {}

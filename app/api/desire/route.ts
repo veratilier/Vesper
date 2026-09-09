@@ -16,6 +16,6 @@ export async function GET(request: Request) {
     if (reason instanceof DesireUnavailable) return respond({ error: reason.message }, 503);
     if (reason instanceof Error && reason.name === 'ZodError') return respond({ error: 'Invalid history parameters' }, 400);
     console.error('Native Desire read failed', reason);
-    return respond({ error: '暂时无法读取 Desire，请稍后刷新。' }, 502);
+    return respond({ error: "Could not read Desire. Please refresh later." }, 502);
   }
 }

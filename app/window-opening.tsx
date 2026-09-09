@@ -34,7 +34,7 @@ export function WindowOpening() {
     return ()=>clearTimeout(timer);
   },[leaving,reduced]);
   if(!visible) return null;
-  return <dialog ref={dialog} className={`window-opening${ready?' opening-ready':''}${hold?' opening-hold':''}${reduced?' opening-reduced':''}${leaving?' opening-leaving':''}`} aria-label="Vesper 开屏" onCancel={e=>{e.preventDefault();setLeaving(true);}}>
+  return <dialog ref={dialog} className={`window-opening${ready?' opening-ready':''}${hold?' opening-hold':''}${reduced?' opening-reduced':''}${leaving?' opening-leaving':''}`} aria-label="Vesper opening" onCancel={e=>{e.preventDefault();setLeaving(true);}}>
     <div className="opening-art" aria-hidden="true">
       {LAYERS.map((src,i)=><img key={src} src={src} className={`opening-plate opening-depth-${i}`} alt="" draggable={false}/>)}
     </div>

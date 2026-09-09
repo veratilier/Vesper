@@ -30,7 +30,7 @@ export function NotificationSettings({ onClose, onWebPush }: {
       if (!ready) return;
       void permission.check().then(result => {
         if (active) setStatus(result.status);
-      }).catch(() => { if (active) setMessage("读取权限失败，请重新打开此页面。"); });
+      }).catch(() => { if (active) setMessage("Could not read permissions. Please reopen this page."); });
     };
     refresh();
     const visible = () => { if (document.visibilityState === "visible") refresh(); };
@@ -50,31 +50,31 @@ export function NotificationSettings({ onClose, onWebPush }: {
       if (status === "denied") await permission.openSettings();
       else setStatus((await permission.request()).status);
     } catch {
-      setMessage("未能获取通知权限，请稍后重试。");
+      setMessage("Could not request notification permission. Please try again.");
     } finally { setBusy(false); }
   };
   const labels: Record<Status, string> = {
-    default: "尚未授权", granted: "已授权", denied: "已拒绝，可前往系统设置开启",
-    provisional: "已允许静默通知", ephemeral: "已临时授权", unknown: "正在读取权限",
+    default: "Not requested", granted: "Allowed", denied: "Denied. Enable notifications in Settings.",
+    provisional: "Quiet notifications allowed", ephemeral: "Temporarily allowed", unknown: "Checking permission",
   };
 
   return <div className="modal-layer">
-    <button className="modal-scrim" onClick={onClose} aria-label="关闭通知设置" />
+    <button className="modal-scrim" onClick={onClose} aria-label="Close notification settings" />
     <section className="connection-modal">
-      <div className="modal-head"><h2>Notification</h2><button onClick={onClose} aria-label="关闭">×</button></div>
+      <div className="modal-head"><h2>Notification</h2><button onClick={onClose} aria-label="Close">×</button></div>
       <div className="parameter-form">
         <div>
           <h3>Web Push</h3>
-          <p className="settings-hint">浏览器与主屏幕 PWA 的消息推送。</p>
-          <button className="save-profile" onClick={onWebPush}>设置 Web Push</button>
+          <p className="settings-hint">Push notifications for browsers and Home Screen PWAs.</p>
+          <button className="save-profile" onClick={onWebPush}>Set up Web Push</button>
         </div>
         <div>
-          <h3>苹果通知权限</h3>
-          <p className="settings-hint">{available ? labels[status] : native ? "请安装新版 Vesper App 后获取权限。" : "请在 iPhone 原生 Vesper App 中获取权限。"}</p>
+          <h3>Apple notification permission</h3>
+          <p className="settings-hint">{available ? labels[status] : native ? "Install the updated Vesper app to request permission." : "Request permission in the native Vesper iPhone app."}</p>
           <button className="save-profile" disabled={!available || busy || status === "granted" || status === "unknown"} onClick={() => void request()}>
-            {busy ? "处理中…" : status === "granted" ? "已获得通知权限" : status === "denied" ? "打开系统设置" : "获取苹果通知权限"}
+            {busy ? "Working…" : status === "granted" ? "Notifications allowed" : status === "denied" ? "Open Settings" : "Allow Apple notifications"}
           </button>
-          <p className="settings-hint">授权允许 App 显示通知；远程消息推送尚待接入。</p>
+          <p className="settings-hint">Permission allows the app to show notifications. Remote push delivery is not connected yet.</p>
         </div>
       </div>
       {message && <p className="connection-message" role="status">{message}</p>}

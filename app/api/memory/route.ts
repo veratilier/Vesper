@@ -17,7 +17,7 @@ function json(request: Request, value: unknown, status = 200) {
 }
 
 function errorText(reason: unknown) {
-  return reason instanceof Error ? reason.message : "记忆服务暂时不可用";
+  return reason instanceof Error ? reason.message : "The memory service is unavailable.";
 }
 
 export const OPTIONS = optionsResponse;
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id")?.trim();
     if (id) {
       const detail = await memoryDetail(scope, id);
-      return detail ? json(request, detail) : json(request, { error: "记忆不存在" }, 404);
+      return detail ? json(request, detail) : json(request, { error: "Memory not found" }, 404);
     }
     const type = url.searchParams.get("type")?.trim() as MemoryType | undefined;
     const validType = ["core", "long_term", "feeling", "dream"].includes(type || "") ? type : undefined;
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (!(await authorizeApp(request))) return json(request, { error: "Device not paired" }, 401);
   try {
     const body = await request.json() as { action?: string; body?: string; mood?: string; tags?: unknown };
-    if (body.action !== "create_core") return json(request, { error: "不支持的记忆操作" }, 400);
+    if (body.action !== "create_core") return json(request, { error: "Unsupported memory action" }, 400);
     const result = await createMemory(await memoryScopeFromRequest(request), {
       type: "core", body: body.body || "", mood: body.mood || "", tags: body.tags,
       source: "user-core-entry", reviewStatus: "approved",
@@ -69,7 +69,7 @@ export async function PATCH(request: Request) {
       id?: string; action?: "pin" | "demote" | "restore" | "approve_core" | "correct_core";
       pinned?: boolean; body?: string; mood?: string; tags?: unknown; reason?: string;
     };
-    if (!body.id || !body.action) return json(request, { error: "缺少记忆操作" }, 400);
+    if (!body.id || !body.action) return json(request, { error: "Missing memory action" }, 400);
     const scope = await memoryScopeFromRequest(request);
     if (body.action === "correct_core") {
       const detail = await correctCoreMemory(scope, body.id, { body: body.body || "", mood: body.mood, tags: body.tags, reason: body.reason });

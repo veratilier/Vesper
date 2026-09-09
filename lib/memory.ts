@@ -155,7 +155,7 @@ async function sha256(value: string) {
 /** The paired device credential is validated before this is called. Only its hash reaches D1. */
 export async function memoryScopeFromRequest(request: Request): Promise<MemoryScope> {
   const token = request.headers.get("x-vesper-device-token")?.trim();
-  if (!token) throw new Error("未找到已配对账户");
+  if (!token) throw new Error("No paired account found");
   const digest = await sha256(`vesper-memory-user-v1:${token}`);
   return { userId: `usr_${digest.slice(0, 32)}`, characterId: MEMORY_CONFIG.characterId };
 }
@@ -306,7 +306,7 @@ export async function createMemory(scope: MemoryScope, input: CreateMemoryInput)
   await ensureSchema();
   const type = MEMORY_TYPES.includes(input.type) ? input.type : "long_term";
   const body = cleanText(input.body);
-  if (body.length < 4) throw new Error("记忆需要更具体一点");
+  if (body.length < 4) throw new Error("Add more detail to this memory.");
   const mood = cleanText(input.mood, 48);
   const tags = cleanTags(input.tags);
   const fingerprint = await sha256(`${type}:${normalizeText(body)}`);
@@ -347,7 +347,7 @@ export async function createMemory(scope: MemoryScope, input: CreateMemoryInput)
 
 export async function updateMemoryState(scope: MemoryScope, id: string, action: "pin" | "demote" | "restore" | "approve_core", value?: boolean) {
   const detail = await memoryDetail(scope, id);
-  if (!detail) throw new Error("找不到这条记忆");
+  if (!detail) throw new Error("Memory not found");
   const db = getDb();
   if (action === "pin") {
     const pinned = value === true ? 1 : 0;
@@ -357,7 +357,7 @@ export async function updateMemoryState(scope: MemoryScope, id: string, action: 
   } else if (action === "restore") {
     await db.prepare("UPDATE vesper_memories SET demoted_at = NULL, updated_at = ? WHERE id = ?").bind(now(), id).run();
   } else if (action === "approve_core") {
-    if (detail.memory.type !== "core") throw new Error("只有核心记忆候选可以确认");
+    if (detail.memory.type !== "core") throw new Error("Only core memory candidates can be confirmed.");
     await db.prepare("UPDATE vesper_memories SET review_status = 'approved', pinned = 1, weight = 1, updated_at = ? WHERE id = ?")
       .bind(now(), id).run();
   }
@@ -366,9 +366,9 @@ export async function updateMemoryState(scope: MemoryScope, id: string, action: 
 
 export async function correctCoreMemory(scope: MemoryScope, id: string, input: { body: string; mood?: string; tags?: unknown; reason?: string }) {
   const detail = await memoryDetail(scope, id);
-  if (!detail || detail.memory.type !== "core") throw new Error("只能修正核心记忆");
+  if (!detail || detail.memory.type !== "core") throw new Error("Only core memories can use this correction flow.");
   const body = cleanText(input.body);
-  if (body.length < 4) throw new Error("修正后的记忆需要更具体一点");
+  if (body.length < 4) throw new Error("Add more detail to the corrected memory.");
   const mood = cleanText(input.mood, 48);
   const tags = cleanTags(input.tags);
   const embedding = await embeddingFor(`${body}\n${tags.join(" ")}`);
@@ -393,10 +393,10 @@ export async function correctCoreMemory(scope: MemoryScope, id: string, input: {
  */
 export async function editMemory(scope: MemoryScope, id: string, input: { body: string; mood?: string; tags?: unknown; reason?: string }) {
   const detail = await memoryDetail(scope, id);
-  if (!detail) throw new Error("找不到这条记忆");
-  if (detail.memory.type === "core") throw new Error("核心记忆需要使用修正流程");
+  if (!detail) throw new Error("Memory not found");
+  if (detail.memory.type === "core") throw new Error("Core memories require the correction flow.");
   const body = cleanText(input.body);
-  if (body.length < 4) throw new Error("修正后的记忆需要更具体一点");
+  if (body.length < 4) throw new Error("Add more detail to the corrected memory.");
   const mood = cleanText(input.mood, 48);
   const tags = cleanTags(input.tags);
   const embedding = await embeddingFor(`${body}\n${tags.join(" ")}`);
@@ -452,7 +452,7 @@ export async function recordMemoryMessage(scope: MemoryScope, input: { conversat
   const conversationId = cleanText(input.conversationId, 160);
   const messageId = cleanText(input.messageId, 160);
   const content = cleanText(input.content, 20_000);
-  if (!conversationId || !messageId || !content) throw new Error("缺少可沉淀的对话内容");
+  if (!conversationId || !messageId || !content) throw new Error("No conversation content to remember.");
   const parsedTime = Date.parse(input.createdAt || "");
   const createdAt = Number.isFinite(parsedTime) ? new Date(parsedTime).toISOString() : now();
   await getDb().prepare(`INSERT INTO vesper_memory_messages
@@ -482,7 +482,7 @@ async function callDistillationModel(messages: Array<{ role: "user" | "agent"; c
     signal: AbortSignal.timeout(25_000),
   });
   const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } };
-  if (!response.ok) throw new Error(payload.error?.message || "记忆蒸馏模型暂时不可用");
+  if (!response.ok) throw new Error(payload.error?.message || "The memory model is unavailable.");
   const raw = payload.choices?.[0]?.message?.content || "{}";
   const parsed = parseJson<{ memories?: Array<{ type?: unknown; body?: unknown; mood?: unknown; tags?: unknown }> }>(raw.replace(/^```json\s*|\s*```$/g, ""), {});
   return Array.isArray(parsed.memories) ? parsed.memories.slice(0, 4) : [];
@@ -520,7 +520,7 @@ export async function runDueMemoryJobs(scope: MemoryScope) {
     const distilled = await callDistillationModel(messages);
     if (distilled === null) {
       await db.prepare("UPDATE vesper_memory_jobs SET status = 'retry', attempts = attempts + 1, next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .bind(new Date(Date.now() + MEMORY_CONFIG.jobRetryMinutes * 60_000).toISOString(), "等待服务端记忆模型", now(), job.id).run();
+        .bind(new Date(Date.now() + MEMORY_CONFIG.jobRetryMinutes * 60_000).toISOString(), "Waiting for the server memory model", now(), job.id).run();
       return { processed: false, pendingModel: true };
     }
     let stored = 0;
@@ -538,7 +538,7 @@ export async function runDueMemoryJobs(scope: MemoryScope) {
   } catch (reason) {
     const attempts = Number(job.attempts || 0) + 1;
     await db.prepare("UPDATE vesper_memory_jobs SET status = 'retry', attempts = ?, next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ?")
-      .bind(attempts, new Date(Date.now() + MEMORY_CONFIG.jobRetryMinutes * 60_000).toISOString(), cleanText(reason instanceof Error ? reason.message : "记忆蒸馏失败", 300), now(), job.id).run();
+      .bind(attempts, new Date(Date.now() + MEMORY_CONFIG.jobRetryMinutes * 60_000).toISOString(), cleanText(reason instanceof Error ? reason.message : "Memory distillation failed", 300), now(), job.id).run();
     return { processed: false, retry: true };
   }
 }

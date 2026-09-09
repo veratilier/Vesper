@@ -15,9 +15,9 @@ export async function POST(request: Request) {
     };
     const tokenUrl = new URL(body.tokenUrl || "");
     if (tokenUrl.protocol !== "https:")
-      return json({ error: "Token URL 必须使用 HTTPS" }, 400);
+      return json({ error: "The Token URL must use HTTPS." }, 400);
     if (!body.code || !body.verifier || !body.clientId || !body.redirectUri)
-      return json({ error: "OAuth 回调参数不完整" }, 400);
+      return json({ error: "Incomplete OAuth callback parameters" }, 400);
     const form = new URLSearchParams({
       grant_type: "authorization_code",
       code: body.code,
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     };
     if (!response.ok || !result.access_token)
       return json(
-        { error: result.error_description || result.error || `Token 服务返回 ${response.status}` },
+        { error: result.error_description || result.error || `Token service returned ${response.status}` },
         502,
       );
     return json({
@@ -53,6 +53,6 @@ export async function POST(request: Request) {
       expiresIn: result.expires_in,
     });
   } catch (reason) {
-    return json({ error: reason instanceof Error ? reason.message : "OAuth 授权失败" }, 400);
+    return json({ error: reason instanceof Error ? reason.message : "OAuth authorization failed" }, 400);
   }
 }

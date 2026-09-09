@@ -235,13 +235,14 @@ def execute(job):
         decision=json.loads(final[-1])
         if not isinstance(decision.get('share'),bool) or not isinstance(decision.get('message'),str):raise RuntimeError('Invalid wake decision')
         if job['source']=='verification' and tool_count<2:raise RuntimeError('Verification did not execute both native reads')
-        if not decision['share'] or not decision['message'].strip():
-            update(ident,status='silent',finished=time.time(),decision='nothing_to_share');return
+        sharing=decision['share'] and bool(decision['message'].strip())
         if not permitted():
             update(ident,status='silent',finished=time.time(),decision='quiet_busy_or_target_removed');return
         if not tool_count:raise RuntimeError('No actual activity to substantiate wake')
         message=decision['message'].strip()[:1600]
+        wake['startedAt']=created
         wake['endedAt']=iso()
+        wake['messageOmitted']=not sharing
         # No synthetic user turn and no model commentary. Activities come only from the ledger.
         marker('completed')
         with store.db() as con:records=con.execute('SELECT * FROM calls WHERE job_id=?',(ident,)).fetchall()
@@ -254,6 +255,8 @@ def execute(job):
             if isinstance(result,dict) and (result.get('attachments') or result.get('stickerMessage')):
                 save_message(job,'attachment:'+ident+':'+item,'agent',result.get('message') or '附件',{
                     'source':job['source'],'wakeRunId':ident,'attachments':result.get('attachments'),'sticker':result.get('stickerMessage')})
+        if not sharing:
+            update(ident,status='silent',finished=time.time(),decision='nothing_to_share');return
         save_message(job,'wake:'+ident+':final','agent',message,{'source':job['source'],'wakeRunId':ident,
             'threadId':thread_id,'turnId':turn_id,'blockType':'agentMessage','showTurnStatus':False})
         update(ident,status='saved',finished=time.time(),notification=message,decision='share')

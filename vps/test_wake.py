@@ -80,7 +80,15 @@ class WakeTests(unittest.TestCase):
             runner.execute(job)
         self.assertEqual(len(calls),2)
         if not share:
-            self.assertEqual(messages,{});self.assertEqual(push,[])
+            self.assertEqual(push,[])
+            self.assertFalse(any(m['role']=='agent' for m in messages.values()))
+            marker=messages['wake:'+ident]
+            self.assertTrue(marker['metadata']['wake']['messageOmitted'])
+            self.assertTrue(marker['createdAt'])
+            self.assertTrue(marker['metadata']['wake']['endedAt'])
+            executions=[m for m in messages.values() if m['metadata'].get('blockType')=='execution']
+            self.assertEqual(len(executions),2)
+            self.assertTrue(all(m['metadata']['turnId']==marker['metadata']['turnId'] for m in executions))
             self.assertEqual(store.status()['lastJob']['status'],'silent');return
         self.assertEqual(len(push),1)
         self.assertEqual(store.status()['lastJob']['status'],'completed')

@@ -1,5 +1,5 @@
 import type { Execution } from './codex-execution';
-export type WakeRecord = { requestId: string; requestedAt: string; startedAt?: string; endedAt?: string; source: 'manual' | 'automation' };
+export type WakeRecord = { requestId: string; requestedAt: string; startedAt?: string; endedAt?: string; messageOmitted?: boolean; source: 'manual' | 'automation' };
 const labels: [RegExp, string][] = [
   [/atlas_memory|search_memory|recall_memory/, "Read memories"],
   [/atlas_note|list_notes|save_note/, "Read or organize notes"],

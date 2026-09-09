@@ -5121,36 +5121,36 @@ function SettingsPage({
   };
   return (
     <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
-      {category ? <header className="page-intro">
-        <button className="settings-category-back" onClick={() => setCategory(null)} aria-label="Back to Settings"><Icon name="chevron" />Settings</button>
-        <h1>{category}</h1>
-      </header> : <PageIntro
-        eyebrow="PREFERENCES"
-        title="Settings"
-        text="Make Vesper feel like you."
-      />}
-      {!category ? <div className="settings-category-list">
+      <PageIntro eyebrow="PREFERENCES" title="Settings" text="Make Vesper feel like you." />
+      <div className="settings-category-list settings-accordion">
         {[
           ["sparkles", "Agent", "Model connection and voice"],
           ["link", "Tools", "MCP connections and notifications"],
           ["archive", "Data", "Memory permissions, export and backup"],
-        ].map(([icon, title, description]) => <div className="surface" key={title}><SettingRow icon={icon} title={title} sub={description} onClick={() => setCategory(title)} /></div>)}
-      </div> : <SettingsGroup title={category}>
-        {category === "Agent" && <>
+        ].map(([icon, title, description]) => (
+          <section className="surface settings-accordion-item" key={title}>
+            <SettingRow icon={icon} title={title} sub={description}
+              expanded={category === title} controls={`settings-options-${title}`}
+              onClick={() => setCategory(current => current === title ? null : title)} />
+            <div id={`settings-options-${title}`} className="settings-accordion-content" hidden={category !== title}>
+        {title === "Agent" && <>
           <SettingRow icon="sparkles" title="Codex Server" sub="Model service and connection" onClick={() => setSelected("Codex Server")} />
           <SettingRow icon="volume" title="Agent Voice (TTS)" sub="Voice service and voice selection" onClick={() => setSelected("Agent 声音")} />
         </>}
-        {category === "Tools" && <>
+        {title === "Tools" && <>
           <SettingRow icon="link" title="MCP Servers" sub="Connect external tools and services" onClick={() => setSelected("MCP 工具")} />
           <SettingRow icon="link" title="Vesper MCP" sub="Connect external AI to journals, notes and memory" onClick={() => setSelected("Vesper MCP")} />
           <SettingRow icon="bell" title="Notification" sub="Web Push and Apple notification permissions" onClick={() => setSelected("Notification")} />
           <SettingRow icon="bell" title="Notification Preferences" sub={`${preferences.reminders ? "Reminders " : ""}${preferences.anniversaries ? "Dates " : ""}${preferences.agentNotes ? "Rowan’s notes" : ""}`.trim() || "All off"} onClick={() => setSelected("通知偏好")} />
         </>}
-        {category === "Data" && <>
+        {title === "Data" && <>
           <SettingRow icon="lock" title="Memory Permissions" sub="Control access to journals, notes and chat separately" onClick={() => setSelected("记忆权限")} />
           <SettingRow icon="archive" title="Export &amp; Backup" sub={preferences.lastExportAt ? `Last export: ${new Date(preferences.lastExportAt).toLocaleString("en-US")}` : "Saved locally · App updates preserve your data"} onClick={() => setSelected("导出与备份")} />
         </>}
-      </SettingsGroup>}
+            </div>
+          </section>
+        ))}
+      </div>
       {selected === "Notification" ? (
         <NotificationSettings onClose={closeDetail} onWebPush={() => setSelected("Web Push")} />
       ) : selected === "Codex Server" ? (
@@ -6086,6 +6086,8 @@ function SettingRow({
   status,
   badge,
   onClick,
+  expanded,
+  controls,
 }: {
   icon: string;
   title: string;
@@ -6093,9 +6095,11 @@ function SettingRow({
   status?: boolean;
   badge?: string;
   onClick?: () => void;
+  expanded?: boolean;
+  controls?: string;
 }) {
   return (
-    <button className="setting-row" onClick={onClick}>
+    <button className="setting-row" onClick={onClick} aria-expanded={expanded} aria-controls={controls}>
       <span className="setting-icon">
         <Icon name={icon} />
       </span>

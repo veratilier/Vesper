@@ -352,3 +352,43 @@
     left: calc(var(--desktop-nav-width, 272px) + 20px);
   }
 }
+
+/* Settings categories reveal their options in place. */
+.app-shell .settings-accordion { gap: 10px; }
+.app-shell .settings-accordion-item {
+  overflow: hidden;
+  border-radius: 16px;
+}
+.app-shell .settings-accordion-item > .setting-row > .ui-icon {
+  transition: transform .18s ease;
+}
+.app-shell .settings-accordion-item > .setting-row[aria-expanded="true"] > .ui-icon {
+  transform: rotate(90deg);
+}
+.app-shell .settings-accordion-content {
+  margin: 0 14px 10px;
+  border-top: 1px solid var(--ui-line);
+}
+.app-shell .settings-accordion-content:not([hidden]) {
+  animation: settings-options-in .18s ease both;
+}
+.app-shell .settings-accordion-content .setting-row {
+  min-height: 56px;
+  padding: 10px 4px;
+}
+.app-shell .settings-accordion-content .setting-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  background: transparent;
+}
+.app-shell .settings-accordion-content .setting-row b { font-size: 13px !important; }
+.app-shell .settings-accordion-content .setting-row small { font-size: 11px !important; }
+@keyframes settings-options-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .settings-accordion-content:not([hidden]) { animation: none; }
+  .app-shell .settings-accordion-item > .setting-row > .ui-icon { transition: none; }
+}

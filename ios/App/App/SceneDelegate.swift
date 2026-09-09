@@ -9,8 +9,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
 
-        window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = VesperViewController()
+        // UIKit may already have loaded Main.storyboard for this scene.
+        // Reuse its custom bridge; never leave a second default bridge alive.
+        if window == nil {
+            window = UIWindow(windowScene: windowScene)
+        }
+        if !(window?.rootViewController is VesperViewController) {
+            window?.rootViewController = VesperViewController()
+        }
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

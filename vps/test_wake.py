@@ -1,4 +1,5 @@
 import tempfile, unittest, sqlite3, json, time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 import vesper_wake_store as store
@@ -10,7 +11,6 @@ class WakeTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.addCleanup(patch.stopall)
         patch.object(runner,'current_preferences',lambda:{}).start()
-        patch.object(runner,'allowed_time',lambda:True).start()
         self.old=store.PATH;store.PATH=Path(self.temp.name)/'wake.db';self.addCleanup(lambda:setattr(store,'PATH',self.old))
     def test_real_curl_preserves_utf8_and_json_escapes(self):
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -73,7 +73,10 @@ class WakeTests(unittest.TestCase):
                 with store.db() as con:assert con.execute('SELECT status FROM jobs').fetchone()[0]=='saved'
                 push.append(body);return {'status':'sent','delivered':1}
             return {}
-        with patch.object(runner,'Rpc',Rpc),patch.object(runner,'http',http),patch.object(runner,'context',lambda job:''),patch.object(runner,'front_busy',lambda n:False),patch.object(policy,'history',lambda p:[{'id':'real-user','vesper_conversation_id':'chat-existing','metadata_json':'{}','content':'Hello'}]):
+        class Night(datetime):
+            @classmethod
+            def now(cls,tz=None):return datetime(2026,9,10,2,tzinfo=tz)
+        with patch.object(runner,'datetime',Night),patch.object(runner,'Rpc',Rpc),patch.object(runner,'http',http),patch.object(runner,'context',lambda job:''),patch.object(runner,'front_busy',lambda n:False),patch.object(policy,'history',lambda p:[{'id':'real-user','vesper_conversation_id':'chat-existing','metadata_json':'{}','content':'Hello'}]):
             runner.execute(job)
         self.assertEqual(len(calls),2)
         if not share:
@@ -106,7 +109,10 @@ class WakeTests(unittest.TestCase):
             def send(self,m):pass
             def close(self):pass
         def http(path,body=None,history=False):return {'tools':[{'name':'desire_status'},{'name':'read_vesper_state'}]}
-        with patch.object(runner,'Rpc',Rpc),patch.object(runner,'http',http):
+        class Night(datetime):
+            @classmethod
+            def now(cls,tz=None):return datetime(2026,9,10,2,tzinfo=tz)
+        with patch.object(runner,'datetime',Night),patch.object(runner,'Rpc',Rpc),patch.object(runner,'http',http):
             with self.assertRaisesRegex(RuntimeError,'API-key fallback disabled'):runner.execute(job)
 
 if __name__=='__main__':unittest.main()

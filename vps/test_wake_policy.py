@@ -54,6 +54,17 @@ class PolicyTests(unittest.TestCase):
                 self.assertEqual(store.get(con,'next_at'),12345)
                 self.assertEqual(con.execute('SELECT status FROM jobs').fetchone()[0],'queued')
 
+    def test_night_claims_due_job_and_preserves_target(self):
+        class Night(datetime):
+            @classmethod
+            def now(cls,tz=None):return datetime(2026,9,10,2,tzinfo=tz)
+        selected={'conversation_id':'chat','user_message_id':'real-user','user_turn_id':'turn'}
+        with tempfile.TemporaryDirectory() as tmp,patch.object(store,'PATH',Path(tmp)/'wake.db'),patch.object(runner,'reschedule'),patch.object(runner,'http',return_value={'value':{'careFrequency':'daily'}}),patch.object(runner,'current_preferences',return_value={}),patch.object(runner,'front_busy',return_value=False),patch.object(policy,'history',return_value=[]),patch.object(policy,'target',return_value=selected),patch.object(runner,'datetime',Night),patch.object(runner,'execute') as execute:
+            with store.db() as con:store.put(con,'next_at',1)
+            runner.tick();runner.tick()
+            execute.assert_called_once()
+            self.assertEqual(execute.call_args.args[0]['conversation_id'],'chat')
+
     def test_no_target_skips_without_creating_conversation_or_running_model(self):
         class Day(datetime):
             @classmethod

@@ -28,11 +28,11 @@ No model API key is added; API-key accounts are rejected. The existing
   activity. `flock`, unique request IDs, and a transactional claim prevent duplicate
   execution. Interrupted model turns are marked interrupted, never replayed.
 - Settings `careFrequency` remain authoritative: off/daily/twice-weekly. Scheduled
-  jobs run 08:00–23:00 Asia/Singapore, about 24h/84h apart; active foreground turns
+  jobs run around the clock at persisted Desire-based 30–120 minute intervals; active foreground turns
   defer pending jobs. Manual wakes join an existing queued/running job.
 - Background turns are separate from browser-owned Codex threads. Final messages,
   wake cards, attachments, and tool summaries use the existing history API, in
-  the `vesper-autonomous-wake` conversation. Existing conversations stay intact.
+  the latest eligible conversation with a completed normal user/AI turn. Existing conversations stay intact.
 - Only explicitly listed native tools are available unattended. Extra approvals
   are declined. Native Desire reads remain isolated; background wakes do not
   create synthetic Desire encounters. Verification runs expose read-only tools.

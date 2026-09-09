@@ -5205,7 +5205,7 @@ function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferenc
         <div><small>Tools used</small><b>{runtime?.lastJob?.tools ?? 0}</b></div>
         <div><small>Next window</small><b>{preferences.careFrequency==='off'?'—':runtime?.nextAt?new Date(runtime.nextAt*1000).toLocaleString("en-US"):"Waiting for schedule"}</b></div>
       </div>
-      <p className="settings-hint">Between 08:00 and 23:00, the VPS uses independent Desire signals to schedule intervals of 30–120 minutes. The schedule survives restarts. Quiet requests and active chats defer a wake-up. Messages are saved to the latest conversation with a completed reply, then pushed.</p>
+      <p className="settings-hint">Around the clock, the VPS uses independent Desire signals to schedule intervals of 30–120 minutes. The schedule survives restarts. Quiet requests and active chats defer a wake-up. Messages are saved to the latest conversation with a completed reply, then pushed.</p>
       {runtime?.schedulerError && <p className="settings-hint">Background setup is incomplete. Check again later.</p>}
       <button className="reset-background" onClick={()=>setPreviewPulse(v=>v+1)}>Preview pulse</button>
     </section></div>;

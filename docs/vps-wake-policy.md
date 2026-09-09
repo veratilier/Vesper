@@ -23,3 +23,11 @@ One model turn per job, 600-second execution deadline, eight distinct tool calls
 SQLite job IDs, process flock and per-item tool records prevent replay. An interrupted model/tool is never rerun automatically. Once saved, only the same idempotent push is retried. Unknown push delivery is not blindly resent. Note/journal writes remain allowed; deleting data, altering settings, official Desire tools and Desire encounter writes are unavailable. Database migrations are additive. Existing history and the legacy wake conversation remain untouched.
 
 Tests: `python3 -m unittest discover -s vps -p 'test_wake*.py'`, `node tools/test-wake-push.mjs`, `npm run test:codex`, `npm run build`.
+
+## Live acceptance
+
+On 2026-09-09 the user confirmed the PWA was completely closed. Systemd timer job `403c552a-f5ad-4ce3-8f51-0a28dc0f0257` then completed native `desire_status` and `read_vesper_state` calls, saved one final agent message plus three system activity records in the locked existing conversation, and sent the saved text through the push outbox (6/6 subscriptions accepted). The user confirmed receipt with normal Chinese text while the PWA was closed.
+
+The selected target still matched the last completed normal user/AI pair after publication. No new conversation was created. All 800 messages in the pre-deploy backup retained their IDs, roles and contents. Desire longing was 18; the post-round draw was 5,466 seconds. `nextAt=1788953645.9913094` remained identical after timer restart and a new process reading the schedule. The 16 automated wake tests also passed, including silence, no target, expiry, persistence and archive/delete protection.
+
+The preceding verification was stopped by the original cumulative-token guard before publishing anything. Inspection showed repeated cached input was included (34,247 total; 16,640 cached). The revised guard records both total and non-cached usage with separate limits; the failed job remains preserved and was not replayed. The successful verification used a new job ID and reported 17,643 non-cached tokens.

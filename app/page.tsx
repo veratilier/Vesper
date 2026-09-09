@@ -1,4 +1,6 @@
 "use client";
+import { WatchPlayer } from "./watch-player";
+import type { WatchFrame } from "./watch-context";
 import { AppCenter, DesirePanel } from "./app-center";
 import { WakeCard } from "./wake-card";
 import type { WakeRecord } from "./wake-summary";
@@ -697,6 +699,7 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [conversationId, setConversationId] = useState(() => latestLocalConversationId());
+  const [watchConversationId, setWatchConversationId] = useLocalDocument("watch-conversation", "watch-together");
   const [focusMessageId, setFocusMessageId] = useState("");
   const initialProfile = readLocalValue("vesper-local-profile", { userName: "我", agentName: "Vesper", userAvatar: "", agentAvatar: "" });
   const storedAppearance = readLocalValue("vesper-local-appearance", { accent: "#647e94", background: DEFAULT_APP_BACKGROUND });
@@ -1386,7 +1389,7 @@ export default function Home() {
               onOpenSection={(section) => setActive(section)}
             />
           ) : section === "聊天" ? (
-              <ConnectedChat
+              active === "Pandora" && conversationId === watchConversationId ? null : <ConnectedChat
                 wakeRequest={wakeRequest}
                 onWakeHandled={() => setWakeRequest(null)}
                 key={conversationId}
@@ -1448,7 +1451,7 @@ export default function Home() {
           ) : section === "记忆库" ? (
             <MemoryLibrary />
           ) : section === "Pandora" ? (
-            <AppCenter onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
+            <AppCenter renderWatch={() => conversationId === watchConversationId && active !== "Pandora" ? null : <ConnectedChat key={watchConversationId} watchMode watchActive={active === "Pandora"} conversationId={watchConversationId} onSelectConversation={setWatchConversationId} agentName={agentName} userName={userName} favorites={favorites} setFavorites={setFavorites} playing={playing} onToggleMusic={() => setPlaying(value => !value)} onNextMusic={() => { if (activeTracks.length) setTrackIndex(index => (index + 1) % activeTracks.length); }} onOpenMusic={() => navigateTo("音乐")} onAddMusicToPlaylist={card => { setMusicPlaylistIntent(card); navigateTo("音乐"); }} />} onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
           ) : section === "欲望" ? (
             <DesirePanel apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} renderConnection={(onClose) => <ExternalMcpModal onClose={onClose} context="desire" />} />
           ) : section === "设置" ? (
@@ -3747,6 +3750,8 @@ function MusicMessageCard({
 }
 
 function ConnectedChat({
+  watchMode = false,
+  watchActive = false,
   wakeRequest,
   onWakeHandled,
   conversationId,
@@ -3763,6 +3768,8 @@ function ConnectedChat({
   onOpenMusic,
   onAddMusicToPlaylist,
 }: {
+  watchMode?: boolean;
+  watchActive?: boolean;
   wakeRequest?: string | null;
   onWakeHandled?: () => void;
   conversationId: string;
@@ -3780,6 +3787,7 @@ function ConnectedChat({
   onAddMusicToPlaylist: (card: MusicPlaylistIntent) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const watchCapture = useRef<(() => Promise<WatchFrame | null>) | null>(null);
   const wakeConsumed = useRef(new Set<string>());
   const sending = useRef(false);
   const [expandedActivities, setExpandedActivities] = useState<Record<string, boolean>>({});
@@ -4500,12 +4508,12 @@ function ConnectedChat({
       return { type: "image", url: await localImage(new File([blob], sticker.name || "sticker", { type: sticker.mimeType || blob.type })) };
     } catch { return null; }
   };
-  const send = async (selectedSticker?: StickerCatalogItem, wakeId?: string) => {
-    const content = wakeId ? `这是一次 Vesper 主动唤醒，request_id=${wakeId}。这段文字是应用生成的唤醒上下文，不是 Vera 的新聊天消息。结合已有上下文，自行选择一件适合现在做的小事，可以调用已授权工具，然后自然地给 Vera 留话。只报告实际完成的事，不虚构工具调用。若记录这次自主行动，来源使用 automation，同一事件复用 request_id，不重复提交。涉及对外发送或其他需确认的操作仍遵守原有权限。` : draft.trim();
+  const send = async (selectedSticker?: StickerCatalogItem, wakeId?: string, sharedFrame?: WatchFrame) => {
+    const content = wakeId ? `这是一次 Vesper 主动唤醒，request_id=${wakeId}。这段文字是应用生成的唤醒上下文，不是 Vera 的新聊天消息。结合已有上下文，自行选择一件适合现在做的小事，可以调用已授权工具，然后自然地给 Vera 留话。只报告实际完成的事，不虚构工具调用。若记录这次自主行动，来源使用 automation，同一事件复用 request_id，不重复提交。涉及对外发送或其他需确认的操作仍遵守原有权限。` : sharedFrame ? (sharedFrame.automatic ? "陪看画面自动更新（不是新的用户发言，若记录互动须使用 automation 来源）：根据这一幕简短陪聊，不必每次重复描述画面。" : "陪我看看这一幕。") : draft.trim();
     if ((!content && !pending.length && !selectedSticker) || busy || sending.current) return;
     sending.current = true;
-    const outgoingFiles = wakeId ? [] : pending;
-    setBusy(true); setError(""); if (!wakeId) setDraft("");
+    const outgoingFiles = wakeId || sharedFrame ? [] : pending;
+    setBusy(true); setError(""); if (!wakeId && !sharedFrame) setDraft("");
     pendingAgentStickers.current = [];
     nearBottomRef.current = true;
     const userMessage: BridgeChatMessage = { id: crypto.randomUUID(), conversationId, role: "user", type: selectedSticker ? "sticker" : "text", content: wakeId ? "唤醒 AI" : content || (selectedSticker ? "[Sticker]" : "Attachment"), status: "thinking", metadata: { wake: wakeId ? { requestId: wakeId, requestedAt: new Date().toISOString(), source: wakeId.startsWith("auto-") ? "automation" : "manual" } : undefined, attachments: [], sticker: selectedSticker ? { assetId: selectedSticker.assetId, url: selectedSticker.url, width: selectedSticker.width, height: selectedSticker.height, mimeType: selectedSticker.mimeType, alt: selectedSticker.alt || selectedSticker.description || selectedSticker.name || "表情包", description: selectedSticker.description, category: selectedSticker.category } : undefined, turnId: `pending-${crypto.randomUUID()}`, turnStatus: "thinking" }, createdAt: new Date().toISOString() };
@@ -4516,8 +4524,13 @@ function ConnectedChat({
     try {
       void persistCodexMessage(userMessage, wakeId ? "唤醒 AI" : content.slice(0, 42) || (selectedSticker ? "表情包" : "Attachment"))
         .catch(() => setHistoryWarning("历史暂未同步"));
-      if (!wakeId && userMessage.content && userMessage.type !== "sticker") void persistMemoryMessage(userMessage).catch(() => {});
+      if (!wakeId && !sharedFrame?.automatic && userMessage.content && userMessage.type !== "sticker") void persistMemoryMessage(userMessage).catch(() => {});
       const prepared = await Promise.all(outgoingFiles.map(prepareFile));
+      const frame = sharedFrame || (watchMode && !wakeId && !selectedSticker ? await watchCapture.current?.() : null);
+      if (frame) {
+        const image = await prepareFile({ file: frame.file, preview: "" });
+        prepared.push({ ...image, text: frame.context });
+      }
       userMessage.metadata = { ...userMessage.metadata, attachments: prepared.map((item) => item.attachment) };
       updateMessage(userMessage.id, () => userMessage);
       // Opt-in automatic collection is server-owned and classification-gated.
@@ -4566,7 +4579,8 @@ function ConnectedChat({
       }
     } catch (reason) {
       updateMessage(userMessage.id, (item) => ({ ...item, status: "error", metadata: { ...item.metadata, turnStatus: "error" } }));
-      if (!wakeId) setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false); sending.current = false;
+      if (!wakeId && !sharedFrame) setDraft(content); setError(reason instanceof Error ? reason.message : "Message failed"); setBusy(false); sending.current = false;
+      if (sharedFrame) throw reason;
     }
   };
   const wakeSender = useRef(send);
@@ -4820,7 +4834,8 @@ function ConnectedChat({
   const displayedModel = nextModel || currentModel;
   const displayedModelName = models.find((item) => item.model === displayedModel?.model)?.displayName || displayedModel?.model || "选择模型";
   return (
-    <div className="page-body chat-page codex-chat">
+    <div className={`page-body chat-page codex-chat${watchMode ? " watch-chat" : ""}`}>
+      {watchMode && <WatchPlayer active={watchActive} busy={busy || !historyReady} captureRef={watchCapture} onShare={frame => send(undefined, undefined, frame)} />}
       {toolQuestions[0] && <CodexUserInput key={toolQuestions[0].id} request={toolQuestions[0]} onRespond={result => {
         const request = toolQuestions[0];
         if (socket.current?.readyState !== WebSocket.OPEN) { setError("连接已断开，确认没有发送。"); return; }

@@ -1,3 +1,7 @@
+import { env } from 'cloudflare:workers';
+import { executeDesire, type NativeDesireEnv } from './desire/native';
+import { desireTools } from './desire/tools';
+import { memoryScopeFromRequest } from './memory';
 import { listAlbumPhotos, saveAlbumPhoto, getAlbumPhoto } from '@/lib/photo-album';
 import { createChatFile } from '@/lib/codex-artifacts';
 import { readExecutions } from '@/lib/codex-events';
@@ -123,6 +127,13 @@ async function readMusicStatus() {
 }
 
 export async function executeCodexTool(name: string, input: ToolInput, memoryScope?: MemoryScope, context: CodexToolContext = {}) {
+  if (desireTools.some(tool => tool.name === name)) {
+    const bindings = env as NativeDesireEnv & { VESPER_APP_TOKEN?: string };
+    if (!memoryScope || !bindings.VESPER_APP_TOKEN) throw new Error('Owner context required');
+    const owner = await memoryScopeFromRequest(new Request('https://vesper.internal', { headers: { 'x-vesper-device-token': bindings.VESPER_APP_TOKEN } }));
+    if (owner.userId !== memoryScope.userId) throw new Error('Owner context mismatch');
+    return executeDesire(bindings, name, input);
+  }
   await ensureSchema();
   if (['album_save_photo', 'album_search_photos', 'album_send_photos'].includes(name)) {
     if (!memoryScope || !context.origin) throw new Error('Account context required');

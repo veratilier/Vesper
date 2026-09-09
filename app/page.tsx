@@ -947,7 +947,21 @@ export default function Home() {
     }
   }, []);
   useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const openSection = (event: MessageEvent) => {
+      if (event.data?.type !== 'vesper-open-section' || event.data.section !== 'desire') return;
+      setVisitedSections(sections => sections.includes('欲望') ? sections : [...sections, '欲望']);
+      setActive('欲望');
+    };
+    navigator.serviceWorker.addEventListener('message', openSection);
+    return () => navigator.serviceWorker.removeEventListener('message', openSection);
+  }, []);
+  useEffect(() => {
     const query = new URLSearchParams(window.location.search);
+    if (query.get('section') === 'desire') {
+      setVisitedSections(sections => sections.includes('欲望') ? sections : [...sections, '欲望']);
+      setActive('欲望');
+    }
     const code = query.get("code");
     const state = query.get("state");
     const oauthError = query.get("error");
@@ -957,10 +971,8 @@ export default function Home() {
     const returnToDesire = () => {
       if (window.sessionStorage.getItem("vesper-mcp-return") !== "desire") return;
       window.sessionStorage.removeItem("vesper-mcp-return");
-      window.sessionStorage.setItem("vesper-desire-open-connection", "1");
       setVisitedSections(sections => sections.includes("欲望") ? sections : [...sections, "欲望"]);
       setActive("欲望");
-      window.dispatchEvent(new Event("vesper-desire-connect"));
     };
     try {
       const pending = JSON.parse(raw) as {
@@ -1454,7 +1466,7 @@ export default function Home() {
           ) : section === "Pandora" ? (
             <AppCenter renderWatch={() => conversationId === watchConversationId && active !== "Pandora" ? null : <ConnectedChat key={watchConversationId} watchMode watchActive={active === "Pandora"} conversationId={watchConversationId} onSelectConversation={setWatchConversationId} agentName={agentName} userName={userName} favorites={favorites} setFavorites={setFavorites} playing={playing} onToggleMusic={() => setPlaying(value => !value)} onNextMusic={() => { if (activeTracks.length) setTrackIndex(index => (index + 1) % activeTracks.length); }} onOpenMusic={() => navigateTo("音乐")} onAddMusicToPlaylist={card => { setMusicPlaylistIntent(card); navigateTo("音乐"); }} />} onDesire={() => navigateTo("欲望")} onWake={() => { setWakeRequest(crypto.randomUUID()); navigateTo("聊天"); }} />
           ) : section === "欲望" ? (
-            <DesirePanel agentName={agentName} apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} renderConnection={(onClose) => <ExternalMcpModal onClose={onClose} context="desire" />} />
+            <DesirePanel agentName={agentName} apiUrl={apiUrl} headers={appHeaders} active={active === "欲望"} />
           ) : section === "设置" ? (
             <SettingsPage
               onOpenSection={navigateTo}

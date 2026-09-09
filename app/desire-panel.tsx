@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DesireFlower } from './desire-flower';
 import './desire-panel.css';
 function unpack(input: unknown): unknown {
@@ -19,20 +19,19 @@ function historyNotes(value: unknown): Note[] {
   return rows.flatMap((row, index) => {
     const item = row && typeof row === 'object' ? row as Record<string, unknown> : {};
     if (typeof item.note !== 'string' || !item.note.trim()) return [];
-    return [{ id: String(item.id || item.encounterId || index), note: item.note, date: String(item.event_at || item.createdAt || item.created_at || '') }];
+    return [{ id: String(item.id || item.encounterId || index), note: item.note, date: String(item.eventAt || item.event_at || item.createdAt || item.created_at || '') }];
   });
 }
 function dateLabel(date: string) { const stamp = new Date(date); return Number.isFinite(stamp.getTime()) ? stamp.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''; }
-export function DesirePanel({ apiUrl, headers, active, agentName, renderConnection }: {
+export function DesirePanel({ apiUrl, headers, active, agentName }: {
   apiUrl: (path: string) => string; headers: (json?: boolean) => Record<string, string>;
-  active: boolean; agentName: string; renderConnection: (onClose: () => void) => ReactNode;
+  active: boolean; agentName: string;
 }) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [updatedAt, setUpdatedAt] = useState('');
   const request = useRef<AbortController | null>(null);
@@ -60,22 +59,15 @@ export function DesirePanel({ apiUrl, headers, active, agentName, renderConnecti
     } finally { if (request.current === controller) { request.current = null; setLoading(false); } }
   }, [apiUrl, headers]);
   useEffect(() => {
-    const connect = () => { window.sessionStorage.removeItem('vesper-desire-open-connection'); setConnecting(true); };
-    const timer = window.sessionStorage.getItem('vesper-desire-open-connection') ? setTimeout(connect, 0) : undefined;
-    window.addEventListener('vesper-desire-connect', connect);
-    return () => { clearTimeout(timer); window.removeEventListener('vesper-desire-connect', connect); };
-  }, []);
-  useEffect(() => {
-    if (!active || connecting) return;
+    if (!active) return;
     const refresh = () => { if (!document.hidden) void load(); };
     const timer = setTimeout(refresh, 0), interval = setInterval(refresh, 30_000);
     document.addEventListener('visibilitychange', refresh);
     return () => { clearTimeout(timer); clearInterval(interval); document.removeEventListener('visibilitychange', refresh); request.current?.abort(); request.current = null; };
-  }, [active, connecting, load]);
-  if (connecting) return <div className="page-body settings-page detail-active">{renderConnection(() => setConnecting(false))}</div>;
+  }, [active, load]);
   const note = typeof data?.note === 'string' && data.note.trim() ? data.note : notes[0]?.note;
   return <div className="page-body app-center desire-panel desire-garden">
-    <div className="desire-heading"><div><small>INNER WEATHER</small><h1>此刻</h1></div><button type="button" onClick={() => setConnecting(true)}>连接</button></div>
+    <div className="desire-heading"><div><small>INNER WEATHER</small><h1>此刻</h1></div></div>
     {error && <p className="desire-error" role="alert">{error}{data ? ' · 当前仍显示上次读取的数值。' : ''}</p>}
     <section className="desire-note-surface"><h2>{agentName}</h2><p>{note || (loading ? '正在读此刻的小记…' : '此刻安静，还没有留下小记。')}</p>{notes[0]?.date && <time>{dateLabel(notes[0].date)}</time>}</section>
     <section className="desire-flower-surface"><DesireFlower data={data} /><div className="desire-flower-footer"><small>{loading ? '读取中…' : updatedAt ? `更新于 ${updatedAt}` : '尚未读取数值'}</small><button type="button" disabled={loading} onClick={() => void load()} aria-label="刷新心情"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.5 7a7.5 7.5 0 0 1 12-1L20 9M4 15l2.5 3a7.5 7.5 0 0 0 12-1" /></svg></button></div></section>

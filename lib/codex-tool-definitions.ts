@@ -1,5 +1,7 @@
+import { desireToolDefinitions } from './desire/tools';
 // Pure shared schema: safe to import from the browser; contains no server credentials.
 export const codexToolDefinitions = [
+  ...desireToolDefinitions,
   { name: 'album_save_photo', description: 'Choose whether a received photo is worth keeping; do not automatically save every upload. Include only your brief personal evaluation/reason for keeping it, without a photo summary; do not invent unseen details. Save an exact photo key from the current attachment to a category. Only photos uploaded by this account can be archived. Repeated saves update its category instead of duplicating it.', inputSchema: { type: 'object', additionalProperties: false, properties: { key: { type: 'string' }, category: { type: 'string' }, evaluation: { type: 'string', minLength: 1, maxLength: 240 } }, required: ['key', 'category', 'evaluation'] } },
   { name: 'album_search_photos', description: 'Search the private saved photo album by name, evaluation or category. Use exact returned photo IDs to send selected photos.', inputSchema: { type: 'object', additionalProperties: false, properties: { query: { type: 'string' }, category: { type: 'string' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 60 } } } },
   { name: 'album_send_photos', description: 'Send 1–8 selected saved album photos back to the current chat. First search the album and use exact returned IDs. Does not send to anyone else.', inputSchema: { type: 'object', additionalProperties: false, properties: { photoIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8 }, message: { type: 'string' } }, required: ['photoIds'] } },
@@ -206,7 +208,7 @@ export const codexToolDefinitions = [
   },
 ].map((definition) => ({ type: "function" as const, ...definition }));
 
-export const CODEX_TOOL_CATALOG_VERSION = "chat-files-2026-09-08-v2";
+export const CODEX_TOOL_CATALOG_VERSION = "native-desire-2026-09-09-v1";
 export function validateCodexToolCatalog(value: unknown) {
   if (!Array.isArray(value) || !value.length) throw new Error("Vesper 工具目录为空，请检查 API 部署。");
   const required = ["album_save_photo", "album_search_photos", "album_send_photos", "send_chat_file"];

@@ -1,3 +1,5 @@
+import { executeDesire, type NativeDesireEnv } from '../../lib/desire/native';
+import { desireTools } from '../../lib/desire/tools';
 import { createChatFile } from '../../lib/codex-artifacts';
 import { listAlbumPhotos, saveAlbumPhoto, getAlbumPhoto } from '../../lib/photo-album';
 import { createOAuth, type OAuthEnv } from './oauth';
@@ -9,7 +11,7 @@ import { createMemory, listMemories, memoryScopeFromRequest, MEMORY_CONFIG } fro
 import { mergeAgentDiary, isCalendarDate } from "./diary";
 import { pinnedMemoryOwner } from "./memory-owner";
 
-type Env = OAuthEnv & {
+type Env = OAuthEnv & NativeDesireEnv & {
   DB: D1Database;
   VESPER_APP_TOKEN?: string;
   VESPER_MEMORY_USER_ID?: string;
@@ -76,6 +78,13 @@ async function writeDoc(db: D1Database, key: string, value: unknown) {
 
 function createServer(env: Env) {
   const server = new McpServer({ name: "Vesper", version: "1.1.0" });
+
+  for (const tool of desireTools) {
+    server.registerTool(tool.name, { description: tool.description, inputSchema: tool.schema }, async input => {
+      try { return text(await executeDesire(env, tool.name, input)); }
+      catch (error) { return { ...text({ error: error instanceof Error ? error.message : 'Desire failed' }), isError: true }; }
+    });
+  }
 
   server.registerTool("vesper_overview", { description: "查看 Vesper 中便笺、待办、纪念日和日记的数量。" }, async () => {
     const [notes, todos, anniversaries, diary] = await Promise.all([

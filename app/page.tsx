@@ -518,6 +518,7 @@ const uiLabel = (key: string) => uiLabels[key] || key;
 const nav = [
   { label: "今日", english: "Today", icon: "home" },
   { label: "聊天", english: "Chat", icon: "chat" },
+  { label: "欲望", english: "Desire", icon: "heart" },
   { label: "日记", english: "Journal", icon: "diary" },
   { label: "便笺", english: "Notes", icon: "note" },
   { label: "提醒", english: "Reminders", icon: "check" },
@@ -526,7 +527,6 @@ const nav = [
   { label: "相册", english: "Album", icon: "image" },
   { label: "记忆库", english: "Memory", icon: "library" },
   { label: "Pandora", english: "Pandora", icon: "box" },
-  { label: "欲望", english: "Desire", icon: "heart" },
   { label: "设置", english: "Settings", icon: "settings" },
 ];
 type NoteItem = {

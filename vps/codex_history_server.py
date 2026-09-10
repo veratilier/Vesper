@@ -235,6 +235,14 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command in {"POST", "PATCH"}: self.upsert_conversation(path[1])
             elif self.command == "DELETE": self.archive_conversation(path[1])
             else: self.send_json(405, {"error": "Method not allowed"})
+        elif len(path) == 3 and path[0] == "conversations" and path[2] == "wake-history" and self.command == "GET":
+            with db() as connection:
+                rows = connection.execute("""SELECT * FROM messages
+                  WHERE vesper_conversation_id = ?
+                    AND (json_extract(metadata_json, '$.wakeRunId') IS NOT NULL
+                         OR json_extract(metadata_json, '$.wake') IS NOT NULL)
+                  ORDER BY created_at DESC, rowid DESC LIMIT 100""", (path[1],)).fetchall()
+            self.send_json(200, {"messages": [message(row) for row in rows], "limit": 100})
         elif len(path) == 3 and path[0] == "conversations" and path[2] == "messages" and self.command == "POST":
             self.upsert_message(path[1])
         elif len(path) == 4 and path[0] == "conversations" and path[2] == "messages" and self.command == "DELETE":

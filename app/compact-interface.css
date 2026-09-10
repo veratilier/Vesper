@@ -1,8 +1,9 @@
 /* Compact controls leave more of the conversation visible. Text still grows
    to four lines; attachments and menus keep their existing space and behavior. */
 .app-shell .codex-chat .chat-compose {
-  min-height: 82px;
-  padding: 8px 10px 6px;
+  min-height: 86px;
+  padding: 12px 10px 10px;
+  justify-content: center;
   gap: 4px;
   border-radius: 23px;
 }

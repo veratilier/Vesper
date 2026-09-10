@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import KeyboardPlugin
 import UserNotifications
 import AuthenticationServices
 
@@ -34,6 +35,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 // Keep the web artwork visible beneath the system status bar.
 class VesperViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
+        // Explicit registration also links the Objective-C SPM plugin into the app.
+        // Avoid loading it twice: the keyboard plugin installs runtime hooks.
+        if bridge?.plugin(withName: "Keyboard") == nil {
+            bridge?.registerPluginInstance(KeyboardPlugin())
+        }
         bridge?.registerPluginInstance(VesperNotificationPermission())
         bridge?.registerPluginInstance(VesperOAuth())
     }

@@ -1,6 +1,7 @@
 "use client";
 import { VESPER_DESIRE_SESSION_CONFIG, VESPER_DESIRE_INSTRUCTIONS } from "@/lib/desire/routing.js";
 import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 import { nativeMcpOAuth } from "./native-mcp-oauth";
 import { nativeOAuthCode, NATIVE_OAUTH_PREFIX } from "@/lib/mcp-oauth-callback";
 import { documentSyncAction } from "@/lib/document-sync";
@@ -700,6 +701,16 @@ export default function Home() {
   );
   useEffect(() => {
     if (Capacitor.isNativePlatform()) document.documentElement.dataset.native = "true";
+    if (Capacitor.getPlatform() !== "ios") return;
+    const hideAccessory = () => {
+      if (!Capacitor.isPluginAvailable("Keyboard")) return;
+      void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(error => {
+        console.warn("Could not hide the keyboard accessory bar", error);
+      });
+    };
+    hideAccessory();
+    document.addEventListener("focusin", hideAccessory);
+    return () => document.removeEventListener("focusin", hideAccessory);
   }, []);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [desktopNavigation, setDesktopNavigation] = useState(false);

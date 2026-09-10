@@ -16,6 +16,10 @@ const config: CapacitorConfig = {
     scrollEnabled: true,
   },
   plugins: {
+    Keyboard: {
+      // Keep existing visualViewport sizing; only remove the native accessory bar.
+      resize: 'none',
+    },
     StatusBar: {
       overlaysWebView: true,
       style: 'LIGHT',

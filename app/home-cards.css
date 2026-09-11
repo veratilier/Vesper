@@ -161,3 +161,57 @@
 @media(min-width: 768px) {
   .home-cards .home-upper-grid, .home-cards .home-lower-grid { gap: 20px; }
 }
+
+/* Compact home: the two feature cards are squares, with supporting cards alongside. */
+.home-cards.home-overview { gap: 12px; }
+.home-cards .home-upper-grid {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-rows: minmax(0, .44fr) minmax(0, .56fr);
+  gap: 10px;
+}
+.home-cards .home-lower-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 10px; }
+.home-cards .home-desire-card, .home-cards .home-lower-grid .home-music-card {
+  aspect-ratio: 1;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+.home-cards .home-desire-card { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
+.home-cards .home-desire-card .desire-flower { width: 100%; height: 100%; min-height: 0; margin: 0; }
+.home-cards .home-desire-card .desire-flower svg { width: 100%; height: 100%; min-height: 0; }
+.home-cards .home-desire-card .desire-selection { display: none; }
+.home-cards .home-desire-card > small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.home-cards :is(.home-usage-card, .home-notes-card, .home-reminders-card) { min-height: 0; overflow: hidden; }
+.home-cards .home-notes-card { padding: 8px 10px; gap: 4px; }
+.app-shell .home-cards :is(.home-note-preview, .home-notes-card > small, .reminder-copy, .home-card-empty) { font-size: 12px !important; line-height: 1.35 !important; }
+.home-cards .home-note-preview { -webkit-line-clamp: 2; }
+.home-cards .home-notes-card > small { -webkit-line-clamp: 1; }
+.home-cards .home-usage-card { padding: 7px 10px; }
+.home-cards .usage-heading { align-items: center; }
+.app-shell .home-cards .usage-heading .home-card-label { font-size: 1.1rem !important; white-space: nowrap; }
+.home-cards .usage-heading button { flex-basis: 20px; width: 20px; height: 22px; }
+.home-cards .usage-window { margin-top: 3px; }
+.app-shell .home-cards .usage-window :is(span,b) { font-size: 11px; }
+.home-cards .home-lower-grid .home-reminders-card { padding: 10px; gap: 6px; }
+.home-cards.home-overview .reminder-row { min-height: 36px; }
+.app-shell .home-cards .reminder-copy small { font-size: 11px; line-height: 1.3; }
+.home-cards .home-lower-grid .home-music-card { display: flex; flex-direction: column; gap: 2px; }
+.home-cards .home-music-card .home-panel-heading { flex-shrink: 0; padding: 0; }
+.home-cards .home-music-content { flex: 1; min-height: 0; gap: 0; }
+.home-cards .home-track-link { flex: 1; min-height: 0; gap: 2px; padding: 0; }
+.home-cards .home-track-link img, .home-cards .home-track-link .home-cover-fallback {
+  width: auto; height: calc(100% - 34px); max-width: 100%; max-height: 110px; min-height: 0;
+}
+.app-shell .home-cards .home-track-link :is(strong,small) { font-size: 11px !important; line-height: 1.3 !important; }
+.home-cards .home-player-controls { flex-shrink: 0; height: 36px; }
+.home-cards .home-player-controls button { height: 36px; min-height: 36px; padding: 6px; }
+.home-cards .home-player-controls .ui-icon { width: 20px; height: 20px; }
+.home-cards .home-music-empty { min-height: 0; flex: 1; font-size: 12px; }
+@media (max-width: 767px) {
+  .home-cards.home-overview .welcome { padding-top: 0; margin-bottom: 0; }
+  .home-cards.home-overview .welcome h1 { margin-block: 4px; }
+  .home-cards .home-return-signal { margin-top: 2px; }
+}
+@media (max-width: 767px) and (min-height: 740px) {
+  .home-cards.home-overview { min-height: 100%; align-content: space-between; grid-template-rows: repeat(3, max-content); }
+}

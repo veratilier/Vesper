@@ -9,6 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "build:pages": "vite build --config static-vite.config.mjs && node tools/finalize-pages.mjs",
+    "preios:sync": "node tools/prepare-ios-keyboard.mjs",
     "ios:sync": "cap sync ios",
     "ios:open": "cap open ios",
     "preview:pages": "vite preview --config static-vite.config.mjs",

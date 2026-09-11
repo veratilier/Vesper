@@ -12,7 +12,7 @@ import type { WatchFrame } from "./watch-context";
 import { ReadingRoom, type ReadingBook } from "./reading-room";
 import { SubscriptionUsage } from "./subscription-usage";
 import { AppCenter } from "./app-center";
-import { DesirePanel } from "./desire-panel";
+import { DesirePanel, HomeDesire } from "./desire-panel";
 import { WakeCard } from "./wake-card";
 import type { WakeRecord } from "./wake-summary";
 import { executionEvent, workspaceOptions, type Execution } from './codex-execution';
@@ -1448,6 +1448,9 @@ export default function Home() {
         <div className={`scroll-view${section === "音乐" ? " music-scroll-view" : ""}${historyOpen ? " history-host-shift" : ""}`} key={section} hidden={active !== section} data-section={section}>
           {section === "今日" ? (
             <Today
+              active={active === "今日"}
+              onPrevious={() => { if (activeTracks.length) setTrackIndex(index => (index - 1 + activeTracks.length) % activeTracks.length); }}
+              onNext={() => { if (activeTracks.length) setTrackIndex(index => (index + 1) % activeTracks.length); }}
               track={currentTrack}
               playing={playing}
               onToggle={() => setPlaying(!playing)}
@@ -1878,27 +1881,24 @@ async function sendAutonomousPush(
 
 
 function Today({
+  active, onPrevious, onNext,
   track,
   playing,
   onToggle,
   userName,
   onOpenSection,
 }: {
+  active: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
   track?: Track;
   playing: boolean;
   onToggle: () => void;
   userName: string;
-  onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐" | "日记") => void;
+  onOpenSection: (section: "便笺" | "提醒" | "纪念日" | "音乐" | "日记" | "欲望") => void;
 }) {
   const [notes] = usePersistentDocument<NoteItem[]>("notes", []);
   const [todos, setTodos] = usePersistentDocument<TodoItem[]>("todos", []);
-  const [anniversaries] = usePersistentDocument<AnniversaryItem[]>(
-    "anniversaries",
-    [],
-  );
-  const [diary] = usePersistentDocument<DiaryDocument>("diary", {});
-  const latestDiary = Object.entries(diary).filter(([, entry]) => entry.user?.trim() || entry.agent?.trim()).sort(([a], [b]) => b.localeCompare(a))[0];
-  const diaryPreview = latestDiary ? (latestDiary[1].user?.trim() || latestDiary[1].agent?.trim() || "").split(/\n/)[0] : "Leave a little of today here.";
   const now = new Date();
   const dateText = new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -1950,11 +1950,7 @@ function Today({
         minute: "2-digit",
       }).format(new Date(latestNote.createdAt))
     : "";
-  const featuredDate = nextAnniversary(anniversaries, now);
-  const featured = featuredDate ? { item: featuredDate, target: anniversaryTarget(featuredDate, now), days: anniversaryDays(featuredDate, now) } : undefined;
-  const pendingTodos = todos.filter((item) => !item.done);
-  const featuredIsPast = featured ? featured.days < 0 : false;
-  const featuredDays = featured ? Math.abs(featured.days) : null;
+  const pendingTodos = todos.filter(item => !item.done);
   return (
     <div className="today-home home-overview home-cards">
       <section className="welcome">
@@ -1962,26 +1958,19 @@ function Today({
         <h1>{greeting}, {userName}</h1>
         <p className="home-return-signal">{homeSignal}</p>
       </section>
-      <button className="home-letter" onClick={() => onOpenSection("便笺")}>
-        <span className="letter-mark"><Icon name="note" /></span>
-        <span className="letter-copy"><small>Latest note</small><b>{latestNoteTitle || "Leave today’s first words here."}</b><span>{latestNoteSummary || (latestNote ? latestNoteTimestamp : "Open Notes and write something to remember.")}</span></span>
-        <Icon name="chevron" />
-      </button>
-      <button className="home-date-hero" onClick={() => onOpenSection("纪念日")}>
-        <span className="home-card-label">{featuredIsPast ? "Days since" : "Next anniversary"}</span>
-        <span className="home-date-number">{featuredDays ?? "—"}<small>{featuredIsPast ? "days have passed" : "days away"}</small><Icon name="calendar" /></span>
-        <strong>{featuredDate?.title || "A day to look forward to"}</strong>
-        <span className="home-date-footer">{featured ? featured.target.toLocaleDateString("en-US") : "Add anniversary"}<Icon name="chevron" /></span>
-      </button>
-      <div className="home-quick-grid">
-        <button className="home-stat home-diary" onClick={() => onOpenSection("日记")}>
-          <span className="home-card-label">Diary<Icon name="chevron" /></span>
-          <b>{latestDiary ? latestDiary[0].slice(5).replace("-", ".") : "Today"}</b>
-          <span className="home-diary-preview">{diaryPreview}</span>
+      <div className="home-upper-grid">
+        <HomeDesire active={active} apiUrl={apiUrl} headers={appHeaders} onOpen={() => onOpenSection("欲望")} />
+        <section className="home-usage-card"><SubscriptionUsage active={active} socketUrl={codexSocketUrl} weeklyOnly /></section>
+        <button className="home-notes-card" onClick={() => onOpenSection("便笺")}>
+          <span className="home-card-label">Notes<Icon name="chevron" /></span>
+          <span className="home-note-preview">{latestNoteTitle || "Leave today’s first words here."}</span>
+          <small>{latestNoteSummary || latestNoteTimestamp}</small>
         </button>
+      </div>
+      <div className="home-lower-grid">
       <section className="home-reminders-card">
-        <button className="home-card-label home-reminders-heading" onClick={() => onOpenSection("提醒")}>Little things<Icon name="chevron" /></button>
-        {pendingTodos.slice(0, 1).map((item) => (
+        <button className="home-card-label home-reminders-heading" onClick={() => onOpenSection("提醒")}>Reminders<Icon name="chevron" /></button>
+        {pendingTodos.slice(0, 3).map((item) => (
           <button className="reminder-row" key={item.id} aria-pressed={item.done} onClick={() => setTodos((items) => items.map((x) => x.id === item.id ? { ...x, done: !x.done } : x))}>
             <span className={item.done ? "round-check checked" : "round-check"}>{item.done && <Icon name="check" />}</span>
             <span className={item.done ? "reminder-copy crossed" : "reminder-copy"}>{item.title}<small>{item.done ? "Completed" : item.due || item.tag}</small></span>
@@ -1989,17 +1978,21 @@ function Today({
         ))}
         {!pendingTodos.length && <p className="home-card-empty">Something you want to do today? Leave yourself a reminder.</p>}
       </section>
-      </div>
       <section className="home-music-card">
-        <button className="home-panel-heading" onClick={() => onOpenSection("音乐")}><span className="home-card-label">Vesper FM</span><span>{playing ? "Now playing" : "Listen together"}<Icon name="chevron" /></span></button>
+        <button className="home-panel-heading" onClick={() => onOpenSection("音乐")}><span className="home-card-label">Music</span><span>{playing ? "Now playing" : "Listen together"}<Icon name="chevron" /></span></button>
         {track ? <div className="home-music-content">
           <button className="home-track-link" onClick={() => onOpenSection("音乐")}>
             {track.cover ? <img src={track.cover} alt="" /> : <span className="home-cover-fallback"><Icon name="music" /></span>}
             <span><strong>{track.title}</strong><small>{track.artist || "Unknown artist"}</small></span>
           </button>
+          <div className="home-player-controls">
+          <button onClick={onPrevious} aria-label="Previous track"><Icon name="back" /></button>
           <button className="home-play" onClick={onToggle} aria-label={playing ? "Pause playback" : "Start playback"}><Icon name={playing ? "pause" : "play"} /></button>
+          <button onClick={onNext} aria-label="Next track"><Icon name="forward" /></button>
+          </div>
         </div> : <button className="home-music-empty" onClick={() => onOpenSection("音乐")}><Icon name="music" /><span>Choose a song to keep you company.</span></button>}
       </section>
+      </div>
     </div>
   );
 }

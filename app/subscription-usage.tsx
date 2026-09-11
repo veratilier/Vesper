@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { usageWindows, type UsageWindow } from '@/lib/subscription-usage';
 import './subscription-usage.css';
 
-export function SubscriptionUsage({ active, socketUrl }: { active: boolean; socketUrl: () => string }) {
+export function SubscriptionUsage({ active, socketUrl, weeklyOnly = false }: { active: boolean; socketUrl: () => string; weeklyOnly?: boolean }) {
   const [windows, setWindows] = useState<UsageWindow[]>([]);
   const [status, setStatus] = useState('Loading usage…');
   const [refresh, setRefresh] = useState(0);
@@ -52,9 +52,11 @@ export function SubscriptionUsage({ active, socketUrl }: { active: boolean; sock
     document.addEventListener('visibilitychange', poll);
     return () => { cancelled = true; clearTimeout(timeout); clearInterval(interval); document.removeEventListener('visibilitychange', poll); current?.close(); };
   }, [active, socketUrl, refresh]);
+  const visibleWindows = weeklyOnly ? windows.filter(window => window.label === 'Weekly limit') : windows;
   return <section className="subscription-usage" aria-label="Subscription remaining">
-    <div className="usage-heading"><span>Subscription remaining</span><button type="button" aria-label="Refresh usage" onClick={() => setRefresh(value => value + 1)}>↻</button></div>
-    {status ? <p role="status">{status}</p> : windows.map((window, index) => <div className="usage-window" key={index}>
+    <div className="usage-heading"><span className={weeklyOnly ? "home-card-label" : undefined}>{weeklyOnly ? "Weekly Usage" : "Subscription remaining"}</span><button type="button" aria-label="Refresh usage" onClick={() => setRefresh(value => value + 1)}>↻</button></div>
+    {!status && weeklyOnly && !visibleWindows.length && <p role="status">Weekly usage unavailable</p>}
+    {status ? <p role="status">{status}</p> : visibleWindows.map((window, index) => <div className="usage-window" key={index}>
       <div><span>{window.label}</span><b>{window.remaining}%</b></div>
       <progress max={100} value={window.remaining} aria-label={`${window.label}: ${window.remaining}% remaining`} />
       <small>{window.resetsAt ? `Resets ${new Date(window.resetsAt * 1000).toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'Reset time unavailable'}</small>

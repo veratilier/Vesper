@@ -74,3 +74,32 @@ export function DesirePanel({ apiUrl, headers, active, agentName }: {
     <section className="desire-timeline"><div className="desire-timeline-heading"><h2>Recent notes</h2>{notes.length > 3 && <button type="button" onClick={() => setExpanded(value => !value)}>{expanded ? "Collapse" : "Recent entries"} ›</button>}</div>{historyError && <p role="alert">{historyError}</p>}{!notes.length && !historyError && <p className="desire-timeline-empty">{loading ? "Loading…" : "New notes will appear here."}</p>}<ol>{notes.slice(0, expanded ? notes.length : 3).map(item => <li key={item.id}><time>{dateLabel(item.date)}</time><p>{item.note}</p></li>)}</ol></section>
   </div>;
 }
+
+/** Read-only home preview: opening Home never records a relationship event. */
+export function HomeDesire({ active, apiUrl, headers, onOpen }: {
+  active: boolean; apiUrl: (path: string) => string;
+  headers: (json?: boolean) => Record<string, string>; onOpen: () => void;
+}) {
+  const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [status, setStatus] = useState('Loading…');
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    setStatus('Loading…');
+    fetch(apiUrl('/api/desire?view=status'), { headers: headers(), cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw Error('Unavailable');
+        const result = await response.json() as { data?: unknown };
+        const object = unpack(result.data) as Record<string, unknown> | null;
+        const state = object?.state ?? object;
+        if (!state || typeof state !== 'object' || Array.isArray(state)) throw Error('Unavailable');
+        if (!controller.signal.aborted) { setData(state as Record<string, unknown>); setStatus(''); }
+      }).catch(() => { if (!controller.signal.aborted) setStatus('Mood unavailable'); });
+    return () => controller.abort();
+  }, [active, apiUrl, headers]);
+  return <section className="home-desire-card">
+    <button className="home-card-label" onClick={onOpen}>Desire<span aria-hidden="true">›</span></button>
+    <DesireFlower data={data} />
+    {status && <small role="status">{status}</small>}
+  </section>;
+}

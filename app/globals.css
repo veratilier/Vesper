@@ -5075,3 +5075,7 @@ html[data-native="true"] .app-shell::after { content: none !important; display: 
 .wake-history small, .wake-history li { overflow-wrap: anywhere; }
 .wake-history h3 { font-size: 17px; }
 .wake-visualizer { overflow-y: auto; max-height: calc(100dvh - 40px); }
+
+.wake-prompt-editor textarea { display: block; width: 100%; box-sizing: border-box; min-height: 190px; padding: 12px; resize: vertical; border: 1px solid #bacbd3; border-radius: 12px; background: rgba(255,255,255,.65); color: inherit; font: inherit; line-height: 1.6; }
+.wake-prompt-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wake-prompt-footer button { padding: 8px; color: inherit; font: inherit; text-decoration: underline; }

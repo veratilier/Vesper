@@ -5190,6 +5190,7 @@ function SettingsPage({
 
 type WakeRuntime = {
   configVersion?: number;
+  prompt?: string; defaultPrompt?: string; promptMaxLength?: number;
   config?: { enabled: boolean; intervalMinutes: number | null };
   heartbeat?: number; nextAt?: number; schedulerError?: string;
   jobs?: { id: string; source: string; status: string; created: number; started?: number;
@@ -5201,6 +5202,7 @@ function WakeVisualizer({ onClose }: { onClose: () => void }) {
   const [runtime, setRuntime] = useState<WakeRuntime | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [interval, setIntervalValue] = useState("auto");
+  const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -5219,6 +5221,7 @@ function WakeVisualizer({ onClose }: { onClose: () => void }) {
         if (!initialized.current && value.config) {
           setEnabled(value.config.enabled);
           setIntervalValue(value.config.intervalMinutes === null ? "auto" : String(value.config.intervalMinutes));
+          setPrompt(value.prompt || "");
           initialized.current = true;
         }
       } catch (reason) { if (!stopped) setError(reason instanceof Error ? reason.message : "Connection unavailable."); }
@@ -5231,17 +5234,20 @@ function WakeVisualizer({ onClose }: { onClose: () => void }) {
     savingRef.current = true; setSaving(true); setError(""); setSaved(false);
     try {
       const response = await fetch(codexHistoryUrl('/wake'), { method: 'POST', headers: codexHistoryHeaders(true),
-        body: JSON.stringify({ action: 'configure', enabled, intervalMinutes: interval === 'auto' ? null : Number(interval) }) });
+        body: JSON.stringify({ action: 'configure', enabled, intervalMinutes: interval === 'auto' ? null : Number(interval), ...(runtime?.configVersion && runtime.configVersion >= 2 ? { prompt } : {}) }) });
       if (!response.ok) throw new Error("Settings were not saved. Please try again.");
       const value = await response.json() as WakeRuntime;
       if (!value.configVersion || !value.config) throw new Error("The background service needs an update before settings can be saved.");
+      if ((runtime?.configVersion || 0) >= 2 && ((value.configVersion || 0) < 2 || value.prompt !== prompt)) throw new Error("The prompt was not saved. Update the background service and try again.");
       setRuntime(value); setSaved(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Settings were not saved."); }
     finally { savingRef.current = false; setSaving(false); }
   };
   const format = (seconds?: number) => seconds ? new Date(seconds * 1000).toLocaleString('en-GB', { timeZone: 'Asia/Shanghai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
   const alive = !!runtime?.heartbeat && Date.now() / 1000 - runtime.heartbeat < 1000;
-  const supported = runtime?.configVersion === 1;
+  const supported = (runtime?.configVersion || 0) >= 1;
+  const promptSupported = (runtime?.configVersion || 0) >= 2;
+  const promptInvalid = promptSupported && (!prompt.trim() || [...prompt].length > (runtime?.promptMaxLength || 8000));
   return <div className="modal-layer"><button className="modal-scrim" aria-label="Close wake settings" onClick={onClose}/>
     <section className="connection-modal wake-visualizer" role="dialog" aria-modal="true" aria-labelledby="wake-title">
       <div className="modal-head"><button className="settings-back" aria-label="Back to settings" onClick={onClose}><Icon name="chevron"/></button><div><small>AUTONOMOUS WAKE</small><h2 id="wake-title">Autonomous Wake</h2></div></div>
@@ -5253,8 +5259,16 @@ function WakeVisualizer({ onClose }: { onClose: () => void }) {
           {interval !== 'auto' && ![30,60,120,240,360,720,1440].includes(Number(interval)) && <option value={interval}>{interval} minutes</option>}
         </select></label>
         <p className="settings-hint">Active chats and quiet requests can postpone a wake-up. Turning this off prevents new automatic runs; a running task may finish.</p>
-        <button className="reset-background" disabled={!supported || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</button>
-        <p role="status">{saved ? 'Settings saved.' : ''}</p>
+        <div className="wake-prompt-editor">
+          <label htmlFor="wake-prompt">Wake prompt</label>
+          <textarea id="wake-prompt" value={prompt} disabled={!promptSupported || saving} rows={8} aria-describedby="wake-prompt-help" onChange={event => {setPrompt(event.target.value);setSaved(false);}} />
+          <p id="wake-prompt-help" className="settings-hint">Describe what you want each wake-up to do. Saved changes apply from the next run; tool permissions and delivery rules remain in effect.</p>
+          <div className="wake-prompt-footer"><small>{[...prompt].length} / {runtime?.promptMaxLength || 8000}</small><button type="button" disabled={!promptSupported || saving} onClick={() => {setPrompt(runtime?.defaultPrompt || "");setSaved(false);}}>Restore default</button></div>
+          {runtime && !promptSupported && <p className="settings-hint">Update the background service to edit the wake prompt.</p>}
+          {promptInvalid && <p role="alert">Enter a prompt of 1–8000 characters.</p>}
+        </div>
+        <button className="reset-background" disabled={!supported || saving || promptInvalid} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</button>
+        <p role="status">{saved ? 'Saved. Changes apply from the next run.' : ''}</p>
       </div>
       {error && <p role="alert" className="settings-hint">{error}</p>}
       {runtime && !supported && <p className="settings-hint">Update the background service to enable controls and history.</p>}

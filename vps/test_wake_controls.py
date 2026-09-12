@@ -42,6 +42,29 @@ class WakeControlsTests(unittest.TestCase):
         self.assertTrue(store.status()['enabled'])
         self.assertEqual(store.status()['config']['intervalMinutes'], 60)
 
+    def test_prompt_is_durable_and_editing_preserves_next_wake(self):
+        store.configure({'enabled': True, 'intervalMinutes': 60})
+        next_at = store.status()['nextAt']
+        text = '先看看书，再留一句话。\n不要重复问候。'
+        state = store.configure({'enabled': True, 'intervalMinutes': 60, 'prompt': text})
+        self.assertEqual(store.task_prompt(), text)
+        self.assertEqual(state['prompt'], text)
+        self.assertEqual(state['nextAt'], next_at)
+        # Older clients can still change the interval without erasing the prompt.
+        store.configure({'enabled': True, 'intervalMinutes': 120})
+        self.assertEqual(store.task_prompt(), text)
+        store.configure({'enabled': True, 'intervalMinutes': 120, 'prompt': state['defaultPrompt']})
+        self.assertEqual(store.task_prompt(), store.DEFAULT_PROMPT)
+
+    def test_bad_prompt_rejected_atomically(self):
+        store.configure({'enabled': True, 'intervalMinutes': 60, 'prompt': '保留这段文字'})
+        for value in ['', '  ', None, 123, 'a' * 8001]:
+            with self.assertRaises(ValueError):
+                store.configure({'enabled': False, 'intervalMinutes': 120, 'prompt': value})
+        self.assertEqual(store.task_prompt(), '保留这段文字')
+        self.assertTrue(store.status()['enabled'])
+        self.assertEqual(store.status()['config']['intervalMinutes'], 60)
+
     def test_history_is_bounded_and_omits_raw_content(self):
         with store.db() as con:
             for i in range(55):

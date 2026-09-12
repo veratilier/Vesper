@@ -4,6 +4,14 @@ from pathlib import Path
 
 PATH = Path(os.environ.get('VESPER_WAKE_DB', str(Path.home()/'.vesper/wake.sqlite3')))
 CONVERSATION = 'vesper-autonomous-wake'
+DEFAULT_PROMPT = '结合最近聊天和当前真实状态，自主选择一件适合现在做的小事。可以阅读、留下值得保留的想法，或自然续接未结束的话题。有值得分享的新内容时，给 Vera 留一条自然、具体的消息；没有新内容时不必强行问候。'
+PROMPT_LIMIT = 8000
+
+
+def task_prompt():
+    with db() as con:
+        return get(con, 'task_prompt', DEFAULT_PROMPT)
+
 
 class Connection(sqlite3.Connection):
     def __exit__(self,*args):
@@ -62,16 +70,24 @@ def configure(body):
     if not isinstance(enabled, bool) or (minutes is not None and
             (type(minutes) is not int or minutes < 30 or minutes > 1440)):
         raise ValueError('Choose an interval from 30 to 1440 minutes')
+    prompt = body.get('prompt')
+    if 'prompt' in body and (not isinstance(prompt, str) or not prompt.strip() or len(prompt) > PROMPT_LIMIT):
+        raise ValueError('Prompt must contain 1 to 8000 characters')
     now = time.time()
     with db() as con:
         con.execute('BEGIN IMMEDIATE')
-        put(con, 'config', {'enabled': enabled, 'intervalMinutes': minutes})
+        previous = get(con, 'config', {})
+        config = {'enabled': enabled, 'intervalMinutes': minutes}
+        changed = previous != config
+        put(con, 'config', config)
+        if 'prompt' in body:put(con, 'task_prompt', prompt)
+
         if not enabled:
             con.execute("UPDATE jobs SET status='cancelled',finished=?,decision='disabled' WHERE status='queued' AND source='automation'", (now,))
-        if minutes is not None:
+        if changed and minutes is not None:
             put(con, 'next_at', now + minutes * 60)
             put(con, 'schedule', {'version': 2, 'drawnAt': now, 'seconds': minutes * 60, 'mode': 'fixed'})
-        else:
+        elif changed:
             put(con, 'schedule', {})
             put(con, 'next_at', None)
     return status()
@@ -86,7 +102,8 @@ def status():
             job['calls'] = [dict(row) for row in con.execute(
                 'SELECT name,status FROM calls WHERE job_id=? ORDER BY rowid', (job['id'],))]
         config = get(con, 'config', {'enabled': get(con, 'frequency', 'daily') != 'off', 'intervalMinutes': None})
-        return {'configVersion': 1, 'config': config, 'enabled': config['enabled'],
+        return {'configVersion': 2, 'prompt': get(con, 'task_prompt', DEFAULT_PROMPT),
+                'defaultPrompt': DEFAULT_PROMPT, 'promptMaxLength': PROMPT_LIMIT, 'config': config, 'enabled': config['enabled'],
                 'executor': 'vps', 'conversationId': jobs[0]['conversation_id'] if jobs else None,
                 'heartbeat': get(con, 'heartbeat', 0), 'nextAt': get(con, 'next_at'),
                 'schedule': get(con, 'schedule'), 'frequency': get(con, 'frequency'),

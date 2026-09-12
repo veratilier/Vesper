@@ -233,7 +233,8 @@ def execute(job):
         started=rpc.call('thread/start',{'cwd':str(WORK),'dynamicTools':tools,'approvalPolicy':'never','sandbox':'read-only','config':CONFIG,'developerInstructions':INSTRUCTIONS})
         thread_id=started['thread']['id'];update(ident,thread_id=thread_id)
 
-        prompt='这是一次已授权的 Vesper 后台主动唤醒。request_id='+ident+'。当前时间 '+datetime.now(ZoneInfo('Asia/Singapore')).isoformat()+'.\n'
+        prompt='这是一次已授权的 Vesper 后台主动唤醒。request_id='+ident+'。当前时间 '+datetime.now(ZoneInfo('Asia/Shanghai')).isoformat()+'.\n'
+        prompt+='Vera 设置的本轮任务要求：\n'+store.task_prompt()+'\n'
         if job['source']=='verification':prompt+='这是用户要求的一次真实后台验证：先调用 desire_status，再读取 notes，依据工具结果给 Vera 留一句简短真实的话。不要创建便笺或互动记录，不要说推送已送达（发送发生在回复保存之后）。\n'
         prompt+='近期明确偏好（有期限，未列出即未知，不得猜测）：'+json.dumps(current_preferences(),ensure_ascii=False)+'\n'
         prompt+='只返回 JSON {"share": boolean, "message": string}。不值得分享时 share=false,message为空；不输出活动摘要，由系统根据实际工具记录生成。分享文字限400字。\n'

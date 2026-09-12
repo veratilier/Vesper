@@ -59,7 +59,7 @@ export function SubscriptionUsage({ active, socketUrl, weeklyOnly = false }: { a
     {status ? <p role="status">{status}</p> : visibleWindows.map((window, index) => <div className="usage-window" key={index}>
       <div><span>{window.label}</span><b>{window.remaining}%</b></div>
       <progress max={100} value={window.remaining} aria-label={`${window.label}: ${window.remaining}% remaining`} />
-      <small>{window.resetsAt ? `Resets ${new Date(window.resetsAt * 1000).toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'Reset time unavailable'}</small>
+      {!weeklyOnly && <small>{window.resetsAt ? `Resets ${new Date(window.resetsAt * 1000).toLocaleString('en-US', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'Reset time unavailable'}</small>}
     </div>)}
   </section>;
 }

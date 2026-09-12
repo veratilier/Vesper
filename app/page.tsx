@@ -1933,15 +1933,6 @@ function Today({
         (Number.isFinite(leftTime) ? leftTime : 0);
     });
   const latestNote = realNotes[0];
-  const latestNoteLines = latestNote
-    ? latestNote.text
-        .trim()
-        .split(/\n+/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-    : [];
-  const latestNoteTitle = latestNoteLines[0] || "";
-  const latestNoteSummary = latestNoteLines.slice(1).join(" ").trim();
   const latestNoteTimestamp = latestNote
     ? new Intl.DateTimeFormat("en-US", {
         month: "numeric",
@@ -1961,11 +1952,13 @@ function Today({
       <div className="home-upper-grid">
         <HomeDesire active={active} apiUrl={apiUrl} headers={appHeaders} onOpen={() => onOpenSection("欲望")} />
         <section className="home-usage-card"><SubscriptionUsage active={active} socketUrl={codexSocketUrl} weeklyOnly /></section>
-        <button className="home-notes-card" onClick={() => onOpenSection("便笺")}>
-          <span className="home-card-label">Notes<Icon name="chevron" /></span>
-          <span className="home-note-preview">{latestNoteTitle || "Leave today’s first words here."}</span>
-          <small>{latestNoteSummary || latestNoteTimestamp}</small>
-        </button>
+        <section className="home-notes-card">
+          <button className="home-card-label home-notes-heading" onClick={() => onOpenSection("便笺")}>Notes<Icon name="chevron" /></button>
+          <div className="home-note-scroll" tabIndex={0} role="region" aria-label="Latest note preview">
+            <p>{latestNote?.text || "Leave today’s first words here."}</p>
+            {latestNoteTimestamp && <small>{latestNoteTimestamp}</small>}
+          </div>
+        </section>
       </div>
       <div className="home-lower-grid">
       <section className="home-reminders-card">

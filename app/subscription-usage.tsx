@@ -54,7 +54,7 @@ export function SubscriptionUsage({ active, socketUrl, weeklyOnly = false }: { a
   }, [active, socketUrl, refresh]);
   const visibleWindows = weeklyOnly ? windows.filter(window => window.label === 'Weekly limit') : windows;
   return <section className="subscription-usage" aria-label="Subscription remaining">
-    <div className="usage-heading"><span className={weeklyOnly ? "home-card-label" : undefined}>{weeklyOnly ? "Weekly Usage" : "Subscription remaining"}</span><button type="button" aria-label="Refresh usage" onClick={() => setRefresh(value => value + 1)}>↻</button></div>
+    <div className="usage-heading"><span className={weeklyOnly ? "home-card-label" : undefined}>{weeklyOnly ? "Usage" : "Subscription remaining"}</span><button type="button" aria-label="Refresh usage" onClick={() => setRefresh(value => value + 1)}>↻</button></div>
     {!status && weeklyOnly && !visibleWindows.length && <p role="status">Weekly usage unavailable</p>}
     {status ? <p role="status">{status}</p> : visibleWindows.map((window, index) => <div className="usage-window" key={index}>
       <div><span>{window.label}</span><b>{window.remaining}%</b></div>

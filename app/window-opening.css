@@ -2,15 +2,11 @@
 .window-opening::backdrop{background:transparent}
 .opening-art{position:absolute;inset:0;overflow:hidden}
 .opening-plate{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;pointer-events:none;opacity:1}
-.opening-depth-0{opacity:0}
-.opening-ready .opening-depth-0{animation:opening-appear .9s ease-in-out both}
-.opening-ready .opening-depth-4{animation:opening-appear 1.3s .15s ease-in-out both}
-.opening-ready .opening-depth-3{animation:opening-appear 1.3s 1s ease-in-out both}
-.opening-ready .opening-depth-2{animation:opening-appear 1.3s 1.85s ease-in-out both}
-.opening-ready .opening-depth-1{animation:opening-appear 1.3s 2.7s ease-in-out both}
-.opening-plate:not(.opening-depth-0){opacity:0}
-.opening-hold .opening-plate{opacity:1;animation:none}
-.window-opening .opening-dedication{position:absolute;top:30%;left:50%;transform:translate(-50%,-50%);width:84%;text-align:center;pointer-events:none;opacity:0;transition:opacity 1.1s ease-in-out;color:#f6f4ef;text-shadow:0 2px 14px #253b6238}
+/* Composite the scene first, then fade one parent instead of five delayed layers. */
+.opening-art{opacity:0}
+.opening-ready .opening-art{animation:opening-appear .85s ease-out both}
+.opening-hold .opening-art{opacity:1;animation:none}
+.window-opening .opening-dedication{position:absolute;top:30%;left:50%;transform:translate(-50%,-50%);width:84%;text-align:center;pointer-events:none;opacity:0;transition:opacity .35s ease-out;color:#f6f4ef;text-shadow:0 2px 14px #253b6238}
 .window-opening .opening-title{margin:0;font-family:var(--font-pinyon-script),"Pinyon Script",cursive!important;font-size:clamp(64px,19vw,100px);font-weight:400;font-style:normal;line-height:1.2;letter-spacing:0}
 .window-opening .opening-subtitle{margin:12px 0 0;font-family:Georgia,"Times New Roman",serif!important;font-size:clamp(13px,3.5vw,17px);font-weight:400;font-style:italic;line-height:1.5;letter-spacing:.055em;color:inherit}
 .opening-hold .opening-dedication{opacity:1}
@@ -18,9 +14,9 @@
 .opening-hold .opening-enter{opacity:1;visibility:visible}
 .opening-enter span{margin-left:15px;font-style:normal}
 .opening-enter:focus-visible{outline:2px solid white;outline-offset:5px}
-.opening-leaving{animation:opening-exit 1s ease-in-out forwards}
-.opening-reduced .opening-plate{animation:none!important}
+.opening-leaving{animation:opening-exit .35s ease-out forwards}
+.opening-reduced .opening-art{opacity:1;animation:none!important}
 .opening-reduced .opening-enter{transition:none}
 .opening-reduced .opening-dedication{transition:none}
 @keyframes opening-appear{from{opacity:0}to{opacity:1}}
-@keyframes opening-exit{from{opacity:1;filter:blur(0)}to{opacity:0;filter:blur(9px)}}
+@keyframes opening-exit{from{opacity:1}to{opacity:0}}

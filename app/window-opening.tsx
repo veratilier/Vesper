@@ -30,12 +30,12 @@ export function WindowOpening() {
   },[]);
   useEffect(()=>{
     if(!ready) return;
-    const timer=setTimeout(()=>setHold(true),4000);
+    const timer=setTimeout(()=>setHold(true),850);
     return ()=>clearTimeout(timer);
   },[ready]);
   useEffect(()=>{
     if(!leaving) return;
-    const timer=setTimeout(()=>{dialog.current?.close();setVisible(false);},reduced?0:1000);
+    const timer=setTimeout(()=>{dialog.current?.close();setVisible(false);},reduced?0:350);
     return ()=>clearTimeout(timer);
   },[leaving,reduced]);
   if(!visible) return null;

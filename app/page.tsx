@@ -5120,6 +5120,7 @@ function SettingsPage({
   return (
     <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
       <PageIntro eyebrow="PREFERENCES" title="Settings" text="Make Vesper feel like you." />
+      <div className="surface"><SettingRow icon="sparkles" title="Autonomous Wake" sub="Schedule, controls and recent activity" onClick={() => setSelected("Autonomous Wake")} /></div>
       <div className="settings-category-list settings-accordion">
         {[
           ["sparkles", "Agent", "Model connection and voice"],
@@ -5149,7 +5150,9 @@ function SettingsPage({
           </section>
         ))}
       </div>
-      {selected === "Notification" ? (
+      {selected === "Autonomous Wake" ? (
+        <WakeVisualizer onClose={closeDetail} />
+      ) : selected === "Notification" ? (
         <NotificationSettings onClose={closeDetail} onWebPush={() => setSelected("Web Push")} />
       ) : selected === "Codex Server" ? (
         <CodexConnectionModal onClose={closeDetail} />
@@ -5185,29 +5188,91 @@ function SettingsPage({
   );
 }
 
-function WakeVisualizer({ preferences, onClose }: { preferences: VesperPreferences; onClose: () => void }) {
-  const [previewPulse,setPreviewPulse]=useState(0);
-  const [runtime,setRuntime]=useState<{heartbeat?:number;nextAt?:number;lastJob?:{status:string;finished?:number;tools?:number};schedulerError?:string}|null>(null);
+type WakeRuntime = {
+  configVersion?: number;
+  config?: { enabled: boolean; intervalMinutes: number | null };
+  heartbeat?: number; nextAt?: number; schedulerError?: string;
+  jobs?: { id: string; source: string; status: string; created: number; started?: number;
+    finished?: number; tools: number; decision?: string; tokens?: number;
+    calls?: { name: string; status: string }[] }[];
+};
+
+function WakeVisualizer({ onClose }: { onClose: () => void }) {
+  const [runtime, setRuntime] = useState<WakeRuntime | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [interval, setIntervalValue] = useState("auto");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const initialized = useRef(false);
+  const savingRef = useRef(false);
   useEffect(() => {
-    let stopped=false;
-    const refresh=() => {void fetch(codexHistoryUrl('/wake'),{headers:codexHistoryHeaders(),cache:'no-store'}).then(r=>r.ok?r.json():null).then(r=>{if(!stopped)setRuntime(r as typeof runtime);}).catch(()=>{});};
-    refresh();const timer=window.setInterval(refresh,10000);
-    return ()=>{stopped=true;window.clearInterval(timer);};
-  },[]);
-  const alive=!!runtime?.heartbeat && Date.now()/1000-runtime.heartbeat<1000;
-  return <div className="modal-layer"><button className="modal-scrim" onClick={onClose}/>
-    <section className="connection-modal wake-visualizer">
-      <div className="modal-head"><button className="settings-back" onClick={onClose}><Icon name="chevron"/></button><div><small>AUTONOMOUS WAKE</small><h2>Autonomous Wake-up</h2></div></div>
-      <div key={previewPulse} className={`wake-orbit${preferences.careFrequency==='off'?' asleep':''}${previewPulse?' previewing':''}`}><i/><i/><span><Icon name="sparkles"/></span></div>
-      <div className="wake-status-grid">
-        <div><small>Background status</small><b>{!alive?"Waiting for background connection":preferences.careFrequency==='off'?"Automatic wake-up is off":"VPS online"}</b></div>
-        <div><small>Latest task</small><b>{runtime?.lastJob?.status || "Not yet"}</b></div>
-        <div><small>Tools used</small><b>{runtime?.lastJob?.tools ?? 0}</b></div>
-        <div><small>Next window</small><b>{preferences.careFrequency==='off'?'—':runtime?.nextAt?new Date(runtime.nextAt*1000).toLocaleString("en-US"):"Waiting for schedule"}</b></div>
+    let stopped = false;
+    const refresh = async () => {
+      if (savingRef.current) return;
+      try {
+        const response = await fetch(codexHistoryUrl('/wake'), { headers: codexHistoryHeaders(), cache: 'no-store' });
+        if (!response.ok) throw new Error("Cannot load wake settings. Check the server connection.");
+        const value = await response.json() as WakeRuntime;
+        if (stopped || savingRef.current) return;
+        setRuntime(value); setError("");
+        if (!initialized.current && value.config) {
+          setEnabled(value.config.enabled);
+          setIntervalValue(value.config.intervalMinutes === null ? "auto" : String(value.config.intervalMinutes));
+          initialized.current = true;
+        }
+      } catch (reason) { if (!stopped) setError(reason instanceof Error ? reason.message : "Connection unavailable."); }
+    };
+    void refresh(); const timer = window.setInterval(refresh, 15000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, []);
+  const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true; setSaving(true); setError(""); setSaved(false);
+    try {
+      const response = await fetch(codexHistoryUrl('/wake'), { method: 'POST', headers: codexHistoryHeaders(true),
+        body: JSON.stringify({ action: 'configure', enabled, intervalMinutes: interval === 'auto' ? null : Number(interval) }) });
+      if (!response.ok) throw new Error("Settings were not saved. Please try again.");
+      const value = await response.json() as WakeRuntime;
+      if (!value.configVersion || !value.config) throw new Error("The background service needs an update before settings can be saved.");
+      setRuntime(value); setSaved(true);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Settings were not saved."); }
+    finally { savingRef.current = false; setSaving(false); }
+  };
+  const format = (seconds?: number) => seconds ? new Date(seconds * 1000).toLocaleString('en-GB', { timeZone: 'Asia/Shanghai', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const alive = !!runtime?.heartbeat && Date.now() / 1000 - runtime.heartbeat < 1000;
+  const supported = runtime?.configVersion === 1;
+  return <div className="modal-layer"><button className="modal-scrim" aria-label="Close wake settings" onClick={onClose}/>
+    <section className="connection-modal wake-visualizer" role="dialog" aria-modal="true" aria-labelledby="wake-title">
+      <div className="modal-head"><button className="settings-back" aria-label="Back to settings" onClick={onClose}><Icon name="chevron"/></button><div><small>AUTONOMOUS WAKE</small><h2 id="wake-title">Autonomous Wake</h2></div></div>
+      <div className="wake-controls">
+        <label className="wake-toggle"><span>Automatic wake-up</span><input type="checkbox" role="switch" checked={enabled} disabled={!supported || saving} onChange={event => {setEnabled(event.target.checked);setSaved(false);}} /></label>
+        <label>Interval<select value={interval} disabled={!supported || saving} onChange={event => {setIntervalValue(event.target.value);setSaved(false);}}>
+          <option value="auto">Adaptive · 30–120 minutes</option>
+          {[30,60,120,240,360,720,1440].map(minutes => <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hours`}</option>)}
+          {interval !== 'auto' && ![30,60,120,240,360,720,1440].includes(Number(interval)) && <option value={interval}>{interval} minutes</option>}
+        </select></label>
+        <p className="settings-hint">Active chats and quiet requests can postpone a wake-up. Turning this off prevents new automatic runs; a running task may finish.</p>
+        <button className="reset-background" disabled={!supported || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</button>
+        <p role="status">{saved ? 'Settings saved.' : ''}</p>
       </div>
-      <p className="settings-hint">Around the clock, the VPS uses independent Desire signals to schedule intervals of 30–120 minutes. The schedule survives restarts. Quiet requests and active chats defer a wake-up. Messages are saved to the latest conversation with a completed reply, then pushed.</p>
-      {runtime?.schedulerError && <p className="settings-hint">Background setup is incomplete. Check again later.</p>}
-      <button className="reset-background" onClick={()=>setPreviewPulse(v=>v+1)}>Preview pulse</button>
+      {error && <p role="alert" className="settings-hint">{error}</p>}
+      {runtime && !supported && <p className="settings-hint">Update the background service to enable controls and history.</p>}
+      <div className="wake-status-grid">
+        <div><small>Status</small><b>{!runtime ? 'Loading…' : !alive ? 'Connection unknown' : runtime.config?.enabled === false ? 'Paused' : 'Online'}</b></div>
+        <div><small>Next wake · Beijing time</small><b>{runtime?.config?.enabled === false ? 'Paused' : format(runtime?.nextAt)}</b></div>
+      </div>
+      {runtime?.schedulerError && <p className="settings-hint">The scheduler reported an error. The next wake is not confirmed.</p>}
+      <div className="wake-history"><h3>Recent activity</h3>
+        {supported && !runtime?.jobs?.length && <p>No wake records yet.</p>}
+        {runtime?.jobs?.map(job => <details key={job.id}>
+          <summary><span>{format(job.created)}</span><b>{job.status.replaceAll('_', ' ')}</b></summary>
+          <dl><dt>Source</dt><dd>{job.source}</dd><dt>Started</dt><dd>{format(job.started)}</dd><dt>Finished</dt><dd>{format(job.finished)}</dd><dt>Tools</dt><dd>{job.tools}</dd>{job.decision && <><dt>Outcome</dt><dd>{job.decision.replaceAll('_', ' ')}</dd></>}</dl>
+          {!!job.calls?.length && <ul>{job.calls.map((call, index) => <li key={index}>{call.name || 'Tool'} · {call.status}</li>)}</ul>}
+          <small>Run {job.id}</small>
+        </details>)}
+        <p className="settings-hint">Latest 50 runs. All times are in Beijing time. Replies appear in chat; a saved reply does not confirm a phone notification.</p>
+      </div>
     </section></div>;
 }
 

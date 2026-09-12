@@ -5060,3 +5060,18 @@ body {
 
 html[data-native="true"] .app-header { background: transparent !important; }
 html[data-native="true"] .app-shell::after { content: none !important; display: none !important; }
+
+/* Wake controls share the existing Settings detail surface. */
+.wake-controls, .wake-history { text-align: left; font-size: 13px; font-style: normal; }
+.wake-controls label { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0; }
+.wake-controls select { max-width: 65%; padding: 10px; border: 1px solid #bacbd3; border-radius: 12px; background: rgba(255,255,255,.65); color: inherit; font: inherit; }
+.wake-toggle input { width: 22px; height: 22px; accent-color: #789eae; }
+.wake-controls button:disabled { opacity: .5; cursor: not-allowed; }
+.wake-history details { margin: 10px 0; padding: 13px; border: 1px solid rgba(100,130,150,.2); border-radius: 14px; background: rgba(255,255,255,.25); }
+.wake-history summary { cursor: pointer; }
+.wake-history summary b { float: right; font-size: 12px; font-weight: 500; }
+.wake-history dl { display: grid; grid-template-columns: 75px 1fr; gap: 8px; }
+.wake-history dd { margin: 0; overflow-wrap: anywhere; }
+.wake-history small, .wake-history li { overflow-wrap: anywhere; }
+.wake-history h3 { font-size: 17px; }
+.wake-visualizer { overflow-y: auto; max-height: calc(100dvh - 40px); }

@@ -56,12 +56,38 @@ def presence(device,busy):
         devices[str(device)[:100]]={'at':time.time(),'busy':bool(busy)}
         put(con,'presence',devices)
 
+def configure(body):
+    enabled = body.get('enabled')
+    minutes = body.get('intervalMinutes')
+    if not isinstance(enabled, bool) or (minutes is not None and
+            (type(minutes) is not int or minutes < 30 or minutes > 1440)):
+        raise ValueError('Choose an interval from 30 to 1440 minutes')
+    now = time.time()
+    with db() as con:
+        con.execute('BEGIN IMMEDIATE')
+        put(con, 'config', {'enabled': enabled, 'intervalMinutes': minutes})
+        if not enabled:
+            con.execute("UPDATE jobs SET status='cancelled',finished=?,decision='disabled' WHERE status='queued' AND source='automation'", (now,))
+        if minutes is not None:
+            put(con, 'next_at', now + minutes * 60)
+            put(con, 'schedule', {'version': 2, 'drawnAt': now, 'seconds': minutes * 60, 'mode': 'fixed'})
+        else:
+            put(con, 'schedule', {})
+            put(con, 'next_at', None)
+    return status()
+
+
 def status():
     with db() as con:
-        row=con.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 1').fetchone()
-        job=dict(row) if row else None
-        # Never return model/tool content or credentials through runtime status.
-        if job:job={k:job[k] for k in ['id','source','status','created','started','finished','tools','push_json','error','conversation_id','decision','tokens']}
-        return {'enabled':True,'executor':'vps','conversationId':job.get('conversation_id') if job else None,
-                'heartbeat':get(con,'heartbeat',0),'nextAt':get(con,'next_at'),
-                'schedule':get(con,'schedule'),'frequency':get(con,'frequency'),'lastJob':job,'schedulerError':get(con,'error')}
+        fields = ['id','source','status','created','started','finished','tools','conversation_id','decision','tokens']
+        rows = con.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 50').fetchall()
+        jobs = [{k: row[k] for k in fields} for row in rows]
+        for job in jobs:
+            job['calls'] = [dict(row) for row in con.execute(
+                'SELECT name,status FROM calls WHERE job_id=? ORDER BY rowid', (job['id'],))]
+        config = get(con, 'config', {'enabled': get(con, 'frequency', 'daily') != 'off', 'intervalMinutes': None})
+        return {'configVersion': 1, 'config': config, 'enabled': config['enabled'],
+                'executor': 'vps', 'conversationId': jobs[0]['conversation_id'] if jobs else None,
+                'heartbeat': get(con, 'heartbeat', 0), 'nextAt': get(con, 'next_at'),
+                'schedule': get(con, 'schedule'), 'frequency': get(con, 'frequency'),
+                'lastJob': jobs[0] if jobs else None, 'jobs': jobs, 'schedulerError': get(con, 'error')}

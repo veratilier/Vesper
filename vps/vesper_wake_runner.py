@@ -109,6 +109,18 @@ def reschedule(job_id=None):
     with store.db() as con:
         if job_id and con.execute('SELECT scheduled_at FROM jobs WHERE id=?',(job_id,)).fetchone()[0]:return
         if not job_id and store.get(con,'schedule',{}).get('version')==2:return
+    with store.db() as con:
+        schedule_config = store.get(con, 'config', {})
+        fixed = schedule_config.get('intervalMinutes')
+    if fixed is not None:
+        now = time.time()
+        with store.db() as con:
+            con.execute('BEGIN IMMEDIATE')
+            if store.get(con, 'config', {}) != schedule_config:return
+            store.put(con, 'next_at', now + fixed * 60)
+            store.put(con, 'schedule', {'version': 2, 'drawnAt': now, 'seconds': fixed * 60, 'mode': 'fixed'})
+            if job_id:con.execute('UPDATE jobs SET scheduled_at=? WHERE id=?', (now, job_id))
+        return
     result=http('/api/codex/tools',{'name':'desire_status','arguments':{}})['result']
     def longing(value):
         if isinstance(value,dict):
@@ -131,6 +143,7 @@ def reschedule(job_id=None):
         con.execute('BEGIN IMMEDIATE')
         if job_id and con.execute('SELECT scheduled_at FROM jobs WHERE id=?',(job_id,)).fetchone()[0]:return
         if not job_id and store.get(con,'schedule',{}).get('version')==2:return
+        if store.get(con, 'config', {}) != schedule_config:return
         store.put(con,'next_at',now+seconds)
         store.put(con,'schedule',{'version':2,'drawnAt':now,'seconds':seconds,'longing':value,'jobId':job_id})
         if job_id:con.execute('UPDATE jobs SET scheduled_at=? WHERE id=?',(now,job_id))
@@ -277,6 +290,9 @@ def tick():
     settings=http('/api/state?key=settings').get('value') or {}
     frequency=settings.get('careFrequency','daily')
     with store.db() as con:
+        config = store.get(con, 'config')
+        if config is not None:frequency = 'daily' if config['enabled'] else 'off'
+    with store.db() as con:
         store.put(con,'heartbeat',now);store.put(con,'error',None);store.put(con,'frequency',frequency)
         con.execute("UPDATE jobs SET status='interrupted',finished=?,error='Executor interrupted; not replayed' WHERE status='running'",(now,))
         pending=con.execute("SELECT id FROM jobs WHERE finished IS NOT NULL AND scheduled_at IS NULL ORDER BY finished DESC LIMIT 1").fetchone()
@@ -295,13 +311,16 @@ def tick():
         # Rolling 24h bounds, including failures; no paid API fallback or automatic model retries.
         usage=con.execute('SELECT count(*),coalesce(sum(coalesce(budget_tokens,tokens)),0) FROM jobs WHERE started>?',(now-86400,)).fetchone()
         if usage[0]>=24 or usage[1]>=160000:return
-    if frequency!='off' and now>=next_at:store.request('auto-'+str(int(next_at)),source='automation')
+    if frequency!='off' and next_at is not None and now>=next_at:store.request('auto-'+str(int(next_at)),source='automation')
     with store.db() as con:
         con.execute('BEGIN IMMEDIATE')
         row=con.execute("SELECT * FROM jobs WHERE status='queued' AND due<=? ORDER BY due LIMIT 1",(now,)).fetchone()
         if not row:return
         selected=policy.target(policy.history(HISTORY))
         job=dict(row)
+        if not store.get(con, 'config', {'enabled': frequency != 'off'})['enabled'] and job['source'] == 'automation':
+            con.execute("UPDATE jobs SET status='cancelled',finished=?,decision='disabled' WHERE id=?", (now, job['id']))
+            return
         if selected:
             job.update(selected)
             con.execute("UPDATE jobs SET status='running',started=?,conversation_id=?,user_message_id=?,user_turn_id=? WHERE id=?",

@@ -5120,8 +5120,8 @@ function SettingsPage({
   return (
     <div className={`${selected ? "page-body settings-page detail-active" : "page-body settings-page"}${detailClosing ? " detail-closing" : ""}`}>
       <PageIntro eyebrow="PREFERENCES" title="Settings" text="Make Vesper feel like you." />
-      <div className="surface"><SettingRow icon="sparkles" title="Autonomous Wake" sub="Schedule, controls and recent activity" onClick={() => setSelected("Autonomous Wake")} /></div>
       <div className="settings-category-list settings-accordion">
+        <section className="surface settings-accordion-item"><SettingRow icon="sparkles" title="Autonomous Wake" sub="Schedule, controls and recent activity" onClick={() => setSelected("Autonomous Wake")} /></section>
         {[
           ["sparkles", "Agent", "Model connection and voice"],
           ["link", "Tools", "MCP connections and notifications"],
